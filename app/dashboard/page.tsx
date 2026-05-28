@@ -26,6 +26,8 @@ export default function DashboardPage() {
   const [pendingSOWs, setPendingSOWs] = useState<any[]>([])
   const [opportunitiesInProgress, setOpportunitiesInProgress] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [fetchingSAM, setFetchingSAM] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -123,6 +125,25 @@ export default function DashboardPage() {
       console.error('Error fetching dashboard data:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleFetchFromSAM = async () => {
+    setFetchingSAM(true)
+    setFetchError(null)
+    try {
+      const res = await fetch('/api/opportunities/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 25, posted_days_ago: 90 }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Fetch failed')
+      await fetchDashboardData()
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : 'Unknown error')
+    } finally {
+      setFetchingSAM(false)
     }
   }
 
@@ -536,12 +557,18 @@ export default function DashboardPage() {
                   Opportunities will appear here once they are fetched from SAM.gov
                 </p>
                 {session?.user?.role === 'ADMIN' && (
-                  <button
-                    onClick={() => {/* TODO: Trigger fetch */}}
-                    className="mt-4 px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 transition-colors"
-                  >
-                    Fetch Opportunities
-                  </button>
+                  <div className="mt-4 space-y-2">
+                    <button
+                      onClick={handleFetchFromSAM}
+                      disabled={fetchingSAM}
+                      className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {fetchingSAM ? 'Fetching from SAM.gov...' : 'Fetch Opportunities'}
+                    </button>
+                    {fetchError && (
+                      <p className="text-xs text-red-600">{fetchError}</p>
+                    )}
+                  </div>
                 )}
               </div>
             ) : (
