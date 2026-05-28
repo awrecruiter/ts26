@@ -150,14 +150,14 @@ export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
                 ${(opportunity.assessment.estimatedValue || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </p>
             </div>
-            <div onClick={e => e.preventDefault()}>
+            <div onClick={e => e.stopPropagation()}>
               <p className="text-xs text-stone-500 mb-1">Your Cost</p>
               <div className="relative">
                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-stone-400 text-xs pointer-events-none">$</span>
                 <input
                   type="number"
                   value={costStr}
-                  onChange={e => setCostStr(e.target.value)}
+                  onChange={e => { e.stopPropagation(); setCostStr(e.target.value) }}
                   placeholder="Enter cost"
                   className="w-full pl-5 pr-1 py-1 text-sm font-bold text-stone-900 border border-stone-300 rounded focus:ring-1 focus:ring-stone-400 outline-none bg-white"
                 />
