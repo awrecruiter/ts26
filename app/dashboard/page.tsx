@@ -170,12 +170,28 @@ export default function DashboardPage() {
                 Welcome back, {session?.user?.name || 'User'}!
               </p>
             </div>
-            <Link
-              href="/opportunities"
-              className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 transition-colors"
-            >
-              View All Opportunities
-            </Link>
+            <div className="flex items-center gap-3">
+              {session?.user?.role === 'ADMIN' && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleFetchFromSAM}
+                    disabled={fetchingSAM}
+                    className="px-4 py-2 text-sm font-medium text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {fetchingSAM ? 'Fetching...' : 'Fetch from SAM.gov'}
+                  </button>
+                  {fetchError && (
+                    <span className="text-xs text-red-600">{fetchError}</span>
+                  )}
+                </div>
+              )}
+              <Link
+                href="/opportunities"
+                className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 transition-colors"
+              >
+                View All Opportunities
+              </Link>
+            </div>
           </div>
         </div>
       </div>
@@ -554,22 +570,8 @@ export default function DashboardPage() {
               <div className="text-center py-12">
                 <p className="text-stone-500">No opportunities yet</p>
                 <p className="text-stone-400 text-sm mt-1">
-                  Opportunities will appear here once they are fetched from SAM.gov
+                  Use "Fetch from SAM.gov" above to pull in opportunities
                 </p>
-                {session?.user?.role === 'ADMIN' && (
-                  <div className="mt-4 space-y-2">
-                    <button
-                      onClick={handleFetchFromSAM}
-                      disabled={fetchingSAM}
-                      className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {fetchingSAM ? 'Fetching from SAM.gov...' : 'Fetch Opportunities'}
-                    </button>
-                    {fetchError && (
-                      <p className="text-xs text-red-600">{fetchError}</p>
-                    )}
-                  </div>
-                )}
               </div>
             ) : (
               <div className="space-y-3">
