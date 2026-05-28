@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { auth } from '@/lib/auth'
 import { findSubcontractorsForOpportunity } from '@/lib/google-places'
 import { searchSamEntities, samEntityToSubcontractor } from '@/lib/samgov'
 import { isProductSolicitation, extractStateCode, extractPlaceOfPerformance, extractCity } from '@/lib/opportunity-classification'
@@ -32,6 +33,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
     const { id: opportunityId } = await params
 
     // Parse optional radius from request body

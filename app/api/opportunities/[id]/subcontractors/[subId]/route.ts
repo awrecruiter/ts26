@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { auth } from '@/lib/auth'
 
 // PATCH - Update a subcontractor (call status, email, etc.)
 export async function PATCH(
@@ -7,6 +8,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; subId: string }> }
 ) {
   try {
+    const session = await auth()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
     const { id: opportunityId, subId } = await params
     const body = await request.json()
 
@@ -61,6 +65,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; subId: string }> }
 ) {
   try {
+    const session = await auth()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
     const { id: opportunityId, subId } = await params
 
     // Verify subcontractor exists and belongs to this opportunity
