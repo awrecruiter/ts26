@@ -28,6 +28,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [fetchingSAM, setFetchingSAM] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
+  const [editingCosts, setEditingCosts] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -126,6 +127,10 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleCostChange = (assessmentId: string, value: string) => {
+    setEditingCosts(prev => ({ ...prev, [assessmentId]: value }))
   }
 
   const handleFetchFromSAM = async () => {
@@ -395,64 +400,88 @@ export default function DashboardPage() {
             </div>
             <div className="p-6">
               <div className="space-y-3">
-                {recentAssessments.map((assessment) => (
-                  <Link
-                    key={assessment.id}
-                    href={`/opportunities/${assessment.opportunityId}`}
-                    className="block border border-stone-200 rounded-lg p-4 hover:border-stone-400 hover:shadow-sm transition-all"
-                  >
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex-1">
-                        <h3 className="font-medium text-stone-900 text-sm">
-                          {assessment.opportunityTitle}
-                        </h3>
-                        <p className="text-xs text-stone-400 mt-0.5">
-                          {assessment.solicitationNumber}
-                        </p>
-                      </div>
-                      <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
-                        assessment.recommendation === 'GO' ? 'bg-stone-800 text-white' :
-                        assessment.recommendation === 'REVIEW' ? 'bg-stone-200 text-stone-700' :
-                        'bg-stone-100 text-stone-500'
-                      }`}>
-                        {assessment.recommendation?.replace('_', ' ') || 'N/A'}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div>
-                        <p className="text-xs text-stone-400">Contract Value</p>
-                        <p className="font-semibold text-stone-900 text-sm">
-                          ${(assessment.estimatedValue || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-stone-400">Profit Margin</p>
-                        <p className="font-semibold text-stone-900 text-sm">
-                          {(assessment.profitMarginPercent || 0).toFixed(1)}%
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-stone-400">Profit ($)</p>
-                        <p className="font-semibold text-stone-900 text-sm">
-                          ${(assessment.profitMarginDollar || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-3 pt-3 border-t border-stone-100 flex justify-between items-center">
-                      <div className="flex gap-2 text-xs">
-                        <span className="px-2 py-0.5 rounded bg-stone-100 text-stone-600">
-                          Strategic: {assessment.strategicValue || 'N/A'}
-                        </span>
-                        <span className="px-2 py-0.5 rounded bg-stone-100 text-stone-600">
-                          Risk: {assessment.riskLevel || 'N/A'}
+                {recentAssessments.map((assessment) => {
+                  const costStr = editingCosts[assessment.id] ?? (assessment.estimatedCost > 0 ? assessment.estimatedCost.toString() : '')
+                  const costVal = parseFloat(costStr) || 0
+                  const valueVal = assessment.estimatedValue || 0
+                  const liveProfitDollar = valueVal - costVal
+                  const liveProfitPercent = valueVal > 0 ? (liveProfitDollar / valueVal) * 100 : 0
+                  const hasCost = costVal > 0
+                  const marginColor = liveProfitPercent >= 20 ? 'text-green-700' : liveProfitPercent >= 10 ? 'text-amber-700' : 'text-red-700'
+                  const liveRec = hasCost ? (liveProfitPercent >= 20 ? 'GO' : liveProfitPercent >= 10 ? 'REVIEW' : 'NO_GO') : assessment.recommendation
+
+                  return (
+                    <div
+                      key={assessment.id}
+                      onClick={() => router.push(`/opportunities/${assessment.opportunityId}`)}
+                      className="border border-stone-200 rounded-lg p-4 hover:border-stone-400 hover:shadow-sm transition-all cursor-pointer"
+                    >
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex-1">
+                          <h3 className="font-medium text-stone-900 text-sm">
+                            {assessment.opportunityTitle}
+                          </h3>
+                          <p className="text-xs text-stone-400 mt-0.5">
+                            {assessment.solicitationNumber}
+                          </p>
+                        </div>
+                        <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
+                          liveRec === 'GO' ? 'bg-stone-800 text-white' :
+                          liveRec === 'REVIEW' ? 'bg-stone-200 text-stone-700' :
+                          'bg-stone-100 text-stone-500'
+                        }`}>
+                          {liveRec?.replace('_', ' ') || 'N/A'}
                         </span>
                       </div>
-                      <p className="text-xs text-stone-400">
-                        Assessed by {assessment.assessedBy}
-                      </p>
+                      <div className="grid grid-cols-4 gap-3">
+                        <div>
+                          <p className="text-xs text-stone-400">Contract Value</p>
+                          <p className="font-semibold text-stone-900 text-sm">
+                            ${valueVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          </p>
+                        </div>
+                        <div onClick={e => e.stopPropagation()}>
+                          <p className="text-xs text-stone-400 mb-1">Your Cost</p>
+                          <div className="relative">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-stone-400 text-xs pointer-events-none">$</span>
+                            <input
+                              type="number"
+                              value={costStr}
+                              onChange={e => handleCostChange(assessment.id, e.target.value)}
+                              placeholder="Enter cost"
+                              className="w-full pl-5 pr-1 py-1 text-sm font-semibold text-stone-900 border border-stone-300 rounded focus:ring-1 focus:ring-stone-400 outline-none bg-white"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs text-stone-400">Profit Margin</p>
+                          <p className={`font-semibold text-sm ${hasCost ? marginColor : 'text-stone-400'}`}>
+                            {hasCost ? `${liveProfitPercent.toFixed(1)}%` : '—'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-stone-400">Profit ($)</p>
+                          <p className={`font-semibold text-sm ${hasCost ? marginColor : 'text-stone-400'}`}>
+                            {hasCost ? `$${liveProfitDollar.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-stone-100 flex justify-between items-center">
+                        <div className="flex gap-2 text-xs">
+                          <span className="px-2 py-0.5 rounded bg-stone-100 text-stone-600">
+                            Strategic: {assessment.strategicValue || 'N/A'}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-stone-100 text-stone-600">
+                            Risk: {assessment.riskLevel || 'N/A'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-stone-400">
+                          Assessed by {assessment.assessedBy}
+                        </p>
+                      </div>
                     </div>
-                  </Link>
-                ))}
+                  )
+                })}
               </div>
             </div>
           </div>

@@ -189,26 +189,6 @@ export default function OpportunityWorkspacePage() {
     await fetchData()
   }
 
-  const handleSaveAssessment = async (data: any) => {
-    const value = parseFloat(data.estimatedValue) || 0
-    const cost = parseFloat(data.estimatedCost) || 0
-    const profitMarginDollar = value - cost
-    const profitMarginPercent = value > 0 ? (profitMarginDollar / value) * 100 : 0
-    const res = await fetch(`/api/opportunities/${params.id}/assessment`, {
-      method: assessment ? 'PUT' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...data,
-        profitMarginDollar,
-        profitMarginPercent,
-        meetsMarginTarget: profitMarginPercent >= 20,
-        recommendation: profitMarginPercent >= 20 ? 'GO' : profitMarginPercent >= 10 ? 'REVIEW' : 'NO_GO',
-      }),
-    })
-    const json = await res.json()
-    if (json.assessment) setAssessment(json.assessment)
-  }
-
   const handleSOWStatusChange = async (status: string) => {
     const sow = opportunity?.sows?.[0]
     if (!sow) return
@@ -357,7 +337,6 @@ export default function OpportunityWorkspacePage() {
           brief={opportunity?.opportunityBrief ?? null}
           isGeneratingBrief={generatingBrief}
           onGenerateBrief={handleGenerateBrief}
-          onSaveAssessment={handleSaveAssessment}
         />
       ),
     },
