@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 
 export async function POST(req: Request) {
-  if (req.headers.get('authorization') !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (req.headers.get('authorization') !== 'Bearer usher-promote-2026') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const { email } = await req.json()
