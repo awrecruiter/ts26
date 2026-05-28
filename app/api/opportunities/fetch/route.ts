@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
+export const maxDuration = 60
+
 const SAM_API_BASE = 'https://api.sam.gov/opportunities/v2/search'
 
 export async function POST(req: Request) {
@@ -65,8 +67,8 @@ export async function POST(req: Request) {
       const text = await response.text()
       console.error(`SAM.gov error ${response.status}: ${text}`)
       return NextResponse.json(
-        { error: `SAM.gov returned ${response.status}`, details: text },
-        { status: 502 }
+        { error: `SAM.gov returned ${response.status}`, details: text.substring(0, 500) },
+        { status: 400 }
       )
     }
 
@@ -87,81 +89,59 @@ export async function POST(req: Request) {
 
     console.log(`${filtered.length} opportunities with ≥14 days until closing`)
 
-    // Upsert into database
-    const saved = []
-    const errors = []
-
-    for (const opp of filtered) {
-      try {
+    // Upsert into database — parallel to minimize wall-clock time
+    const results = await Promise.all(
+      filtered.map(async (opp: any) => {
         const solNum = opp.solicitationNumber || opp.noticeId
-        if (!solNum) continue
+        if (!solNum) return { ok: false }
 
         let postedDate = null
         if (opp.postedDate) {
           try { postedDate = new Date(opp.postedDate) } catch {}
         }
-
         let responseDeadline = null
         if (opp.responseDeadLine) {
           try { responseDeadline = new Date(opp.responseDeadLine) } catch {}
         }
 
-        // Extract description from various SAM.gov fields
         const description = opp.description?.body || opp.description || opp.additionalInfoLink || ''
-
-        // Extract place of performance state
         const popState = opp.placeOfPerformance?.state?.code
           || opp.placeOfPerformance?.state?.name
           || opp.officeAddress?.state
           || null
-
-        // Extract NAICS codes - SAM.gov can return them in different formats
-        let naicsCode = null
-        if (opp.naicsCode) {
-          naicsCode = opp.naicsCode
-        } else if (opp.classificationCode) {
-          naicsCode = opp.classificationCode
+        const naicsCode = opp.naicsCode || opp.classificationCode || null
+        const descStr = typeof description === 'string'
+          ? description.substring(0, 10000)
+          : JSON.stringify(description).substring(0, 10000)
+        const common = {
+          title: opp.title || 'Untitled',
+          description: descStr,
+          naicsCode,
+          agency: opp.fullParentPathName || opp.organizationName || opp.department || null,
+          department: opp.department || opp.fullParentPathName?.split('.')[0] || null,
+          state: popState,
+          postedDate,
+          responseDeadline,
+          lastFetched: new Date(),
+          status: 'ACTIVE' as const,
+          rawData: opp,
         }
 
-        const record = await prisma.opportunity.upsert({
-          where: { solicitationNumber: solNum },
-          update: {
-            title: opp.title || 'Untitled',
-            description: typeof description === 'string' ? description.substring(0, 10000) : JSON.stringify(description).substring(0, 10000),
-            naicsCode,
-            agency: opp.fullParentPathName || opp.organizationName || opp.department || null,
-            department: opp.department || opp.fullParentPathName?.split('.')[0] || null,
-            state: popState,
-            postedDate,
-            responseDeadline,
-            lastFetched: new Date(),
-            status: 'ACTIVE',
-            rawData: opp,
-          },
-          create: {
-            solicitationNumber: solNum,
-            title: opp.title || 'Untitled',
-            description: typeof description === 'string' ? description.substring(0, 10000) : JSON.stringify(description).substring(0, 10000),
-            naicsCode,
-            agency: opp.fullParentPathName || opp.organizationName || opp.department || null,
-            department: opp.department || opp.fullParentPathName?.split('.')[0] || null,
-            state: popState,
-            postedDate,
-            responseDeadline,
-            lastFetched: new Date(),
-            status: 'ACTIVE',
-            rawData: opp,
-          },
-        })
+        try {
+          await prisma.opportunity.upsert({
+            where: { solicitationNumber: solNum },
+            update: common,
+            create: { solicitationNumber: solNum, ...common },
+          })
+          return { ok: true }
+        } catch (error) {
+          return { ok: false, solicitation: solNum, error: error instanceof Error ? error.message : 'Unknown' }
+        }
+      })
+    )
 
-        saved.push(record)
-      } catch (error) {
-        errors.push({
-          solicitation: opp.solicitationNumber,
-          error: error instanceof Error ? error.message : 'Unknown',
-        })
-      }
-    }
+    const saved = results.filter(r => r.ok)
+    const errors = results.filter(r => !r.ok && r.solicitation)
 
     // Log the operation
     await prisma.systemLog.create({

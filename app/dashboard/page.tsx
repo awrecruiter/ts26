@@ -143,7 +143,7 @@ export default function DashboardPage() {
         body: JSON.stringify({ limit: 25, posted_days_ago: 90 }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Fetch failed')
+      if (!res.ok) throw new Error(data.error + (data.details ? ` — ${data.details}` : '') || 'Fetch failed')
       await fetchDashboardData()
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : 'Unknown error')
