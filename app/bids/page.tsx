@@ -140,7 +140,7 @@ function BidsPageContent() {
       {/* Filters */}
       <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <form onSubmit={handleSearchSubmit} className="flex gap-4">
+          <form onSubmit={handleSearchSubmit} className="flex flex-wrap gap-4">
             <input
               type="text"
               placeholder="Search by opportunity name or solicitation number..."
