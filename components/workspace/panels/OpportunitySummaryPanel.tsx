@@ -6,6 +6,7 @@ import type { RichAttachment } from '@/lib/types/attachment'
 import type { OpportunityBrief } from '@/lib/openai'
 import OpportunityBriefCard from './OpportunityBriefCard'
 import FormFillModal from './FormFillModal'
+import MarginCalculator from '@/components/assessment/MarginCalculator'
 
 interface OpportunitySummaryPanelProps {
   opportunity: {
@@ -62,6 +63,7 @@ interface OpportunitySummaryPanelProps {
   brief?: OpportunityBrief | null
   isGeneratingBrief?: boolean
   onGenerateBrief?: () => void
+  onSaveAssessment?: (assessment: any) => Promise<void>
 }
 
 export default function OpportunitySummaryPanel({
@@ -82,6 +84,7 @@ export default function OpportunitySummaryPanel({
   brief = null,
   isGeneratingBrief = false,
   onGenerateBrief,
+  onSaveAssessment,
 }: OpportunitySummaryPanelProps) {
   const [attachments, setAttachments] = useState<RichAttachment[]>([])
   const [loadingAttachments, setLoadingAttachments] = useState(false)
@@ -366,6 +369,15 @@ export default function OpportunitySummaryPanel({
               <p className="text-sm text-stone-400 italic">No description available.</p>
             )}
           </div>
+
+          {/* Margin Assessment */}
+          {onSaveAssessment && (
+            <MarginCalculator
+              opportunityId={opportunity.id}
+              existingAssessment={assessment as any}
+              onSave={onSaveAssessment}
+            />
+          )}
 
           {/* SAM.gov Attachments */}
           <div className="p-5 bg-white border border-stone-200 rounded-lg">

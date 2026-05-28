@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
 interface Assessment {
   id?: string
@@ -13,10 +13,7 @@ interface Assessment {
   riskLevel?: 'HIGH' | 'MEDIUM' | 'LOW' | null
   recommendation?: string | null
   notes?: string | null
-  assessedBy?: {
-    name: string
-    email: string
-  }
+  assessedBy?: { name: string; email: string }
   assessedAt?: string
 }
 
@@ -26,16 +23,22 @@ interface MarginCalculatorProps {
   onSave: (assessment: Assessment) => Promise<void>
 }
 
-export default function MarginCalculator({
-  opportunityId,
-  existingAssessment,
-  onSave,
-}: MarginCalculatorProps) {
+function confidenceFromRiskLevel(riskLevel?: string | null): { label: string; color: string } {
+  if (riskLevel === 'LOW') return { label: 'High confidence', color: 'text-green-700 bg-green-50 border-green-200' }
+  if (riskLevel === 'MEDIUM') return { label: 'Medium confidence', color: 'text-amber-700 bg-amber-50 border-amber-200' }
+  return { label: 'Low confidence', color: 'text-stone-600 bg-stone-100 border-stone-200' }
+}
+
+export default function MarginCalculator({ opportunityId, existingAssessment, onSave }: MarginCalculatorProps) {
   const [estimatedValue, setEstimatedValue] = useState<string>(
-    existingAssessment?.estimatedValue?.toString() || ''
+    existingAssessment?.estimatedValue && existingAssessment.estimatedValue > 0
+      ? existingAssessment.estimatedValue.toString()
+      : ''
   )
   const [estimatedCost, setEstimatedCost] = useState<string>(
-    existingAssessment?.estimatedCost?.toString() || ''
+    existingAssessment?.estimatedCost && existingAssessment.estimatedCost > 0
+      ? existingAssessment.estimatedCost.toString()
+      : ''
   )
   const [strategicValue, setStrategicValue] = useState<string>(
     existingAssessment?.strategicValue || 'MEDIUM'
@@ -45,37 +48,32 @@ export default function MarginCalculator({
   )
   const [notes, setNotes] = useState(existingAssessment?.notes || '')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  // Calculate margins
   const value = parseFloat(estimatedValue) || 0
   const cost = parseFloat(estimatedCost) || 0
   const profitDollar = value - cost
   const profitPercent = value > 0 ? (profitDollar / value) * 100 : 0
 
-  const getMarginColor = () => {
-    if (profitPercent >= 20) return 'text-green-600'
-    if (profitPercent >= 10) return 'text-yellow-600'
-    return 'text-red-600'
-  }
+  const marginColor = profitPercent >= 20 ? 'text-green-700' : profitPercent >= 10 ? 'text-amber-700' : 'text-red-700'
+  const marginBg = profitPercent >= 20 ? 'bg-green-50 border-green-200' : profitPercent >= 10 ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'
+  const recText = profitPercent >= 20 ? 'GO' : profitPercent >= 10 ? 'REVIEW' : 'NO GO'
+  const recColor = profitPercent >= 20 ? 'text-green-700 bg-green-100' : profitPercent >= 10 ? 'text-amber-700 bg-amber-100' : 'text-red-700 bg-red-100'
 
-  const getMarginBg = () => {
-    if (profitPercent >= 20) return 'bg-green-50 border-green-200'
-    if (profitPercent >= 10) return 'bg-yellow-50 border-yellow-200'
-    return 'bg-red-50 border-red-200'
-  }
+  // Source attribution from notes (set by auto-generate from USASpending)
+  const dataSourceNote = existingAssessment?.notes || null
+  const isFromUSASpending = dataSourceNote?.includes('USASpending')
+  const hasValueFromUSASpending = existingAssessment?.estimatedValue && existingAssessment.estimatedValue > 0
+  const noDataAvailable = !hasValueFromUSASpending && !estimatedValue
 
-  const getRecommendation = () => {
-    if (profitPercent >= 20) return { text: 'GO', color: 'text-green-700', bg: 'bg-green-100' }
-    if (profitPercent >= 10) return { text: 'REVIEW', color: 'text-yellow-700', bg: 'bg-yellow-100' }
-    return { text: 'NO GO', color: 'text-red-700', bg: 'bg-red-100' }
-  }
+  const confidence = confidenceFromRiskLevel(existingAssessment?.riskLevel)
 
   const handleSave = async () => {
     if (!estimatedValue || !estimatedCost) {
-      alert('Please enter both estimated value and cost')
+      setError('Enter both estimated value and cost to save')
       return
     }
-
+    setError(null)
     setSaving(true)
     try {
       await onSave({
@@ -90,196 +88,162 @@ export default function MarginCalculator({
     }
   }
 
-  const recommendation = getRecommendation()
-
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+    <div className="border border-stone-200 rounded-lg overflow-hidden">
       {/* Header */}
-      <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-4">
-        <h3 className="text-lg font-semibold text-white">Margin Assessment</h3>
-        <p className="text-sm text-purple-100 mt-1">
-          Calculate profit margins to determine if this opportunity is worth pursuing
-        </p>
+      <div className="bg-stone-50 border-b border-stone-200 px-4 py-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-stone-900">Margin Assessment</h3>
+        {existingAssessment?.assessedAt && (
+          <span className="text-xs text-stone-400">
+            Updated {new Date(existingAssessment.assessedAt).toLocaleDateString()}
+            {existingAssessment.assessedBy && ` · ${existingAssessment.assessedBy.name}`}
+          </span>
+        )}
       </div>
 
-      <div className="p-6">
-        {/* Calculator Inputs */}
-        <div className="grid grid-cols-2 gap-6 mb-6">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Estimated Contract Value
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-3 text-gray-500">$</span>
-              <input
-                type="number"
-                value={estimatedValue}
-                onChange={(e) => setEstimatedValue(e.target.value)}
-                placeholder="0.00"
-                className="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Total contract value or estimate from SAM.gov
-            </p>
-          </div>
+      <div className="p-4 space-y-4">
 
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Estimated Cost
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-3 text-gray-500">$</span>
-              <input
-                type="number"
-                value={estimatedCost}
-                onChange={(e) => setEstimatedCost(e.target.value)}
-                placeholder="0.00"
-                className="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Your estimated cost to complete the work
-            </p>
-          </div>
-        </div>
-
-        {/* Calculated Results */}
-        {(value > 0 || cost > 0) && (
-          <div className={`rounded-lg border-2 p-6 mb-6 ${getMarginBg()}`}>
-            <div className="grid grid-cols-3 gap-6">
-              <div>
-                <div className="text-xs font-semibold text-gray-600 mb-1">
-                  PROFIT MARGIN ($)
-                </div>
-                <div className={`text-3xl font-bold ${getMarginColor()}`}>
-                  ${profitDollar.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold text-gray-600 mb-1">
-                  PROFIT MARGIN (%)
-                </div>
-                <div className={`text-3xl font-bold ${getMarginColor()}`}>
-                  {profitPercent.toFixed(1)}%
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs font-semibold text-gray-600 mb-1">
-                  RECOMMENDATION
-                </div>
-                <div
-                  className={`inline-block px-4 py-2 rounded-full text-sm font-bold ${recommendation.bg} ${recommendation.color}`}
-                >
-                  {recommendation.text}
-                </div>
-              </div>
-            </div>
-
-            {/* Margin Guide */}
-            <div className="mt-4 pt-4 border-t border-gray-300">
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                  <span className="text-gray-600">Good: ≥20%</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                  <span className="text-gray-600">Review: 10-20%</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                  <span className="text-gray-600">Low: &lt;10%</span>
-                </div>
-              </div>
+        {/* Data source attribution banner */}
+        {isFromUSASpending && dataSourceNote && (
+          <div className="flex items-start gap-2 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2.5">
+            <svg className="h-3.5 w-3.5 text-stone-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-stone-600 leading-snug">{dataSourceNote.split('.')[0]}.</p>
+              <span className={`inline-block mt-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${confidence.color}`}>
+                {confidence.label}
+              </span>
             </div>
           </div>
         )}
 
-        {/* Additional Factors */}
-        <div className="grid grid-cols-2 gap-6 mb-6">
+        {/* No data state */}
+        {noDataAvailable && (
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+            <svg className="h-3.5 w-3.5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+            <p className="text-xs text-amber-700 leading-snug">
+              Insufficient data — no historical contracts found on USASpending.gov for this NAICS code. Enter a manual estimate below.
+            </p>
+          </div>
+        )}
+
+        {/* Inputs */}
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Strategic Value
+            <label className="block text-xs font-medium text-stone-600 mb-1">
+              Contract Value
             </label>
-            <select
-              value={strategicValue}
-              onChange={(e) => setStrategicValue(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            >
-              <option value="HIGH">High - Key opportunity</option>
-              <option value="MEDIUM">Medium - Standard opportunity</option>
-              <option value="LOW">Low - Limited strategic value</option>
-            </select>
+            <div className="relative">
+              <span className="absolute left-3 top-2 text-stone-400 text-sm">$</span>
+              <input
+                type="number"
+                value={estimatedValue}
+                onChange={(e) => setEstimatedValue(e.target.value)}
+                placeholder="0"
+                className="w-full pl-7 pr-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none bg-white"
+              />
+            </div>
+            {isFromUSASpending && hasValueFromUSASpending && (
+              <p className="text-[10px] text-stone-400 mt-1">Pre-filled from USASpending median</p>
+            )}
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Risk Level
+            <label className="block text-xs font-medium text-stone-600 mb-1">
+              Your Cost
             </label>
+            <div className="relative">
+              <span className="absolute left-3 top-2 text-stone-400 text-sm">$</span>
+              <input
+                type="number"
+                value={estimatedCost}
+                onChange={(e) => setEstimatedCost(e.target.value)}
+                placeholder="0"
+                className="w-full pl-7 pr-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none bg-white"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Calculated results */}
+        {(value > 0 && cost > 0) && (
+          <div className={`rounded-lg border p-3 ${marginBg}`}>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <p className="text-[10px] font-semibold text-stone-500 uppercase tracking-wider mb-0.5">Profit ($)</p>
+                <p className={`text-xl font-bold ${marginColor}`}>
+                  ${profitDollar.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold text-stone-500 uppercase tracking-wider mb-0.5">Margin (%)</p>
+                <p className={`text-xl font-bold ${marginColor}`}>{profitPercent.toFixed(1)}%</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold text-stone-500 uppercase tracking-wider mb-0.5">Decision</p>
+                <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${recColor}`}>{recText}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 mt-2 pt-2 border-t border-stone-200">
+              <span className="flex items-center gap-1 text-[10px] text-stone-500"><span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>Good ≥20%</span>
+              <span className="flex items-center gap-1 text-[10px] text-stone-500"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>Review 10–20%</span>
+              <span className="flex items-center gap-1 text-[10px] text-stone-500"><span className="w-2 h-2 rounded-full bg-red-500 inline-block"></span>Low &lt;10%</span>
+            </div>
+          </div>
+        )}
+
+        {/* Strategic / Risk */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-stone-600 mb-1">Strategic Value</label>
+            <select
+              value={strategicValue}
+              onChange={(e) => setStrategicValue(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white"
+            >
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-stone-600 mb-1">Risk Level</label>
             <select
               value={riskLevel}
               onChange={(e) => setRiskLevel(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white"
             >
-              <option value="LOW">Low - Confident we can deliver</option>
-              <option value="MEDIUM">Medium - Some concerns</option>
-              <option value="HIGH">High - Significant challenges</option>
+              <option value="LOW">Low</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="HIGH">High</option>
             </select>
           </div>
         </div>
 
         {/* Notes */}
-        <div className="mb-6">
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Assessment Notes
-          </label>
+        <div>
+          <label className="block text-xs font-medium text-stone-600 mb-1">Notes</label>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            rows={3}
-            placeholder="Add any notes about this assessment..."
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            rows={2}
+            placeholder="Assessment notes..."
+            className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white resize-none"
           />
         </div>
 
-        {/* Save Button */}
+        {error && <p className="text-xs text-red-600">{error}</p>}
+
         <button
           onClick={handleSave}
-          disabled={saving || !estimatedValue || !estimatedCost}
-          className="w-full px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          disabled={saving}
+          className="w-full px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {saving ? (
-            <>
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-              Saving...
-            </>
-          ) : (
-            <>
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-              {existingAssessment ? 'Update Assessment' : 'Save Assessment'}
-            </>
-          )}
+          {saving ? 'Saving...' : existingAssessment ? 'Update Assessment' : 'Save Assessment'}
         </button>
-
-        {/* Existing Assessment Info */}
-        {existingAssessment?.assessedAt && (
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <p className="text-xs text-gray-500">
-              Last assessed {new Date(existingAssessment.assessedAt).toLocaleString()}
-              {existingAssessment.assessedBy && ` by ${existingAssessment.assessedBy.name}`}
-            </p>
-          </div>
-        )}
       </div>
     </div>
   )
