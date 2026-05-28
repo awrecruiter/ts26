@@ -4,7 +4,7 @@
  * extracts text content, and identifies structured solicitation data.
  */
 
-import { PDFParse } from 'pdf-parse'
+import pdfParse from 'pdf-parse/lib/pdf-parse'
 import mammoth from 'mammoth'
 import { SamAttachment } from './samgov'
 
@@ -49,13 +49,10 @@ export async function downloadAttachment(url: string): Promise<Buffer> {
  * Extract text from a PDF buffer.
  */
 export async function parsePDF(buffer: Buffer): Promise<{ text: string; pages: number }> {
-  const pdf = new PDFParse({ data: new Uint8Array(buffer) })
-  const textResult = await pdf.getText()
-  const pages = textResult.total
-  await pdf.destroy()
+  const data = await pdfParse(buffer)
   return {
-    text: textResult.text.trim(),
-    pages,
+    text: data.text.trim(),
+    pages: data.numpages,
   }
 }
 
