@@ -63,16 +63,25 @@ export async function POST(req: Request) {
       headers: { Accept: 'application/json' },
     })
 
-    if (!response.ok) {
-      const text = await response.text()
-      console.error(`SAM.gov error ${response.status}: ${text}`)
+    let samResponse = response
+    if (response.status === 429) {
+      await new Promise(resolve => setTimeout(resolve, 3000))
+      samResponse = await fetch(url.toString(), { headers: { Accept: 'application/json' } })
+    }
+
+    if (!samResponse.ok) {
+      const text = await samResponse.text()
+      console.error(`SAM.gov error ${samResponse.status}: ${text}`)
+      const msg = samResponse.status === 429
+        ? 'SAM.gov rate limit exceeded — wait a few minutes and try again'
+        : `SAM.gov returned ${samResponse.status}`
       return NextResponse.json(
-        { error: `SAM.gov returned ${response.status}`, details: text.substring(0, 500) },
-        { status: 400 }
+        { error: msg, details: text.substring(0, 500) },
+        { status: samResponse.status === 429 ? 429 : 400 }
       )
     }
 
-    const data = await response.json()
+    const data = await samResponse.json()
     const opportunities = data.opportunitiesData || []
 
     console.log(`SAM.gov returned ${opportunities.length} opportunities (total: ${data.totalRecords})`)
