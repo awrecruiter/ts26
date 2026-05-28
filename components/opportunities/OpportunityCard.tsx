@@ -1,3 +1,6 @@
+'use client'
+
+import { useState } from 'react'
 import Link from 'next/link'
 
 interface OpportunityCardProps {
@@ -76,6 +79,16 @@ function DataSourceIndicator({ bids }: { bids?: OpportunityCardProps['opportunit
 }
 
 export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
+  const initCost = opportunity.assessment?.estimatedCost
+  const [costStr, setCostStr] = useState<string>(initCost && initCost > 0 ? initCost.toString() : '')
+
+  const costVal = parseFloat(costStr) || 0
+  const valueVal = opportunity.assessment?.estimatedValue || 0
+  const liveProfitDollar = valueVal - costVal
+  const liveProfitPercent = valueVal > 0 ? (liveProfitDollar / valueVal) * 100 : 0
+  const hasCost = costVal > 0
+  const marginColor = liveProfitPercent >= 20 ? 'text-green-700' : liveProfitPercent >= 10 ? 'text-amber-700' : 'text-red-700'
+
   const deadline = opportunity.responseDeadline ? new Date(opportunity.responseDeadline) : null
   const daysUntilDeadline = deadline
     ? Math.ceil((deadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
@@ -137,19 +150,26 @@ export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
                 ${(opportunity.assessment.estimatedValue || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </p>
             </div>
-            <div>
-              <p className="text-xs text-stone-500 mb-1">Est. Cost</p>
-              <p className="text-base font-bold text-stone-900">
-                ${(opportunity.assessment.estimatedCost || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-              </p>
+            <div onClick={e => e.preventDefault()}>
+              <p className="text-xs text-stone-500 mb-1">Your Cost</p>
+              <div className="relative">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-stone-400 text-xs pointer-events-none">$</span>
+                <input
+                  type="number"
+                  value={costStr}
+                  onChange={e => setCostStr(e.target.value)}
+                  placeholder="Enter cost"
+                  className="w-full pl-5 pr-1 py-1 text-sm font-bold text-stone-900 border border-stone-300 rounded focus:ring-1 focus:ring-stone-400 outline-none bg-white"
+                />
+              </div>
             </div>
             <div>
               <p className="text-xs text-stone-500 mb-1">Margin</p>
-              <p className="text-base font-bold text-stone-800">
-                {(opportunity.assessment.profitMarginPercent || 0).toFixed(1)}%
+              <p className={`text-base font-bold ${hasCost ? marginColor : 'text-stone-400'}`}>
+                {hasCost ? `${liveProfitPercent.toFixed(1)}%` : '—'}
               </p>
-              <p className="text-xs text-stone-500">
-                ${(opportunity.assessment.profitMarginDollar || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              <p className={`text-xs ${hasCost ? marginColor : 'text-stone-400'}`}>
+                {hasCost ? `$${liveProfitDollar.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
               </p>
             </div>
             <div>
