@@ -89,8 +89,8 @@ function OpportunitiesContent() {
       if (!response.ok) throw new Error('Failed to fetch opportunities')
       const data = await response.json()
 
-      setOpportunities(data.opportunities)
-      setPagination(data.pagination)
+      setOpportunities(data.opportunities || [])
+      setPagination(data.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
