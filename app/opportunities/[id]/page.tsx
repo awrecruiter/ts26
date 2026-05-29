@@ -183,7 +183,7 @@ export default function OpportunityWorkspacePage() {
     })
   }
 
-  // Save + full refresh — used after "Save & re-generate plain language"
+  // Save + full refresh
   const handleSaveSOWAndRefresh = async (content: any) => {
     await handleSaveSOW(content)
     await fetchData()
