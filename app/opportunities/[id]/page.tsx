@@ -78,6 +78,28 @@ export default function OpportunityWorkspacePage() {
       .catch(() => {})
   }, [opportunity?.id])
 
+  // Save assessment and immediately reflect the result in sidebar state —
+  // no full fetchData() needed, so there's no loading flicker.
+  const handleSaveAssessment = useCallback(async (data: {
+    estimatedValue: number | null
+    estimatedCost: number | null
+    strategicValue?: string | null
+    riskLevel?: string | null
+    notes?: string | null
+  }) => {
+    const res = await fetch(`/api/opportunities/${params.id}/assessment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.error || 'Failed to save assessment')
+    }
+    const { assessment: saved } = await res.json()
+    setAssessment(saved)
+  }, [params.id])
+
   const handleCreateBid = async () => {
     try {
       const res = await fetch('/api/bids', {
@@ -338,6 +360,7 @@ export default function OpportunityWorkspacePage() {
           brief={opportunity?.opportunityBrief ?? null}
           isGeneratingBrief={generatingBrief}
           onGenerateBrief={handleGenerateBrief}
+          onSaveAssessment={handleSaveAssessment}
         />
       ),
     },

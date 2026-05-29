@@ -6,6 +6,7 @@ import type { RichAttachment } from '@/lib/types/attachment'
 import type { OpportunityBrief } from '@/lib/openai'
 import OpportunityBriefCard from './OpportunityBriefCard'
 import FormFillModal from './FormFillModal'
+import MarginCalculator, { extractOpportunityValue } from '@/components/assessment/MarginCalculator'
 
 interface OpportunitySummaryPanelProps {
   opportunity: {
@@ -37,15 +38,19 @@ interface OpportunitySummaryPanelProps {
     }
   }
   assessment?: {
+    id?: string
     estimatedValue: number
     estimatedCost: number
     profitMarginPercent: number
     profitMarginDollar: number
     recommendation: string
-    strategicValue?: string
-    riskLevel?: string
+    strategicValue?: string | null
+    riskLevel?: string | null
     confidence?: string
     dataSource?: string
+    notes?: string | null
+    assessedAt?: string
+    assessedBy?: { name: string; email: string }
   } | null
   hasBid?: boolean
   hasSOW?: boolean
@@ -62,6 +67,13 @@ interface OpportunitySummaryPanelProps {
   brief?: OpportunityBrief | null
   isGeneratingBrief?: boolean
   onGenerateBrief?: () => void
+  onSaveAssessment?: (data: {
+    estimatedValue: number | null
+    estimatedCost: number | null
+    strategicValue?: string | null
+    riskLevel?: string | null
+    notes?: string | null
+  }) => Promise<void>
 }
 
 export default function OpportunitySummaryPanel({
@@ -82,6 +94,7 @@ export default function OpportunitySummaryPanel({
   brief = null,
   isGeneratingBrief = false,
   onGenerateBrief,
+  onSaveAssessment,
 }: OpportunitySummaryPanelProps) {
   const [attachments, setAttachments] = useState<RichAttachment[]>([])
   const [loadingAttachments, setLoadingAttachments] = useState(false)
@@ -284,6 +297,19 @@ export default function OpportunitySummaryPanel({
 
   const workflowState = getWorkflowState(hasSOW, hasSubcontractors, hasBid)
 
+  // Derive SAM.gov value for pre-populating the margin calculator
+  const { value: oppValue, source: oppSource } = extractOpportunityValue(opportunity.rawData)
+  // Cast string → enum literal for MarginCalculator's strict Assessment type
+  const assessmentForCalc = assessment
+    ? {
+        ...assessment,
+        strategicValue: assessment.strategicValue as 'HIGH' | 'MEDIUM' | 'LOW' | null | undefined,
+        riskLevel: assessment.riskLevel as 'HIGH' | 'MEDIUM' | 'LOW' | null | undefined,
+        estimatedValue: assessment.estimatedValue ?? null,
+        estimatedCost: assessment.estimatedCost ?? null,
+      }
+    : null
+
   return (
     <div className="h-full overflow-auto">
       {/* OPPORTUNITY BRIEF */}
@@ -483,6 +509,17 @@ export default function OpportunitySummaryPanel({
               </div>
             )}
           </div>
+
+          {/* Margin Assessment */}
+          {onSaveAssessment && (
+            <MarginCalculator
+              opportunityId={opportunity.id}
+              existingAssessment={assessmentForCalc}
+              opportunityValue={oppValue}
+              opportunityValueSource={oppSource}
+              onSave={onSaveAssessment}
+            />
+          )}
 
         </div>
       </div>
