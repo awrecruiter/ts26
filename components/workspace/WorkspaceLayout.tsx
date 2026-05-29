@@ -106,7 +106,7 @@ export default function WorkspaceLayout({
   const progressPercent = progressSteps.length > 0 ? (completedSteps / progressSteps.length) * 100 : 0
 
   return (
-    <div className="h-screen flex flex-col bg-stone-50 overflow-hidden">
+    <div className="h-[100dvh] flex flex-col bg-stone-50 overflow-hidden">
       {/* Minimal header */}
       {headerContent && (
         <div className="flex-shrink-0 border-b border-stone-200 bg-white">
@@ -124,8 +124,8 @@ export default function WorkspaceLayout({
             />
           </div>
           {/* Progress steps indicator */}
-          <div className="px-4 py-2 flex items-center justify-between">
-            <div className="flex items-center gap-4">
+          <div className="px-3 py-2 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto">
               <ProgressStep label="SOW" completed={progress.sowCreated} />
               <ProgressStep label="Subs" completed={progress.subcontractorsFound} />
               <ProgressStep label="Quotes" completed={progress.quotesReceived} />
@@ -133,7 +133,7 @@ export default function WorkspaceLayout({
               <ProgressStep label="Submit" completed={progress.bidSubmitted} />
             </div>
             {nextAction && (
-              <p className="text-xs text-stone-500">
+              <p className="text-xs text-stone-500 flex-shrink-0 hidden sm:block">
                 Next: <span className="text-stone-700">{nextAction}</span>
               </p>
             )}
@@ -142,55 +142,57 @@ export default function WorkspaceLayout({
       )}
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Left sidebar - Document directory */}
+        {/* Left sidebar - Document directory — hidden on mobile */}
         {sidebarContent && (
-          <div className="w-64 flex-shrink-0 border-r border-stone-200 bg-white overflow-y-auto">
+          <div className="hidden md:block w-64 flex-shrink-0 border-r border-stone-200 bg-white overflow-y-auto">
             {sidebarContent}
           </div>
         )}
 
         {/* Main workspace area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Panel navigation tabs */}
-          <div className="flex-shrink-0 bg-white border-b border-stone-200 px-4">
-            <div className="flex items-center gap-1">
-              {panels.map((panel, idx) => (
-                <button
-                  key={panel.id}
-                  onClick={() => goToPanel(idx)}
-                  className={`
-                    flex items-center gap-2 px-4 py-3 text-sm font-medium
-                    border-b-2 transition-colors
-                    ${idx === currentIndex
-                      ? 'border-stone-800 text-stone-900'
-                      : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300'
-                    }
-                  `}
-                >
-                  <span className="opacity-60">{panel.icon}</span>
-                  {panel.label}
-                </button>
-              ))}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          {/* Panel navigation tabs — horizontally scrollable on mobile */}
+          <div className="flex-shrink-0 bg-white border-b border-stone-200">
+            <div className="flex items-center overflow-x-auto">
+              <div className="flex items-center gap-0 px-2 min-w-max">
+                {panels.map((panel, idx) => (
+                  <button
+                    key={panel.id}
+                    onClick={() => goToPanel(idx)}
+                    className={`
+                      flex items-center gap-1.5 px-3 sm:px-4 py-3 text-sm font-medium whitespace-nowrap
+                      border-b-2 transition-colors min-h-[44px]
+                      ${idx === currentIndex
+                        ? 'border-stone-800 text-stone-900'
+                        : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300'
+                      }
+                    `}
+                  >
+                    <span className="opacity-60">{panel.icon}</span>
+                    {panel.label}
+                  </button>
+                ))}
+              </div>
 
               {/* Navigation arrows */}
-              <div className="ml-auto flex items-center gap-1">
+              <div className="ml-auto flex items-center gap-1 pr-2 flex-shrink-0">
                 <button
                   onClick={goPrev}
                   disabled={currentIndex === 0}
-                  className="p-2 text-stone-400 hover:text-stone-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="p-2 text-stone-400 hover:text-stone-600 disabled:opacity-30 disabled:cursor-not-allowed min-h-[44px] min-w-[44px] flex items-center justify-center"
                   title="Previous (←)"
                 >
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
-                <span className="text-xs text-stone-400 tabular-nums">
+                <span className="text-xs text-stone-400 tabular-nums hidden sm:inline">
                   {currentIndex + 1} / {panels.length}
                 </span>
                 <button
                   onClick={goNext}
                   disabled={currentIndex === panels.length - 1}
-                  className="p-2 text-stone-400 hover:text-stone-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="p-2 text-stone-400 hover:text-stone-600 disabled:opacity-30 disabled:cursor-not-allowed min-h-[44px] min-w-[44px] flex items-center justify-center"
                   title="Next (→)"
                 >
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -225,11 +227,11 @@ export default function WorkspaceLayout({
             </div>
           </div>
 
-          {/* Bottom navigation hint */}
+          {/* Bottom navigation dots */}
           <div className="flex-shrink-0 bg-white border-t border-stone-200 px-4 py-2">
             <div className="flex items-center justify-between text-xs text-stone-400">
-              <span>← → Arrow keys to navigate</span>
-              <div className="flex items-center gap-2">
+              <span className="hidden sm:inline">← → Arrow keys to navigate</span>
+              <div className="flex items-center gap-2 mx-auto sm:mx-0">
                 {panels.map((_, idx) => (
                   <button
                     key={idx}
@@ -240,7 +242,7 @@ export default function WorkspaceLayout({
                   />
                 ))}
               </div>
-              <span>Drag to pan</span>
+              <span className="hidden sm:inline">Drag to pan</span>
             </div>
           </div>
         </div>

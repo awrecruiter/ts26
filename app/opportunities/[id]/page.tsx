@@ -504,29 +504,29 @@ export default function OpportunityWorkspacePage() {
       progress={progress}
       nextAction={nextAction}
       headerContent={
-        <div className="px-4 py-3 flex items-center justify-between">
+        <div className="px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2 min-h-[48px]">
           {/* Left: Back + Title */}
-          <div className="flex items-center gap-4 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
             <button
               onClick={() => router.push('/opportunities')}
-              className="text-stone-400 hover:text-stone-600 p-1"
+              className="text-stone-400 hover:text-stone-600 p-1.5 flex-shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center"
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
             <div className="min-w-0">
-              <h1 className="text-sm font-medium text-stone-800 truncate">
+              <h1 className="text-sm font-medium text-stone-800 truncate leading-tight">
                 {opportunity.title}
               </h1>
-              <p className="text-xs text-stone-400">{opportunity.solicitationNumber}</p>
+              <p className="text-xs text-stone-400 truncate">{opportunity.solicitationNumber}</p>
             </div>
           </div>
 
           {/* Right: Deadline */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {deadline && daysLeft !== null && (
-              <div className={`px-3 py-1.5 rounded text-sm font-medium ${
+              <div className={`px-2.5 py-1.5 rounded text-xs sm:text-sm font-medium flex-shrink-0 ${
                 daysLeft <= 3 ? 'bg-stone-800 text-white' :
                 daysLeft <= 7 ? 'bg-stone-200 text-stone-700' :
                 'bg-stone-100 text-stone-600'

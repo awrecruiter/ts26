@@ -250,11 +250,11 @@ export default function SOWPanel({
   // ── SOW exists ──────────────────────────────────────────────────────────
   return (
     <div className="h-full flex flex-col">
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto p-4 sm:p-6">
         <div className="max-w-3xl mx-auto space-y-5">
 
           {/* ── Header row ── */}
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div>
               <h1 className="text-lg font-semibold text-stone-900">Statement of Work</h1>
               <p className="text-sm text-stone-500 mt-0.5">
@@ -296,7 +296,7 @@ export default function SOWPanel({
             {/* Document page card */}
             <div className="bg-white shadow-md rounded-lg overflow-hidden">
               {/* Document header */}
-              <div className="px-10 pt-10 pb-6 border-b border-stone-200 text-center">
+              <div className="px-6 sm:px-10 pt-8 sm:pt-10 pb-6 border-b border-stone-200 text-center">
                 <p className="text-xs font-semibold tracking-widest uppercase text-stone-400 mb-2">
                   Statement of Work
                 </p>
@@ -319,7 +319,7 @@ export default function SOWPanel({
               {/* Sections — always editable inline */}
               <div className="divide-y divide-stone-100">
                 {sections.map((section, idx) => (
-                  <div key={idx} className="px-10 py-6">
+                  <div key={idx} className="px-4 sm:px-10 py-5 sm:py-6">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-6 h-6 bg-stone-900 text-white text-xs font-bold rounded flex items-center justify-center flex-shrink-0">
                         {idx + 1}
@@ -380,7 +380,7 @@ export default function SOWPanel({
               </div>
 
               {/* Add section */}
-              <div className="px-10 py-4 bg-stone-50 border-t border-stone-100">
+              <div className="px-4 sm:px-10 py-4 bg-stone-50 border-t border-stone-100">
                 <button
                   onClick={handleAddSection}
                   className="w-full py-2 text-xs text-stone-400 hover:text-stone-600 flex items-center justify-center gap-1 transition-colors"

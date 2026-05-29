@@ -191,7 +191,7 @@ export default function MarginCalculator({
 
       <div className="p-5">
         {/* Calculator Inputs */}
-        <div className="grid grid-cols-2 gap-4 mb-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
           <div>
             <label className="block text-xs font-semibold text-stone-600 mb-1.5">
               Contract Value
@@ -240,7 +240,7 @@ export default function MarginCalculator({
         {/* Live margin result — only show once at least one value is entered */}
         {(value > 0 || cost > 0) && (
           <div className={`rounded-lg border-2 p-4 mb-5 ${marginBg[marginTier]}`}>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <p className="text-[10px] font-semibold text-stone-500 uppercase tracking-wider mb-1">Profit ($)</p>
                 <p className={`text-2xl font-bold ${marginValueColor[marginTier]}`}>
@@ -263,7 +263,7 @@ export default function MarginCalculator({
               </div>
             </div>
 
-            <div className="mt-3 pt-3 border-t border-stone-200 flex items-center gap-4 text-[10px] text-stone-500">
+            <div className="mt-3 pt-3 border-t border-stone-200 flex items-center flex-wrap gap-3 text-[10px] text-stone-500">
               <span className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-stone-800 inline-block" />
                 GO: ≥20%
@@ -281,7 +281,7 @@ export default function MarginCalculator({
         )}
 
         {/* Additional Factors */}
-        <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <div>
             <label className="block text-xs font-semibold text-stone-600 mb-1.5">
               Strategic Value

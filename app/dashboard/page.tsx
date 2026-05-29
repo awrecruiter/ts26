@@ -170,26 +170,26 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
             <div>
               <h1 className="text-2xl font-bold text-stone-900">Dashboard</h1>
               <p className="mt-0.5 text-sm text-stone-500">
                 Welcome back, {session?.user?.name || 'User'}!
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               {session?.user?.role === 'ADMIN' && (
                 <button
                   onClick={handleFetchOpportunities}
                   disabled={fetching}
-                  className="px-4 py-2 text-sm font-medium text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 disabled:opacity-50 transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 disabled:opacity-50 transition-colors min-h-[44px]"
                 >
                   {fetching ? 'Fetching...' : 'Fetch from SAM.gov'}
                 </button>
               )}
               <Link
                 href="/opportunities"
-                className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 transition-colors"
+                className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 transition-colors min-h-[44px] flex items-center"
               >
                 View All Opportunities
               </Link>
@@ -305,7 +305,7 @@ export default function DashboardPage() {
             {/* Financial Summary Card */}
             <div className="bg-stone-900 rounded-lg border border-stone-800 p-6 mb-8 text-white">
               <h2 className="text-base font-semibold text-stone-100 mb-4">Financial Overview</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                 <div>
                   <p className="text-stone-400 text-xs font-medium uppercase tracking-wide mb-1">Total Pipeline Value</p>
                   <p className="text-3xl font-bold text-white">
@@ -331,7 +331,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Assessment Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 mb-8">
               <div className="bg-white rounded-lg border border-stone-200 p-6">
                 <div className="flex items-center">
                   <div className="flex-shrink-0 bg-stone-100 rounded-lg p-3">
@@ -423,7 +423,7 @@ export default function DashboardPage() {
                         {assessment.recommendation?.replace('_', ' ') || 'N/A'}
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       <div>
                         <p className="text-xs text-stone-400">Contract Value</p>
                         <p className="font-semibold text-stone-900 text-sm">
@@ -436,15 +436,15 @@ export default function DashboardPage() {
                           {(assessment.profitMarginPercent || 0).toFixed(1)}%
                         </p>
                       </div>
-                      <div>
+                      <div className="col-span-2 sm:col-span-1">
                         <p className="text-xs text-stone-400">Profit ($)</p>
                         <p className="font-semibold text-stone-900 text-sm">
                           ${(assessment.profitMarginDollar || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </p>
                       </div>
                     </div>
-                    <div className="mt-3 pt-3 border-t border-stone-100 flex justify-between items-center">
-                      <div className="flex gap-2 text-xs">
+                    <div className="mt-3 pt-3 border-t border-stone-100 flex flex-wrap justify-between items-center gap-2">
+                      <div className="flex gap-2 text-xs flex-wrap">
                         <span className="px-2 py-0.5 rounded bg-stone-100 text-stone-600">
                           Strategic: {assessment.strategicValue || 'N/A'}
                         </span>
@@ -598,14 +598,14 @@ export default function DashboardPage() {
                     href={`/opportunities/${opp.id}`}
                     className="block border border-stone-200 rounded-lg p-4 hover:border-stone-400 hover:shadow-sm transition-all"
                   >
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                    <div className="flex justify-between items-start mb-3 gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-medium text-stone-900 text-sm">
                             {opp.title}
                           </h3>
                           {opp.assessment && (
-                            <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${
+                            <span className={`px-2 py-0.5 text-xs font-semibold rounded-full flex-shrink-0 ${
                               opp.assessment.recommendation === 'GO' ? 'bg-stone-800 text-white' :
                               opp.assessment.recommendation === 'REVIEW' ? 'bg-stone-200 text-stone-700' :
                               opp.assessment.recommendation === 'NO_GO' ? 'bg-stone-100 text-stone-500' :
@@ -615,7 +615,7 @@ export default function DashboardPage() {
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-stone-400 mt-0.5">
+                        <p className="text-xs text-stone-400 mt-0.5 truncate">
                           {opp.solicitationNumber} · {opp.agency}
                         </p>
                       </div>
@@ -630,7 +630,7 @@ export default function DashboardPage() {
                     </div>
 
                     {opp.assessment ? (
-                      <div className="grid grid-cols-4 gap-4 mt-3 pt-3 border-t border-stone-100">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 pt-3 border-t border-stone-100">
                         <div>
                           <p className="text-xs text-stone-400">Contract Value</p>
                           <p className="font-semibold text-stone-900 text-sm">
@@ -646,12 +646,13 @@ export default function DashboardPage() {
                         <div>
                           <p className="text-xs text-stone-400">Profit Margin</p>
                           <p className="font-semibold text-stone-800 text-sm">
-                            {(opp.assessment.profitMarginPercent || 0).toFixed(1)}% · ${(opp.assessment.profitMarginDollar || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            {(opp.assessment.profitMarginPercent || 0).toFixed(1)}%
+                            <span className="hidden sm:inline"> · ${(opp.assessment.profitMarginDollar || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                           </p>
                         </div>
                         <div>
                           <p className="text-xs text-stone-400">Risk / Strategic</p>
-                          <div className="flex gap-1">
+                          <div className="flex gap-1 flex-wrap">
                             <span className="text-xs px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 font-medium">
                               {opp.assessment.riskLevel || '—'}
                             </span>

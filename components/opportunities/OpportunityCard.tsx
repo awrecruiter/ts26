@@ -85,14 +85,14 @@ export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
     <Link href={`/opportunities/${opportunity.id}`}>
       <div className="block bg-white border border-stone-200 rounded-lg hover:border-stone-400 transition-all p-6 cursor-pointer">
         {/* Header */}
-        <div className="flex justify-between items-start mb-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="text-lg font-semibold text-stone-900">
+        <div className="flex justify-between items-start mb-4 gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <h3 className="text-base sm:text-lg font-semibold text-stone-900">
                 {opportunity.title}
               </h3>
               {opportunity.assessment?.recommendation && (
-                <span className={`px-2 py-0.5 text-xs font-medium rounded ${
+                <span className={`px-2 py-0.5 text-xs font-medium rounded flex-shrink-0 ${
                   opportunity.assessment.recommendation === 'GO' ? 'bg-stone-200 text-stone-800' :
                   opportunity.assessment.recommendation === 'REVIEW' ? 'bg-stone-100 text-stone-600' :
                   'bg-stone-100 text-stone-500'
@@ -101,11 +101,11 @@ export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
                 </span>
               )}
             </div>
-            <p className="text-sm text-stone-500">
+            <p className="text-sm text-stone-500 truncate">
               {opportunity.solicitationNumber}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <span className="px-2.5 py-1 rounded text-xs font-medium bg-stone-100 text-stone-600">
               {opportunity.status}
             </span>
@@ -130,7 +130,7 @@ export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
 
         {/* Assessment Metrics */}
         {opportunity.assessment ? (
-          <div className="grid grid-cols-4 gap-4 mb-4 p-3 bg-stone-50 rounded-lg border border-stone-100">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 p-3 bg-stone-50 rounded-lg border border-stone-100">
             <div>
               <p className="text-xs text-stone-500 mb-1">Contract Value</p>
               <p className="text-base font-bold text-stone-900">
@@ -171,7 +171,7 @@ export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
         )}
 
         {/* Meta Information */}
-        <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 mb-4 text-sm">
           {opportunity.agency && (
             <div>
               <span className="text-stone-400">Agency:</span>

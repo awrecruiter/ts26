@@ -319,11 +319,11 @@ export default function SubcontractorPanel({
   }, [emailInputs, onSendDetails])
 
   return (
-    <div className="h-full overflow-auto p-6">
+    <div className="h-full overflow-auto p-4 sm:p-6">
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <h1 className="text-lg font-semibold text-stone-900">Subcontractors</h1>
               <p className="text-sm text-stone-500 mt-1">
@@ -339,13 +339,13 @@ export default function SubcontractorPanel({
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {/* Clean Duplicates Button */}
               {subcontractors.length > 1 && (
                 <button
                   onClick={handleCleanDuplicates}
                   disabled={isCleaning}
-                  className="px-3 py-1.5 text-xs font-medium text-stone-500 bg-white border border-stone-200 rounded hover:bg-stone-50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                  className="px-3 py-2 text-xs font-medium text-stone-500 bg-white border border-stone-200 rounded hover:bg-stone-50 transition-colors disabled:opacity-50 flex items-center gap-1.5 min-h-[44px]"
                   title="Remove duplicate vendors"
                 >
                   {isCleaning ? (
@@ -366,7 +366,7 @@ export default function SubcontractorPanel({
                 value={radiusMiles}
                 onChange={(e) => setRadiusMiles(Number(e.target.value) as RadiusMiles)}
                 disabled={isSearching}
-                className="px-2 py-1.5 text-xs font-medium text-stone-600 bg-white border border-stone-200 rounded focus:outline-none focus:ring-1 focus:ring-stone-300 disabled:opacity-50"
+                className="px-2 py-2 text-xs font-medium text-stone-600 bg-white border border-stone-200 rounded focus:outline-none focus:ring-1 focus:ring-stone-300 disabled:opacity-50 min-h-[44px]"
                 title="Search radius"
               >
                 {RADIUS_TIERS.map(r => (
@@ -378,7 +378,7 @@ export default function SubcontractorPanel({
               <button
                 onClick={handleAutoDiscover}
                 disabled={isSearching}
-                className="px-3 py-1.5 text-xs font-medium text-stone-600 bg-white border border-stone-300 rounded hover:bg-stone-50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                className="px-3 py-2 text-xs font-medium text-stone-600 bg-white border border-stone-300 rounded hover:bg-stone-50 transition-colors disabled:opacity-50 flex items-center gap-1.5 min-h-[44px]"
               >
                 <svg className={`h-3.5 w-3.5 ${isSearching ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -511,7 +511,7 @@ export default function SubcontractorPanel({
                   }`}
                 >
                 <div className="p-4">
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       {/* Name + Source Badge + Rating */}
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -659,18 +659,18 @@ export default function SubcontractorPanel({
                     </div>
 
                     {/* Right side: Actions */}
-                    <div className="flex flex-col gap-2 flex-shrink-0">
+                    <div className="flex flex-row sm:flex-col gap-2 flex-shrink-0">
                       {/* Dismiss — permanent removal */}
                       <button
                         onClick={() => handleDismiss(sub)}
-                        className="px-3 py-1.5 text-xs text-stone-400 hover:text-red-600 transition-colors"
+                        className="px-3 py-2 text-xs text-stone-400 hover:text-red-600 transition-colors min-h-[44px] flex items-center"
                         title="Remove vendor permanently"
                       >
                         Dismiss
                       </button>
                       <button
                         onClick={() => setExpandedCard(expandedCard === sub.id ? null : sub.id)}
-                        className="px-3 py-1.5 text-xs text-stone-500 hover:text-stone-700 flex items-center justify-center gap-1"
+                        className="px-3 py-2 text-xs text-stone-500 hover:text-stone-700 flex items-center justify-center gap-1 min-h-[44px]"
                       >
                         {expandedCard === sub.id ? 'Less' : 'Actions'}
                         <svg className={`h-3 w-3 transition-transform ${expandedCard === sub.id ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">

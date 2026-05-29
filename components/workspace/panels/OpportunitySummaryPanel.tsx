@@ -326,11 +326,11 @@ export default function OpportunitySummaryPanel({
       </div>
 
       {/* FIRST FOLD — quick actions only */}
-      <div className="px-6 py-4 bg-white border-b border-stone-200">
+      <div className="px-4 sm:px-6 py-4 bg-white border-b border-stone-200">
         <div className="max-w-4xl mx-auto">
           <button
             onClick={onProceed}
-            className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded hover:bg-stone-700 transition-colors inline-flex items-center gap-2"
+            className="px-4 py-2.5 text-sm font-medium text-white bg-stone-800 rounded hover:bg-stone-700 transition-colors inline-flex items-center gap-2 min-h-[44px]"
           >
             <span>{nextStep || workflowState.action}</span>
             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -341,7 +341,7 @@ export default function OpportunitySummaryPanel({
       </div>
 
       {/* BELOW FOLD */}
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <div className="max-w-4xl mx-auto space-y-6">
           {/* Overview — AI narrative + full solicitation description */}
           <div className="p-5 bg-white border border-stone-200 rounded-lg space-y-4">
@@ -526,8 +526,8 @@ export default function OpportunitySummaryPanel({
 
       {/* Attachment Selection Modal for SOW generation */}
       {showAttachmentPicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30">
+          <div className="bg-white rounded-t-xl sm:rounded-lg shadow-xl w-full sm:max-w-md overflow-hidden">
             <div className="px-5 py-4 border-b border-stone-200">
               <h3 className="text-sm font-semibold text-stone-900">Select Attachments for SOW</h3>
               <p className="text-xs text-stone-500 mt-1">Choose which documents to include in the SOW</p>
@@ -618,14 +618,14 @@ export default function OpportunitySummaryPanel({
         />
       )}
 
-      {/* Inline attachment viewer modal */}
+      {/* Inline attachment viewer modal — full screen on mobile */}
       {viewingAttachment && (
         <div
           className="fixed inset-0 z-50 flex flex-col bg-stone-900/80 backdrop-blur-sm"
           onClick={closeViewer}
         >
           <div
-            className="flex flex-col flex-1 m-6 rounded-xl overflow-hidden bg-white shadow-2xl"
+            className="flex flex-col flex-1 m-0 sm:m-6 rounded-none sm:rounded-xl overflow-hidden bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200 bg-stone-50 flex-shrink-0">
