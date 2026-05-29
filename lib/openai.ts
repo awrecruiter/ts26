@@ -65,6 +65,34 @@ export async function generateSOWSections(input: SOWGenerationInput): Promise<SO
     (parsedCompliance && parsedCompliance.length > 0)
   )
 
+  // Determine agency type for tone and deliverable format guidance
+  const agencyUpper = agency.toUpperCase()
+  const isDoD = /\b(DOD|ARMY|NAVY|MARINE|AIR FORCE|SPACE FORCE|DEFENSE|DLA|DCMA|DARPA|SOCOM|CENTCOM|INDOPACOM|NORTHCOM|EUCOM|TRANSCOM|JSOC|NAVSEA|NAVAIR|SPAWAR|PEO|AMC|USMC|USAF|DISA|MDA|NRO|DIA|NSA|PENTAGON|AFRL|ARL|ERDC|CERL|USACE|CORPS OF ENGINEERS)\b/i.test(agencyUpper)
+  const isDHS = /\b(DHS|HOMELAND|FEMA|CBP|ICE|TSA|USCG|SECRET SERVICE|CISA)\b/i.test(agencyUpper)
+  const isVA = /\b(VA\b|VETERANS AFFAIRS|VETERANS HEALTH|VHA|VBA)\b/i.test(agencyUpper)
+  const isHealthAgency = /\b(HHS|NIH|CDC|FDA|CMS|HRSA|SAMHSA|AHRQ)\b/i.test(agencyUpper)
+
+  // Agency-specific tone and deliverable guidance
+  let agencyToneGuidance: string
+  let deliverablesGuidance: string
+
+  if (isDoD) {
+    agencyToneGuidance = `This is a Department of Defense (DoD) contract. Use DoD acquisition language where appropriate: reference MIL-SPEC/MIL-STD standards if relevant, use terms like "Government-Furnished Equipment (GFE)", "Contracting Officer Representative (COR)", "Quality Assurance Surveillance Plan (QASP)", and "Contract Data Requirements List (CDRL)". Tone should be formal, precise, and compliance-focused.`
+    deliverablesGuidance = `Structure deliverables as Contract Data Requirements List (CDRL) items where applicable. Each deliverable should specify: the data item title, frequency (e.g., monthly, upon completion), submission format (electronic/hard copy), and recipient (COR or Contracting Officer). Use DoD-standard CDRL terminology where it applies.`
+  } else if (isDHS) {
+    agencyToneGuidance = `This is a Department of Homeland Security (DHS) contract. Reference DHS Acquisition Regulation (HSAR) requirements where applicable. Use terms like "Contracting Officer's Representative (COR)" and DHS security/clearance requirements if present. Tone should be security-conscious and operationally focused.`
+    deliverablesGuidance = `Use milestone-based deliverables with specific due dates or offsets from period of performance start. Each deliverable should specify the name, format, submission method, and acceptance criteria. Reference any required DHS reporting templates or systems if mentioned in the solicitation.`
+  } else if (isVA) {
+    agencyToneGuidance = `This is a Department of Veterans Affairs (VA) contract. Reference VA Acquisition Regulation (VAAR) requirements where applicable. Use terms like "COR (Contracting Officer's Representative)" and note HIPAA compliance for any work involving Veteran data or healthcare. Tone should be Veteran-centered and compliance-focused.`
+    deliverablesGuidance = `Use milestone-based deliverables. Highlight any deliverables involving Veteran data, PHI (Protected Health Information), or VA system access. Specify submission to COR with VA-required formats. Note HIPAA compliance requirements for any data deliverables.`
+  } else if (isHealthAgency) {
+    agencyToneGuidance = `This is a civilian health agency (HHS/NIH/CDC/FDA) contract. Reference Federal Acquisition Regulation (FAR) Part 12 or 15 as applicable. Use terms like "COR", "deliverables", and "milestone schedule" with relevant health or scientific terminology where warranted. Tone should be technically precise.`
+    deliverablesGuidance = `Use milestone-based deliverables tied to the research or program schedule. Each deliverable should specify: name, format, submission date or frequency, and COR acceptance. Reference any required federal health data standards (HL7, FHIR, etc.) only if mentioned in the solicitation.`
+  } else {
+    agencyToneGuidance = `This is a civilian federal agency contract. Reference Federal Acquisition Regulation (FAR) requirements as applicable. Use terms like "Contracting Officer's Representative (COR)", "Performance Work Statement (PWS)", and "Quality Assurance Surveillance Plan (QASP)" where relevant. Tone should be professional, clear, and action-oriented for a small business subcontractor.`
+    deliverablesGuidance = `Use milestone-based deliverables with specific due dates or offsets from period of performance start. Each deliverable should specify the name, format, submission method, and acceptance criteria. Avoid DoD-specific acronyms like CDRLs — use plain milestone language instead.`
+  }
+
   const contextBlock = [
     `Solicitation Number: ${solicitationNumber}`,
     `Title: ${title}`,
@@ -92,22 +120,28 @@ export async function generateSOWSections(input: SOWGenerationInput): Promise<SO
 
   const prompt = `You are writing a Statement of Work (SOW) for a prime contractor to send to a subcontractor. Write in plain, direct language a small business owner can act on — no jargon, no padding, no boilerplate.
 
+AGENCY CONTEXT:
+${agencyToneGuidance}
+
 OPPORTUNITY DETAILS:
 ${contextBlock}${parsedBlock}
+
+DELIVERABLES GUIDANCE:
+${deliverablesGuidance}
 
 Generate exactly 6 SOW sections in JSON. Each section must have:
 - "title": short heading (e.g. "1.0 Background")
 - "summary": one plain sentence — what this section covers (max 100 chars)
-- "bullets": 3–5 specific, actionable bullet points drawn directly from this solicitation's data
-- "details": 1–2 short paragraphs of plain prose. Every sentence must be specific to this solicitation. Omit anything unknown — never invent filler.
+- "bullets": 3–5 specific, actionable bullet points drawn directly from this solicitation's data. Apply agency-appropriate terminology per the AGENCY CONTEXT above.
+- "details": 1–2 short paragraphs of plain prose. Every sentence must be specific to this solicitation. Omit anything unknown — never invent filler. Apply agency-appropriate tone from the AGENCY CONTEXT above.
 
 Sections:
-1. 1.0 Background — what this contract is, who issued it, why it exists
-2. 2.0 Scope of Work — precisely what the subcontractor must do
-3. 3.0 Place of Performance — where work happens
-4. 4.0 Period of Performance — start/end dates and key deadlines
-5. 5.0 Deliverables — concrete outputs the subcontractor must deliver
-6. 6.0 Compliance — only the specific regulatory and certification requirements that apply here
+1. 1.0 Background — what this contract is, who issued it (include the specific agency name), why it exists, and its role in the agency's mission
+2. 2.0 Scope of Work — precisely what the subcontractor must do, referencing specific requirements from the solicitation
+3. 3.0 Place of Performance — where work happens, including any remote/on-site split and travel requirements if stated
+4. 4.0 Period of Performance — start/end dates, key milestones, and the response deadline of ${responseDeadline}
+5. 5.0 Deliverables — concrete outputs following the DELIVERABLES GUIDANCE above; be specific to this solicitation
+6. 6.0 Compliance — only the specific regulatory and certification requirements that apply to this agency and NAICS code; do not list generic FAR clauses unless they appear in the solicitation data
 
 Return ONLY a valid JSON array of 6 objects. No markdown, no explanation.`
 
@@ -115,7 +149,7 @@ Return ONLY a valid JSON array of 6 objects. No markdown, no explanation.`
     model: 'gpt-4o',
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.3,
-    max_tokens: 3000,
+    max_tokens: 4000,
     response_format: { type: 'json_object' },
   })
 

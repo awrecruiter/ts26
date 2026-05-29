@@ -403,16 +403,20 @@ export function SOWPDF({
     day: 'numeric',
   })
 
-  // Split sections: first 5 are "main" content sections; the rest are data (attachments, FAR, etc.)
-  const mainSections = sections.slice(0, 5)
-  const dataSections = sections.slice(5)
-
-  // Find deliverables and compliance sections by title keyword
+  // Find sections by title keyword — covers both AI-generated and rule-based titles
   const deliverablesSection = sections.find(s => s.title.toLowerCase().includes('deliverable'))
   const complianceSection = sections.find(s => s.title.toLowerCase().includes('compliance'))
   const scopeSection = sections.find(s => s.title.toLowerCase().includes('scope') || s.title.includes('2.0'))
   const periodSection = sections.find(s => s.title.toLowerCase().includes('period') || s.title.includes('4.0'))
+  const placeSection = sections.find(s => s.title.toLowerCase().includes('place') || s.title.includes('3.0'))
   const backgroundSection = sections.find(s => s.title.toLowerCase().includes('background') || s.title.includes('1.0'))
+
+  // Safe bullet accessors
+  const periodBullets = (periodSection?.bullets || []).filter(Boolean)
+  const placeBullets = (placeSection?.bullets || []).filter(Boolean)
+  const deliverablesBullets = (deliverablesSection?.bullets || []).filter(Boolean)
+  const scopeBullets = (scopeSection?.bullets || []).filter(Boolean)
+  const complianceBullets = (complianceSection?.bullets || []).filter(Boolean)
 
   // Agency decomposed
   const agencyParts = opportunity.agency ? opportunity.agency.split('.').filter(Boolean) : []
@@ -490,40 +494,47 @@ export function SOWPDF({
           </View>
         </View>
 
-        {/* Section 1: What We're Providing */}
+        {/* Section 1: Scope of Work */}
         <View style={styles.section}>
-          <SectionHeader num={1} title="WHAT WE'RE PROVIDING" />
+          <SectionHeader num={1} title="SCOPE OF WORK" />
           <View style={styles.sectionDivider} />
-          {(scopeSection?.bullets || backgroundSection?.bullets || []).slice(0, 4).map((b, i) => (
+          {(scopeBullets.length > 0 ? scopeBullets : (backgroundSection?.bullets || [])).slice(0, 5).map((b, i) => (
             <Bullet key={i} text={b} />
           ))}
-          {backgroundSection?.summary && (
+          {backgroundSection?.summary && scopeBullets.length === 0 && (
             <Text style={styles.bodyText}>
               Background: {backgroundSection.summary}
             </Text>
           )}
         </View>
 
-        {/* Section 2: Timeline & Location */}
+        {/* Section 2: Place of Performance */}
         <View style={styles.section} wrap={false}>
-          <SectionHeader num={2} title="TIMELINE & LOCATION" />
+          <SectionHeader num={2} title="PLACE OF PERFORMANCE" />
           <View style={styles.sectionDivider} />
           <View style={styles.infoLine}>
             <Text style={styles.infoLineLabel}>Location</Text>
             <Text style={styles.infoLineValue}>{opportunity.placeOfPerformance}</Text>
           </View>
-          {periodSection?.summary && (
-            <View style={styles.infoLine}>
-              <Text style={styles.infoLineLabel}>Period</Text>
-              <Text style={styles.infoLineValue}>{periodSection.summary}</Text>
-            </View>
+          {/* Render structured place-of-performance bullets from the generated section */}
+          {placeBullets.slice(0, 4).map((b, i) => (
+            <Bullet key={i} text={b} />
+          ))}
+          {/* If no place bullets, show the details prose */}
+          {placeBullets.length === 0 && placeSection?.details && (
+            <Text style={styles.bodyText}>{placeSection.details}</Text>
           )}
+        </View>
 
-          {/* Milestone table */}
+        {/* Section 3: Period of Performance */}
+        <View style={styles.section} wrap={false}>
+          <SectionHeader num={3} title="PERIOD OF PERFORMANCE" />
+          <View style={styles.sectionDivider} />
+          {/* Milestone table — sourced from actual section bullets */}
           <View style={styles.table}>
             <View style={styles.tableHeaderRow}>
-              <Text style={styles.tableCellHeader}>Milestone</Text>
-              <Text style={styles.tableCellHeaderNarrow}>Date</Text>
+              <Text style={styles.tableCellHeader}>Milestone / Requirement</Text>
+              <Text style={styles.tableCellHeaderNarrow}>Date / Timing</Text>
             </View>
             <View style={styles.tableRow}>
               <Text style={styles.tableCell}>Response due</Text>
@@ -535,59 +546,48 @@ export function SOWPDF({
                 <Text style={styles.tableCellNarrow}>{opportunity.postedDate}</Text>
               </View>
             )}
-            <View style={styles.tableRow}>
-              <Text style={styles.tableCell}>Certification data (CDRLs)</Text>
-              <Text style={styles.tableCellNarrow}>20 days pre-delivery</Text>
-            </View>
-            {(periodSection?.bullets || []).slice(0, 2).map((b, i) => (
-              <View key={i} style={i % 2 === 0 ? styles.tableRowAlt : styles.tableRow}>
+            {/* All period-of-performance bullets from the AI/rule-based section */}
+            {periodBullets.map((b, i) => (
+              <View key={i} style={(i + (opportunity.postedDate ? 2 : 1)) % 2 === 0 ? styles.tableRowAlt : styles.tableRow}>
                 <Text style={styles.tableCell}>{b}</Text>
                 <Text style={styles.tableCellNarrow}>Per solicitation</Text>
               </View>
             ))}
           </View>
+          {/* Period details prose if bullets are sparse */}
+          {periodBullets.length === 0 && periodSection?.details && (
+            <Text style={[styles.bodyText, { marginTop: 6 }]}>{periodSection.details}</Text>
+          )}
         </View>
 
-        {/* Section 3: Deliverables */}
+        {/* Section 4: Deliverables */}
         <View style={styles.section} wrap={false}>
-          <SectionHeader num={3} title="DELIVERABLES" />
+          <SectionHeader num={4} title="DELIVERABLES" />
           <View style={styles.sectionDivider} />
           <View style={styles.table}>
             <View style={styles.tableHeaderRow}>
               <Text style={styles.tableCellHeader}>Deliverable</Text>
               <Text style={styles.tableCellHeaderNarrow}>Due</Text>
             </View>
-            <View style={styles.tableRow}>
-              <Text style={styles.tableCell}>{opportunity.title}</Text>
-              <Text style={styles.tableCellNarrow}>Per contract schedule</Text>
-            </View>
-            <View style={styles.tableRowAlt}>
-              <Text style={styles.tableCell}>Certification data (CDRLs)</Text>
-              <Text style={styles.tableCellNarrow}>20 days pre-delivery</Text>
-            </View>
-            {(deliverablesSection?.bullets || []).slice(0, 4).map((b, i) => (
-              <View key={i} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
-                <Text style={styles.tableCell}>{b}</Text>
-                <Text style={styles.tableCellNarrow}>Per solicitation</Text>
+            {/* Deliverables from the structured section bullets */}
+            {deliverablesBullets.length > 0 ? (
+              deliverablesBullets.slice(0, 6).map((b, i) => (
+                <View key={i} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
+                  <Text style={styles.tableCell}>{b}</Text>
+                  <Text style={styles.tableCellNarrow}>Per solicitation</Text>
+                </View>
+              ))
+            ) : (
+              /* Fallback: opportunity title as primary deliverable */
+              <View style={styles.tableRow}>
+                <Text style={styles.tableCell}>{opportunity.title}</Text>
+                <Text style={styles.tableCellNarrow}>Per contract schedule</Text>
               </View>
-            ))}
+            )}
           </View>
-        </View>
-
-        {/* Section 4: Key Requirements */}
-        <View style={styles.section} wrap={false}>
-          <SectionHeader num={4} title="KEY REQUIREMENTS" />
-          <View style={styles.sectionDivider} />
-          {(scopeSection?.bullets || []).slice(0, 5).map((b, i) => (
-            <Bullet key={i} text={b} />
-          ))}
-          {(!scopeSection?.bullets?.length) && (
-            <>
-              <Bullet text={`Must meet all ${agencyName} quality standards and inspection requirements`} />
-              <Bullet text="Item Unique Identification (IUID) labeling required for all parts" />
-              <Bullet text="Comply with Buy American Act provisions as specified in solicitation" />
-              <Bullet text="First Article Testing (FAT) approval required prior to production" />
-            </>
+          {/* Deliverables details if no bullets */}
+          {deliverablesBullets.length === 0 && deliverablesSection?.details && (
+            <Text style={[styles.bodyText, { marginTop: 6 }]}>{deliverablesSection.details}</Text>
           )}
         </View>
 
@@ -595,39 +595,32 @@ export function SOWPDF({
         <View style={styles.section} wrap={false}>
           <SectionHeader num={5} title="COMPLIANCE REFERENCE" />
           <View style={styles.sectionDivider} />
-          <View style={styles.table}>
-            <View style={styles.tableHeaderRow}>
-              <Text style={[styles.tableCellHeader, { width: 130, flex: undefined }]}>Regulation</Text>
-              <Text style={styles.tableCellHeader}>What it means</Text>
+          {complianceBullets.length > 0 ? (
+            <View style={styles.table}>
+              <View style={styles.tableHeaderRow}>
+                <Text style={[styles.tableCellHeader, { width: 130, flex: undefined }]}>Regulation / Requirement</Text>
+                <Text style={styles.tableCellHeader}>Details</Text>
+              </View>
+              {complianceBullets.slice(0, 6).map((b, i) => {
+                const parts = b.split(':')
+                const reg = parts[0]?.trim()
+                const desc = parts.slice(1).join(':').trim() || b
+                return (
+                  <View key={i} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
+                    <Text style={[styles.tableCell, { width: 130, flex: undefined, fontFamily: 'Helvetica-Bold', fontSize: 7.5 }]}>{reg}</Text>
+                    <Text style={styles.tableCell}>{desc}</Text>
+                  </View>
+                )
+              })}
             </View>
-            {(complianceSection?.bullets || []).slice(0, 6).map((b, i) => {
-              const parts = b.split(':')
-              const reg = parts[0]?.trim()
-              const desc = parts.slice(1).join(':').trim() || b
-              return (
-                <View key={i} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
-                  <Text style={[styles.tableCell, { width: 130, flex: undefined, fontFamily: 'Helvetica-Bold', fontSize: 7.5 }]}>{reg}</Text>
-                  <Text style={styles.tableCell}>{desc}</Text>
-                </View>
-              )
-            })}
-            {(!complianceSection?.bullets?.length) && (
-              <>
-                <View style={styles.tableRow}>
-                  <Text style={[styles.tableCell, { width: 130, flex: undefined, fontFamily: 'Helvetica-Bold', fontSize: 7.5 }]}>FAR 52.212-1</Text>
-                  <Text style={styles.tableCell}>Instructions to Offerors — Commercial Products</Text>
-                </View>
-                <View style={styles.tableRowAlt}>
-                  <Text style={[styles.tableCell, { width: 130, flex: undefined, fontFamily: 'Helvetica-Bold', fontSize: 7.5 }]}>DFARS 252.225-7001</Text>
-                  <Text style={styles.tableCell}>Buy American Act — Balance of Payments Program</Text>
-                </View>
-                <View style={styles.tableRow}>
-                  <Text style={[styles.tableCell, { width: 130, flex: undefined, fontFamily: 'Helvetica-Bold', fontSize: 7.5 }]}>MIL-STD-130</Text>
-                  <Text style={styles.tableCell}>Item Unique Identification (IUID) marking requirements</Text>
-                </View>
-              </>
-            )}
-          </View>
+          ) : (
+            /* No compliance data — show details prose if present, otherwise note */
+            complianceSection?.details ? (
+              <Text style={styles.bodyText}>{complianceSection.details}</Text>
+            ) : (
+              <Text style={styles.bodyText}>Refer to solicitation for applicable FAR clauses and compliance requirements.</Text>
+            )
+          )}
         </View>
 
         {/* Prepared By footer */}
