@@ -1,9 +1,15 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
-import { findSubcontractorsForOpportunity } from '@/lib/google-places'
+import { findSubcontractorsForOpportunity, geocodePlaceOfPerformance } from '@/lib/google-places'
 import { searchSamEntities, samEntityToSubcontractor } from '@/lib/samgov'
-import { isProductSolicitation, extractStateCode, extractPlaceOfPerformance, extractCity } from '@/lib/opportunity-classification'
+import {
+  isProductSolicitation,
+  extractStateCode,
+  extractPlaceOfPerformance,
+  extractCity,
+  suggestSearchRadius,
+} from '@/lib/opportunity-classification'
 
 /**
  * Normalize phone to digits only for comparison.
@@ -40,7 +46,6 @@ export async function POST(
 
     // Parse optional radius from request body
     const body = await request.json().catch(() => ({}))
-    const radiusMiles: 25 | 50 | 100 | 250 = [25, 50, 100, 250].includes(body.radiusMiles) ? body.radiusMiles : 50
 
     // Get opportunity details
     const opportunity = await prisma.opportunity.findUnique({
@@ -83,9 +88,30 @@ export async function POST(
     const city = extractCity(opportunity.rawData)
     const placeOfPerformance = extractPlaceOfPerformance(opportunity.rawData, opportunity.state)
 
+    // Determine effective radius:
+    // - If caller passed an explicit radiusMiles, use it.
+    // - Otherwise auto-suggest based on city density (urban tighter, rural wider).
+    // - Product solicitations always use 250mi (national).
+    const suggestedRadius = suggestSearchRadius(city, stateCode)
+    const radiusMiles: 25 | 50 | 100 | 250 = classification.isProduct
+      ? 250
+      : ([25, 50, 100, 250].includes(body.radiusMiles) ? body.radiusMiles : suggestedRadius)
+
     // For services: use specific location. For products: use broad "United States"
     const searchLocation = classification.isProduct ? 'United States' : placeOfPerformance
-    console.log(`[Discover] Search location: "${searchLocation}" (stateCode: ${stateCode})`)
+    console.log(`[Discover] Search location: "${searchLocation}" (stateCode: ${stateCode}, radiusMiles: ${radiusMiles}, suggested: ${suggestedRadius})`)
+
+    // Geocode the place of performance once — used for per-vendor distance computation.
+    // Skip for product solicitations (national search, distance irrelevant).
+    let popCoords: { lat: number; lng: number } | null = null
+    if (!classification.isProduct && placeOfPerformance && isApiConfigured) {
+      popCoords = await geocodePlaceOfPerformance(placeOfPerformance)
+      if (popCoords) {
+        console.log(`[Discover] POP geocoded: ${placeOfPerformance} → (${popCoords.lat.toFixed(4)}, ${popCoords.lng.toFixed(4)})`)
+      } else {
+        console.log(`[Discover] POP geocode failed for "${placeOfPerformance}" — distance will not be computed`)
+      }
+    }
 
     // Build dedup sets from existing subcontractors
     const existingNames = new Set(
@@ -151,6 +177,7 @@ export async function POST(
         title: opportunity.title,
         radiusMiles: classification.isProduct ? 250 : radiusMiles,
         city: classification.isProduct ? null : city,
+        popCoords: classification.isProduct ? null : popCoords,
       })
 
       if (apiError) {
@@ -174,6 +201,7 @@ export async function POST(
           businessStatus: vendor.businessStatus || null,
           placeId: vendor.placeId || null,
           location: vendor.location || null,
+          distanceKm: vendor.distanceKm ?? null,
           source: 'google_places',
         })
       }
@@ -231,7 +259,7 @@ export async function POST(
       return NextResponse.json({
         message: 'No new vendors found for this opportunity.',
         added: 0,
-        geography: { city, state: stateCode, radiusMiles },
+        geography: { city, state: stateCode, radiusMiles, suggestedRadius },
         ...(googlePlacesApiError && {
           googlePlacesStatus: googlePlacesApiError,
           hint: googlePlacesApiError === 'REQUEST_DENIED'
@@ -255,7 +283,7 @@ export async function POST(
       message: `Found ${result.count} vendors (${googleCount} Google Maps, ${samCount} SAM.gov)`,
       added: result.count,
       sources: { google: googleCount, sam: samCount },
-      geography: { city, state: stateCode, radiusMiles },
+      geography: { city, state: stateCode, radiusMiles, suggestedRadius },
       ...(samWarning && { samWarning }),
     })
   } catch (error) {
