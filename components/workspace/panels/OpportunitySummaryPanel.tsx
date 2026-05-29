@@ -637,7 +637,7 @@ export default function OpportunitySummaryPanel({
               </div>
               <div className="flex items-center gap-2 flex-shrink-0 ml-4">
                 <a
-                  href={`/api/opportunities/${opportunity.id}/attachments/${viewingAttachment.id}/proxy`}
+                  href={`/api/opportunities/${opportunity.id}/attachments/${viewingAttachment.id}/proxy?download=1`}
                   download
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-stone-700 bg-white border border-stone-300 rounded hover:bg-stone-50 transition-colors"
                 >
@@ -656,11 +656,33 @@ export default function OpportunitySummaryPanel({
                 </button>
               </div>
             </div>
-            <iframe
-              src={`/api/opportunities/${opportunity.id}/attachments/${viewingAttachment.id}/proxy`}
-              className="flex-1 w-full border-0"
-              title={viewingAttachment.currentName}
-            />
+            {isPreviewable(viewingAttachment.currentName) ? (
+              <iframe
+                src={`/api/opportunities/${opportunity.id}/attachments/${viewingAttachment.id}/proxy`}
+                className="flex-1 w-full border-0"
+                title={viewingAttachment.currentName}
+              />
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center gap-4 bg-stone-50">
+                <svg className="h-12 w-12 text-stone-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+                <div className="text-center space-y-1">
+                  <p className="text-sm font-medium text-stone-700">Preview not available</p>
+                  <p className="text-xs text-stone-400">This file type cannot be displayed in the browser. Download it to view.</p>
+                </div>
+                <a
+                  href={`/api/opportunities/${opportunity.id}/attachments/${viewingAttachment.id}/proxy?download=1`}
+                  download
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded hover:bg-stone-700 transition-colors"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download {viewingAttachment.currentName}
+                </a>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -854,7 +876,7 @@ function AttachmentRow({
             </button>
             {/* Download */}
             <a
-              href={`/api/opportunities/${opportunityId}/attachments/${attachment.id}/proxy`}
+              href={`/api/opportunities/${opportunityId}/attachments/${attachment.id}/proxy?download=1`}
               download
               className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded transition-colors"
               title="Download"
@@ -895,6 +917,16 @@ function AttachmentRow({
 // ─── Helper Components ────────────────────────────────────────────────────────
 
 // ─── Helper Functions ─────────────────────────────────────────────────────────
+
+/**
+ * Returns true for file types the browser can render inline inside an iframe.
+ * DOCX, XLSX, PPTX, DOC, XLS etc. cannot be displayed — show a fallback instead.
+ */
+function isPreviewable(filename: string): boolean {
+  const ext = filename.split('.').pop()?.toLowerCase().split('?')[0] ?? ''
+  const PREVIEWABLE = new Set(['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'txt'])
+  return PREVIEWABLE.has(ext)
+}
 
 function getExtension(filename: string): string {
   const lastDot = filename.lastIndexOf('.')
