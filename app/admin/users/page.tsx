@@ -88,36 +88,36 @@ export default function AdminUsersPage() {
   const getRoleBadgeClass = (role: string) => {
     switch (role) {
       case 'ADMIN':
-        return 'bg-red-100 text-red-800'
+        return 'bg-stone-100 text-stone-900'
       case 'USER':
-        return 'bg-blue-100 text-blue-800'
+        return 'bg-stone-200 text-stone-800'
       case 'VIEWER':
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-stone-100 text-stone-800'
       default:
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-stone-100 text-stone-800'
     }
   }
 
   if (status === 'loading' || (status === 'authenticated' && session?.user?.role !== 'ADMIN')) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
+          <p className="mt-4 text-stone-600">Loading...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-stone-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
-              <p className="mt-2 text-sm text-gray-600">
+              <h1 className="text-3xl font-bold text-stone-900">User Management</h1>
+              <p className="mt-2 text-sm text-stone-600">
                 Manage user accounts and permissions
               </p>
             </div>
@@ -129,17 +129,17 @@ export default function AdminUsersPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {loading && (
           <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <p className="mt-4 text-gray-600">Loading users...</p>
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
+            <p className="mt-4 text-stone-600">Loading users...</p>
           </div>
         )}
 
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-red-800">{error}</p>
+          <div className="mb-4 p-4 bg-stone-100 border border-stone-400 rounded-md">
+            <p className="text-stone-900">{error}</p>
             <button
               onClick={() => { setError(''); fetchUsers(); }}
-              className="mt-2 text-sm text-red-600 underline"
+              className="mt-2 text-sm text-stone-900 underline"
             >
               Retry
             </button>
@@ -148,39 +148,39 @@ export default function AdminUsersPage() {
 
         {!loading && !error && (
           <div className="bg-white shadow-sm rounded-lg overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-stone-200">
+              <thead className="bg-stone-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
                     User
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
                     Role
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
                     Activity
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">
                     Joined
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-right text-xs font-medium text-stone-500 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-stone-200">
                 {users.map((user) => (
                   <tr key={user.id} className={updatingUserId === user.id ? 'opacity-50' : ''}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
-                        <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold">
+                        <div className="h-10 w-10 rounded-full bg-stone-800 flex items-center justify-center text-white font-semibold">
                           {user.name?.[0]?.toUpperCase() || user.email[0].toUpperCase()}
                         </div>
                         <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">
+                          <div className="text-sm font-medium text-stone-900">
                             {user.name || 'No name'}
                           </div>
-                          <div className="text-sm text-gray-500">{user.email}</div>
+                          <div className="text-sm text-stone-500">{user.email}</div>
                         </div>
                       </div>
                     </td>
@@ -198,11 +198,11 @@ export default function AdminUsersPage() {
                         <option value="ADMIN">Admin</option>
                       </select>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-500">
                       <div>{user._count?.bids || 0} bids</div>
                       <div>{user._count?.generatedSOWs || 0} SOWs</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-stone-500">
                       {new Date(user.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -210,7 +210,7 @@ export default function AdminUsersPage() {
                         <button
                           onClick={() => deleteUser(user.id)}
                           disabled={updatingUserId === user.id}
-                          className="text-red-600 hover:text-red-900 disabled:opacity-50"
+                          className="text-stone-900 hover:text-stone-700 disabled:opacity-50"
                         >
                           Delete
                         </button>
@@ -223,7 +223,7 @@ export default function AdminUsersPage() {
 
             {users.length === 0 && (
               <div className="text-center py-12">
-                <p className="text-gray-500">No users found</p>
+                <p className="text-stone-500">No users found</p>
               </div>
             )}
           </div>

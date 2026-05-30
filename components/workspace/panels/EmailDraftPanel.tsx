@@ -193,8 +193,11 @@ export default function EmailDraftPanel({
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
+  const [toError, setToError] = useState<string | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState(templateType)
   const [previewAttachment, setPreviewAttachment] = useState<RichAttachment | null>(null)
+
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
   // Local attachment selection state — used when parent doesn't control it
   const [localSelected, setLocalSelected] = useState<Set<string>>(() =>
@@ -256,6 +259,14 @@ export default function EmailDraftPanel({
 
   const handleSend = async () => {
     if (!to || !subject || !body) return
+
+    // Validate recipient email format before sending
+    if (!EMAIL_REGEX.test(to.trim())) {
+      setToError('Enter a valid email address')
+      return
+    }
+    setToError(null)
+
     if (!onSend) {
       const mailtoUrl = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
       window.open(mailtoUrl)
@@ -264,7 +275,7 @@ export default function EmailDraftPanel({
 
     setSending(true)
     try {
-      await onSend({ to, subject, body })
+      await onSend({ to: to.trim(), subject, body })
     } finally {
       setSending(false)
     }
@@ -319,16 +330,22 @@ export default function EmailDraftPanel({
           )}
 
           {/* Email form */}
-          <div className="bg-white border border-stone-200 rounded-lg overflow-hidden">
+          <div className={`bg-white border rounded-lg overflow-hidden ${toError ? 'border-red-300' : 'border-stone-200'}`}>
             <div className="px-4 py-3 border-b border-stone-100 flex items-center gap-3">
               <span className="text-xs text-stone-400 w-12">To</span>
               <input
                 type="email"
                 value={to}
-                onChange={(e) => setTo(e.target.value)}
+                onChange={(e) => {
+                  setTo(e.target.value)
+                  if (toError) setToError(null)
+                }}
                 placeholder="recipient@example.com"
                 className="flex-1 text-sm text-stone-800 bg-transparent border-0 outline-none placeholder-stone-300"
               />
+              {toError && (
+                <span className="text-xs text-red-500 flex-shrink-0">{toError}</span>
+              )}
             </div>
             <div className="px-4 py-3 border-b border-stone-100 flex items-center gap-3">
               <span className="text-xs text-stone-400 w-12">Subject</span>
@@ -498,7 +515,7 @@ export default function EmailDraftPanel({
           <div className="flex gap-3">
             <button
               onClick={handleSend}
-              disabled={sending || !to || !subject || !body}
+              disabled={sending || !to || !EMAIL_REGEX.test(to.trim()) || !subject || !body}
               className="flex-1 px-4 py-3 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {sending ? 'Sending...' : 'Send Email'}

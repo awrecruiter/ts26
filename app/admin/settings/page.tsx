@@ -61,8 +61,8 @@ export default function AdminSettingsPage() {
     <span
       className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
         configured
-          ? 'bg-green-100 text-green-800'
-          : 'bg-yellow-100 text-yellow-800'
+          ? 'bg-stone-100 text-stone-800'
+          : 'bg-stone-200 text-stone-700'
       }`}
     >
       {configured ? 'Configured' : 'Not Configured'}
@@ -71,23 +71,23 @@ export default function AdminSettingsPage() {
 
   if (status === 'loading' || (status === 'authenticated' && session?.user?.role !== 'ADMIN')) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
+          <p className="mt-4 text-stone-600">Loading...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-stone-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">System Settings</h1>
-            <p className="mt-2 text-sm text-gray-600">
+            <h1 className="text-3xl font-bold text-stone-900">System Settings</h1>
+            <p className="mt-2 text-sm text-stone-600">
               View system configuration and integration status
             </p>
           </div>
@@ -98,17 +98,17 @@ export default function AdminSettingsPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {loading && (
           <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <p className="mt-4 text-gray-600">Loading settings...</p>
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
+            <p className="mt-4 text-stone-600">Loading settings...</p>
           </div>
         )}
 
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-red-800">{error}</p>
+          <div className="mb-4 p-4 bg-stone-100 border border-stone-400 rounded-md">
+            <p className="text-stone-900">{error}</p>
             <button
               onClick={() => { setError(''); fetchSettings(); }}
-              className="mt-2 text-sm text-red-600 underline"
+              className="mt-2 text-sm text-stone-900 underline"
             >
               Retry
             </button>
@@ -119,28 +119,28 @@ export default function AdminSettingsPage() {
           <div className="space-y-6">
             {/* API Integrations */}
             <div className="bg-white shadow-sm rounded-lg overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">API Integrations</h2>
+              <div className="px-6 py-4 border-b border-stone-200">
+                <h2 className="text-lg font-semibold text-stone-900">API Integrations</h2>
               </div>
-              <div className="divide-y divide-gray-200">
+              <div className="divide-y divide-stone-200">
                 <div className="px-6 py-4 flex justify-between items-center">
                   <div>
-                    <h3 className="text-sm font-medium text-gray-900">SAM.gov API</h3>
-                    <p className="text-sm text-gray-500">Federal opportunities data source</p>
+                    <h3 className="text-sm font-medium text-stone-900">SAM.gov API</h3>
+                    <p className="text-sm text-stone-500">Federal opportunities data source</p>
                   </div>
                   <StatusIndicator configured={settings.samApiKey} />
                 </div>
                 <div className="px-6 py-4 flex justify-between items-center">
                   <div>
-                    <h3 className="text-sm font-medium text-gray-900">USASpending API</h3>
-                    <p className="text-sm text-gray-500">Historical contract pricing data</p>
+                    <h3 className="text-sm font-medium text-stone-900">USASpending API</h3>
+                    <p className="text-sm text-stone-500">Historical contract pricing data</p>
                   </div>
                   <StatusIndicator configured={settings.usaSpendingEnabled} />
                 </div>
                 <div className="px-6 py-4 flex justify-between items-center">
                   <div>
-                    <h3 className="text-sm font-medium text-gray-900">Google Places API</h3>
-                    <p className="text-sm text-gray-500">Subcontractor discovery</p>
+                    <h3 className="text-sm font-medium text-stone-900">Google Places API</h3>
+                    <p className="text-sm text-stone-500">Subcontractor discovery</p>
                   </div>
                   <StatusIndicator configured={settings.googlePlacesApiKey} />
                 </div>
@@ -149,30 +149,30 @@ export default function AdminSettingsPage() {
 
             {/* Infrastructure */}
             <div className="bg-white shadow-sm rounded-lg overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">Infrastructure</h2>
+              <div className="px-6 py-4 border-b border-stone-200">
+                <h2 className="text-lg font-semibold text-stone-900">Infrastructure</h2>
               </div>
-              <div className="divide-y divide-gray-200">
+              <div className="divide-y divide-stone-200">
                 <div className="px-6 py-4 flex justify-between items-center">
                   <div>
-                    <h3 className="text-sm font-medium text-gray-900">Database</h3>
-                    <p className="text-sm text-gray-500">PostgreSQL connection</p>
+                    <h3 className="text-sm font-medium text-stone-900">Database</h3>
+                    <p className="text-sm text-stone-500">PostgreSQL connection</p>
                   </div>
                   <StatusIndicator configured={settings.databaseConnected} />
                 </div>
                 <div className="px-6 py-4 flex justify-between items-center">
                   <div>
-                    <h3 className="text-sm font-medium text-gray-900">Blob Storage</h3>
-                    <p className="text-sm text-gray-500">Vercel Blob for document storage</p>
+                    <h3 className="text-sm font-medium text-stone-900">Blob Storage</h3>
+                    <p className="text-sm text-stone-500">Vercel Blob for document storage</p>
                   </div>
                   <StatusIndicator configured={settings.blobStorageConfigured} />
                 </div>
                 <div className="px-6 py-4 flex justify-between items-center">
                   <div>
-                    <h3 className="text-sm font-medium text-gray-900">Email Provider</h3>
-                    <p className="text-sm text-gray-500">Outbound email service</p>
+                    <h3 className="text-sm font-medium text-stone-900">Email Provider</h3>
+                    <p className="text-sm text-stone-500">Outbound email service</p>
                   </div>
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-stone-100 text-stone-800">
                     {settings.emailProvider || 'Not Configured'}
                   </span>
                 </div>
@@ -181,21 +181,21 @@ export default function AdminSettingsPage() {
 
             {/* Cron Jobs */}
             <div className="bg-white shadow-sm rounded-lg overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">Scheduled Jobs</h2>
+              <div className="px-6 py-4 border-b border-stone-200">
+                <h2 className="text-lg font-semibold text-stone-900">Scheduled Jobs</h2>
               </div>
               {cronJobs.length > 0 ? (
-                <div className="divide-y divide-gray-200">
+                <div className="divide-y divide-stone-200">
                   {cronJobs.map((job) => (
                     <div key={job.id} className="px-6 py-4">
                       <div className="flex justify-between items-start">
                         <div>
-                          <h3 className="text-sm font-medium text-gray-900">{job.name}</h3>
-                          <p className="text-sm text-gray-500">
+                          <h3 className="text-sm font-medium text-stone-900">{job.name}</h3>
+                          <p className="text-sm text-stone-500">
                             Last run: {job.lastRunAt ? new Date(job.lastRunAt).toLocaleString() : 'Never'}
                           </p>
                           {job.lastRunStatus && (
-                            <p className="text-sm text-gray-500">
+                            <p className="text-sm text-stone-500">
                               Status: {job.lastRunStatus}
                             </p>
                           )}
@@ -203,8 +203,8 @@ export default function AdminSettingsPage() {
                         <span
                           className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                             job.enabled
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-gray-100 text-gray-800'
+                              ? 'bg-stone-100 text-stone-800'
+                              : 'bg-stone-200 text-stone-700'
                           }`}
                         >
                           {job.enabled ? 'Enabled' : 'Disabled'}
@@ -214,7 +214,7 @@ export default function AdminSettingsPage() {
                   ))}
                 </div>
               ) : (
-                <div className="px-6 py-8 text-center text-gray-500">
+                <div className="px-6 py-8 text-center text-stone-500">
                   No scheduled jobs configured
                 </div>
               )}
@@ -222,18 +222,18 @@ export default function AdminSettingsPage() {
 
             {/* Environment Info */}
             <div className="bg-white shadow-sm rounded-lg overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">Environment</h2>
+              <div className="px-6 py-4 border-b border-stone-200">
+                <h2 className="text-lg font-semibold text-stone-900">Environment</h2>
               </div>
               <div className="px-6 py-4">
                 <dl className="grid grid-cols-2 gap-4">
                   <div>
-                    <dt className="text-sm font-medium text-gray-500">Environment</dt>
-                    <dd className="text-sm text-gray-900">{process.env.NODE_ENV}</dd>
+                    <dt className="text-sm font-medium text-stone-500">Environment</dt>
+                    <dd className="text-sm text-stone-900">{process.env.NODE_ENV}</dd>
                   </div>
                   <div>
-                    <dt className="text-sm font-medium text-gray-500">Version</dt>
-                    <dd className="text-sm text-gray-900">1.0.0</dd>
+                    <dt className="text-sm font-medium text-stone-500">Version</dt>
+                    <dd className="text-sm text-stone-900">1.0.0</dd>
                   </div>
                 </dl>
               </div>

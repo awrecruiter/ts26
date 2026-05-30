@@ -153,7 +153,7 @@ export default function OpportunityBriefCard({
       </div>
 
       {/* Key Deliverables */}
-      {brief.keyDeliverables.length > 0 && (
+      {(brief.keyDeliverables?.length ?? 0) > 0 && (
         <div className="mb-4">
           <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">
             Key Deliverables
@@ -176,6 +176,7 @@ export default function OpportunityBriefCard({
 
       {/* Period + Value row */}
       <div className="flex flex-wrap gap-4 mb-4 text-sm">
+        {brief.periodOfPerformance && (
         <div>
           <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide block mb-0.5">
             Period
@@ -189,6 +190,7 @@ export default function OpportunityBriefCard({
               </span>
             )}
         </div>
+        )}
         {brief.estimatedValue && (
           <div>
             <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide block mb-0.5">
@@ -208,7 +210,7 @@ export default function OpportunityBriefCard({
       </div>
 
       {/* Heads Up */}
-      {brief.headsUp.length > 0 && (
+      {(brief.headsUp?.length ?? 0) > 0 && (
         <div className="border border-amber-200 bg-amber-50 rounded p-3">
           <h3 className="text-xs font-semibold text-amber-800 uppercase tracking-wide mb-2">
             Heads Up

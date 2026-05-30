@@ -16,7 +16,9 @@ export async function GET(req: Request) {
     const search = searchParams.get('search')
     const naicsCode = searchParams.get('naics')
     const agency = searchParams.get('agency')
-    const status = searchParams.get('status') || 'ACTIVE'
+    const VALID_STATUSES = ['ACTIVE', 'EXPIRED', 'AWARDED', 'CANCELLED']
+    const rawStatus = searchParams.get('status')
+    const status = rawStatus && VALID_STATUSES.includes(rawStatus) ? rawStatus : (rawStatus ? null : 'ACTIVE')
 
     // Advanced filter params
     const hasSOW = searchParams.get('hasSOW')           // 'yes' | 'no' | null

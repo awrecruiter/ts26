@@ -26,9 +26,8 @@ export default function DashboardPage() {
   const [pendingSOWs, setPendingSOWs] = useState<any[]>([])
   const [opportunitiesInProgress, setOpportunitiesInProgress] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [fetchingSAM, setFetchingSAM] = useState(false)
-  const [fetchError, setFetchError] = useState<string | null>(null)
-  const [editingCosts, setEditingCosts] = useState<Record<string, string>>({})
+  const [fetching, setFetching] = useState(false)
+  const [fetchResult, setFetchResult] = useState<string | null>(null)
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -37,6 +36,25 @@ export default function DashboardPage() {
       fetchDashboardData()
     }
   }, [status])
+
+  const handleFetchOpportunities = async () => {
+    setFetching(true)
+    setFetchResult(null)
+    try {
+      const res = await fetch('/api/opportunities/fetch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 50, posted_days_ago: 90 }) })
+      const data = await res.json()
+      if (res.ok) {
+        setFetchResult(`Fetched ${data.saved || 0} new opportunities`)
+        fetchDashboardData()
+      } else {
+        setFetchResult(`Error: ${data.error || 'Failed to fetch'}`)
+      }
+    } catch {
+      setFetchResult('Network error fetching opportunities')
+    } finally {
+      setFetching(false)
+    }
+  }
 
   const fetchDashboardData = async () => {
     try {
@@ -115,6 +133,13 @@ export default function DashboardPage() {
         setPendingSOWs(pending.slice(0, 5))
       }
 
+      // Fetch bids count
+      const bidsResponse = await fetch('/api/bids?limit=1')
+      if (bidsResponse.ok) {
+        const bidsData = await bidsResponse.json()
+        setStats(prev => ({ ...prev, totalBids: bidsData.pagination?.total || 0 }))
+      }
+
       // Fetch assessment statistics
       const assessmentResponse = await fetch('/api/assessments/stats')
       if (assessmentResponse.ok) {
@@ -126,29 +151,6 @@ export default function DashboardPage() {
       console.error('Error fetching dashboard data:', error)
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleCostChange = (assessmentId: string, value: string) => {
-    setEditingCosts(prev => ({ ...prev, [assessmentId]: value }))
-  }
-
-  const handleFetchFromSAM = async () => {
-    setFetchingSAM(true)
-    setFetchError(null)
-    try {
-      const res = await fetch('/api/opportunities/fetch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 25, posted_days_ago: 90 }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error + (data.details ? ` — ${data.details}` : '') || 'Fetch failed')
-      await fetchDashboardData()
-    } catch (err) {
-      setFetchError(err instanceof Error ? err.message : 'Unknown error')
-    } finally {
-      setFetchingSAM(false)
     }
   }
 
@@ -168,36 +170,34 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
             <div>
               <h1 className="text-2xl font-bold text-stone-900">Dashboard</h1>
               <p className="mt-0.5 text-sm text-stone-500">
                 Welcome back, {session?.user?.name || 'User'}!
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               {session?.user?.role === 'ADMIN' && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleFetchFromSAM}
-                    disabled={fetchingSAM}
-                    className="px-4 py-2 text-sm font-medium text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {fetchingSAM ? 'Fetching...' : 'Fetch from SAM.gov'}
-                  </button>
-                  {fetchError && (
-                    <span className="text-xs text-red-600">{fetchError}</span>
-                  )}
-                </div>
+                <button
+                  onClick={handleFetchOpportunities}
+                  disabled={fetching}
+                  className="px-4 py-2 text-sm font-medium text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 disabled:opacity-50 transition-colors min-h-[44px]"
+                >
+                  {fetching ? 'Fetching...' : 'Fetch from SAM.gov'}
+                </button>
               )}
               <Link
                 href="/opportunities"
-                className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 transition-colors"
+                className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 transition-colors min-h-[44px] flex items-center"
               >
                 View All Opportunities
               </Link>
             </div>
           </div>
+          {fetchResult && (
+            <p className="mt-2 text-sm text-stone-600">{fetchResult}</p>
+          )}
         </div>
       </div>
 
@@ -305,7 +305,7 @@ export default function DashboardPage() {
             {/* Financial Summary Card */}
             <div className="bg-stone-900 rounded-lg border border-stone-800 p-6 mb-8 text-white">
               <h2 className="text-base font-semibold text-stone-100 mb-4">Financial Overview</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                 <div>
                   <p className="text-stone-400 text-xs font-medium uppercase tracking-wide mb-1">Total Pipeline Value</p>
                   <p className="text-3xl font-bold text-white">
@@ -331,7 +331,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Assessment Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 mb-8">
               <div className="bg-white rounded-lg border border-stone-200 p-6">
                 <div className="flex items-center">
                   <div className="flex-shrink-0 bg-stone-100 rounded-lg p-3">
@@ -400,88 +400,64 @@ export default function DashboardPage() {
             </div>
             <div className="p-6">
               <div className="space-y-3">
-                {recentAssessments.map((assessment) => {
-                  const costStr = editingCosts[assessment.id] ?? (assessment.estimatedCost > 0 ? assessment.estimatedCost.toString() : '')
-                  const costVal = parseFloat(costStr) || 0
-                  const valueVal = assessment.estimatedValue || 0
-                  const liveProfitDollar = valueVal - costVal
-                  const liveProfitPercent = valueVal > 0 ? (liveProfitDollar / valueVal) * 100 : 0
-                  const hasCost = costVal > 0
-                  const marginColor = liveProfitPercent >= 20 ? 'text-green-700' : liveProfitPercent >= 10 ? 'text-amber-700' : 'text-red-700'
-                  const liveRec = hasCost ? (liveProfitPercent >= 20 ? 'GO' : liveProfitPercent >= 10 ? 'REVIEW' : 'NO_GO') : assessment.recommendation
-
-                  return (
-                    <div
-                      key={assessment.id}
-                      onClick={() => router.push(`/opportunities/${assessment.opportunityId}`)}
-                      className="border border-stone-200 rounded-lg p-4 hover:border-stone-400 hover:shadow-sm transition-all cursor-pointer"
-                    >
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="flex-1">
-                          <h3 className="font-medium text-stone-900 text-sm">
-                            {assessment.opportunityTitle}
-                          </h3>
-                          <p className="text-xs text-stone-400 mt-0.5">
-                            {assessment.solicitationNumber}
-                          </p>
-                        </div>
-                        <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
-                          liveRec === 'GO' ? 'bg-stone-800 text-white' :
-                          liveRec === 'REVIEW' ? 'bg-stone-200 text-stone-700' :
-                          'bg-stone-100 text-stone-500'
-                        }`}>
-                          {liveRec?.replace('_', ' ') || 'N/A'}
-                        </span>
+                {recentAssessments.map((assessment) => (
+                  <Link
+                    key={assessment.id}
+                    href={`/opportunities/${assessment.opportunityId}`}
+                    className="block border border-stone-200 rounded-lg p-4 hover:border-stone-400 hover:shadow-sm transition-all"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1">
+                        <h3 className="font-medium text-stone-900 text-sm">
+                          {assessment.opportunityTitle}
+                        </h3>
+                        <p className="text-xs text-stone-400 mt-0.5">
+                          {assessment.solicitationNumber}
+                        </p>
                       </div>
-                      <div className="grid grid-cols-4 gap-3">
-                        <div>
-                          <p className="text-xs text-stone-400">Contract Value</p>
-                          <p className="font-semibold text-stone-900 text-sm">
-                            ${valueVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                          </p>
-                        </div>
-                        <div onClick={e => e.stopPropagation()}>
-                          <p className="text-xs text-stone-400 mb-1">Your Cost</p>
-                          <div className="relative">
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-stone-400 text-xs pointer-events-none">$</span>
-                            <input
-                              type="number"
-                              value={costStr}
-                              onChange={e => handleCostChange(assessment.id, e.target.value)}
-                              placeholder="Enter cost"
-                              className="w-full pl-5 pr-1 py-1 text-sm font-semibold text-stone-900 border border-stone-300 rounded focus:ring-1 focus:ring-stone-400 outline-none bg-white"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-xs text-stone-400">Profit Margin</p>
-                          <p className={`font-semibold text-sm ${hasCost ? marginColor : 'text-stone-400'}`}>
-                            {hasCost ? `${liveProfitPercent.toFixed(1)}%` : '—'}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-stone-400">Profit ($)</p>
-                          <p className={`font-semibold text-sm ${hasCost ? marginColor : 'text-stone-400'}`}>
-                            {hasCost ? `$${liveProfitDollar.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
-                          </p>
-                        </div>
+                      <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
+                        assessment.recommendation === 'GO' ? 'bg-stone-800 text-white' :
+                        assessment.recommendation === 'REVIEW' ? 'bg-stone-200 text-stone-700' :
+                        'bg-stone-100 text-stone-500'
+                      }`}>
+                        {assessment.recommendation?.replace('_', ' ') || 'N/A'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      <div>
+                        <p className="text-xs text-stone-400">Contract Value</p>
+                        <p className="font-semibold text-stone-900 text-sm">
+                          ${(assessment.estimatedValue || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </p>
                       </div>
-                      <div className="mt-3 pt-3 border-t border-stone-100 flex justify-between items-center">
-                        <div className="flex gap-2 text-xs">
-                          <span className="px-2 py-0.5 rounded bg-stone-100 text-stone-600">
-                            Strategic: {assessment.strategicValue || 'N/A'}
-                          </span>
-                          <span className="px-2 py-0.5 rounded bg-stone-100 text-stone-600">
-                            Risk: {assessment.riskLevel || 'N/A'}
-                          </span>
-                        </div>
-                        <p className="text-xs text-stone-400">
-                          Assessed by {assessment.assessedBy}
+                      <div>
+                        <p className="text-xs text-stone-400">Profit Margin</p>
+                        <p className="font-semibold text-stone-900 text-sm">
+                          {(assessment.profitMarginPercent || 0).toFixed(1)}%
+                        </p>
+                      </div>
+                      <div className="col-span-2 sm:col-span-1">
+                        <p className="text-xs text-stone-400">Profit ($)</p>
+                        <p className="font-semibold text-stone-900 text-sm">
+                          ${(assessment.profitMarginDollar || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </p>
                       </div>
                     </div>
-                  )
-                })}
+                    <div className="mt-3 pt-3 border-t border-stone-100 flex flex-wrap justify-between items-center gap-2">
+                      <div className="flex gap-2 text-xs flex-wrap">
+                        <span className="px-2 py-0.5 rounded bg-stone-100 text-stone-600">
+                          Strategic: {assessment.strategicValue || 'N/A'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-stone-100 text-stone-600">
+                          Risk: {assessment.riskLevel || 'N/A'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-stone-400">
+                        Assessed by {assessment.assessedBy}
+                      </p>
+                    </div>
+                  </Link>
+                ))}
               </div>
             </div>
           </div>
@@ -601,6 +577,18 @@ export default function DashboardPage() {
                 <p className="text-stone-400 text-sm mt-1">
                   Use "Fetch from SAM.gov" above to pull in opportunities
                 </p>
+                {session?.user?.role === 'ADMIN' && (
+                  <div className="mt-4 flex flex-col items-center gap-2">
+                    <button
+                      onClick={handleFetchOpportunities}
+                      disabled={fetching}
+                      className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 disabled:opacity-50 transition-colors"
+                    >
+                      {fetching ? 'Fetching from SAM.gov...' : 'Fetch Opportunities from SAM.gov'}
+                    </button>
+                    {fetchResult && <p className="text-sm text-stone-600">{fetchResult}</p>}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -610,14 +598,14 @@ export default function DashboardPage() {
                     href={`/opportunities/${opp.id}`}
                     className="block border border-stone-200 rounded-lg p-4 hover:border-stone-400 hover:shadow-sm transition-all"
                   >
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                    <div className="flex justify-between items-start mb-3 gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-medium text-stone-900 text-sm">
                             {opp.title}
                           </h3>
                           {opp.assessment && (
-                            <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${
+                            <span className={`px-2 py-0.5 text-xs font-semibold rounded-full flex-shrink-0 ${
                               opp.assessment.recommendation === 'GO' ? 'bg-stone-800 text-white' :
                               opp.assessment.recommendation === 'REVIEW' ? 'bg-stone-200 text-stone-700' :
                               opp.assessment.recommendation === 'NO_GO' ? 'bg-stone-100 text-stone-500' :
@@ -627,7 +615,7 @@ export default function DashboardPage() {
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-stone-400 mt-0.5">
+                        <p className="text-xs text-stone-400 mt-0.5 truncate">
                           {opp.solicitationNumber} · {opp.agency}
                         </p>
                       </div>
@@ -642,7 +630,7 @@ export default function DashboardPage() {
                     </div>
 
                     {opp.assessment ? (
-                      <div className="grid grid-cols-4 gap-4 mt-3 pt-3 border-t border-stone-100">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 pt-3 border-t border-stone-100">
                         <div>
                           <p className="text-xs text-stone-400">Contract Value</p>
                           <p className="font-semibold text-stone-900 text-sm">
@@ -658,12 +646,13 @@ export default function DashboardPage() {
                         <div>
                           <p className="text-xs text-stone-400">Profit Margin</p>
                           <p className="font-semibold text-stone-800 text-sm">
-                            {(opp.assessment.profitMarginPercent || 0).toFixed(1)}% · ${(opp.assessment.profitMarginDollar || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            {(opp.assessment.profitMarginPercent || 0).toFixed(1)}%
+                            <span className="hidden sm:inline"> · ${(opp.assessment.profitMarginDollar || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                           </p>
                         </div>
                         <div>
                           <p className="text-xs text-stone-400">Risk / Strategic</p>
-                          <div className="flex gap-1">
+                          <div className="flex gap-1 flex-wrap">
                             <span className="text-xs px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 font-medium">
                               {opp.assessment.riskLevel || '—'}
                             </span>

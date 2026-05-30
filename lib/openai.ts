@@ -1,11 +1,15 @@
 import OpenAI from 'openai'
 
-// Singleton client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+// Lazy singleton — defer construction until first use so missing OPENAI_API_KEY
+// doesn't crash the build or unrelated API routes at module load time.
+let _openai: OpenAI | null = null
 
-export default openai
+function getOpenAI(): OpenAI {
+  if (!_openai) {
+    _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  }
+  return _openai
+}
 
 export interface SOWSection {
   title: string
@@ -61,6 +65,34 @@ export async function generateSOWSections(input: SOWGenerationInput): Promise<SO
     (parsedCompliance && parsedCompliance.length > 0)
   )
 
+  // Determine agency type for tone and deliverable format guidance
+  const agencyUpper = agency.toUpperCase()
+  const isDoD = /\b(DOD|ARMY|NAVY|MARINE|AIR FORCE|SPACE FORCE|DEFENSE|DLA|DCMA|DARPA|SOCOM|CENTCOM|INDOPACOM|NORTHCOM|EUCOM|TRANSCOM|JSOC|NAVSEA|NAVAIR|SPAWAR|PEO|AMC|USMC|USAF|DISA|MDA|NRO|DIA|NSA|PENTAGON|AFRL|ARL|ERDC|CERL|USACE|CORPS OF ENGINEERS)\b/i.test(agencyUpper)
+  const isDHS = /\b(DHS|HOMELAND|FEMA|CBP|ICE|TSA|USCG|SECRET SERVICE|CISA)\b/i.test(agencyUpper)
+  const isVA = /\b(VA\b|VETERANS AFFAIRS|VETERANS HEALTH|VHA|VBA)\b/i.test(agencyUpper)
+  const isHealthAgency = /\b(HHS|NIH|CDC|FDA|CMS|HRSA|SAMHSA|AHRQ)\b/i.test(agencyUpper)
+
+  // Agency-specific tone and deliverable guidance
+  let agencyToneGuidance: string
+  let deliverablesGuidance: string
+
+  if (isDoD) {
+    agencyToneGuidance = `This is a Department of Defense (DoD) contract. Use DoD acquisition language where appropriate: reference MIL-SPEC/MIL-STD standards if relevant, use terms like "Government-Furnished Equipment (GFE)", "Contracting Officer Representative (COR)", "Quality Assurance Surveillance Plan (QASP)", and "Contract Data Requirements List (CDRL)". Tone should be formal, precise, and compliance-focused.`
+    deliverablesGuidance = `Structure deliverables as Contract Data Requirements List (CDRL) items where applicable. Each deliverable should specify: the data item title, frequency (e.g., monthly, upon completion), submission format (electronic/hard copy), and recipient (COR or Contracting Officer). Use DoD-standard CDRL terminology where it applies.`
+  } else if (isDHS) {
+    agencyToneGuidance = `This is a Department of Homeland Security (DHS) contract. Reference DHS Acquisition Regulation (HSAR) requirements where applicable. Use terms like "Contracting Officer's Representative (COR)" and DHS security/clearance requirements if present. Tone should be security-conscious and operationally focused.`
+    deliverablesGuidance = `Use milestone-based deliverables with specific due dates or offsets from period of performance start. Each deliverable should specify the name, format, submission method, and acceptance criteria. Reference any required DHS reporting templates or systems if mentioned in the solicitation.`
+  } else if (isVA) {
+    agencyToneGuidance = `This is a Department of Veterans Affairs (VA) contract. Reference VA Acquisition Regulation (VAAR) requirements where applicable. Use terms like "COR (Contracting Officer's Representative)" and note HIPAA compliance for any work involving Veteran data or healthcare. Tone should be Veteran-centered and compliance-focused.`
+    deliverablesGuidance = `Use milestone-based deliverables. Highlight any deliverables involving Veteran data, PHI (Protected Health Information), or VA system access. Specify submission to COR with VA-required formats. Note HIPAA compliance requirements for any data deliverables.`
+  } else if (isHealthAgency) {
+    agencyToneGuidance = `This is a civilian health agency (HHS/NIH/CDC/FDA) contract. Reference Federal Acquisition Regulation (FAR) Part 12 or 15 as applicable. Use terms like "COR", "deliverables", and "milestone schedule" with relevant health or scientific terminology where warranted. Tone should be technically precise.`
+    deliverablesGuidance = `Use milestone-based deliverables tied to the research or program schedule. Each deliverable should specify: name, format, submission date or frequency, and COR acceptance. Reference any required federal health data standards (HL7, FHIR, etc.) only if mentioned in the solicitation.`
+  } else {
+    agencyToneGuidance = `This is a civilian federal agency contract. Reference Federal Acquisition Regulation (FAR) requirements as applicable. Use terms like "Contracting Officer's Representative (COR)", "Performance Work Statement (PWS)", and "Quality Assurance Surveillance Plan (QASP)" where relevant. Tone should be professional, clear, and action-oriented for a small business subcontractor.`
+    deliverablesGuidance = `Use milestone-based deliverables with specific due dates or offsets from period of performance start. Each deliverable should specify the name, format, submission method, and acceptance criteria. Avoid DoD-specific acronyms like CDRLs — use plain milestone language instead.`
+  }
+
   const contextBlock = [
     `Solicitation Number: ${solicitationNumber}`,
     `Title: ${title}`,
@@ -88,30 +120,36 @@ export async function generateSOWSections(input: SOWGenerationInput): Promise<SO
 
   const prompt = `You are writing a Statement of Work (SOW) for a prime contractor to send to a subcontractor. Write in plain, direct language a small business owner can act on — no jargon, no padding, no boilerplate.
 
+AGENCY CONTEXT:
+${agencyToneGuidance}
+
 OPPORTUNITY DETAILS:
 ${contextBlock}${parsedBlock}
+
+DELIVERABLES GUIDANCE:
+${deliverablesGuidance}
 
 Generate exactly 6 SOW sections in JSON. Each section must have:
 - "title": short heading (e.g. "1.0 Background")
 - "summary": one plain sentence — what this section covers (max 100 chars)
-- "bullets": 3–5 specific, actionable bullet points drawn directly from this solicitation's data
-- "details": 1–2 short paragraphs of plain prose. Every sentence must be specific to this solicitation. Omit anything unknown — never invent filler.
+- "bullets": 3–5 specific, actionable bullet points drawn directly from this solicitation's data. Apply agency-appropriate terminology per the AGENCY CONTEXT above.
+- "details": 1–2 short paragraphs of plain prose. Every sentence must be specific to this solicitation. Omit anything unknown — never invent filler. Apply agency-appropriate tone from the AGENCY CONTEXT above.
 
 Sections:
-1. 1.0 Background — what this contract is, who issued it, why it exists
-2. 2.0 Scope of Work — precisely what the subcontractor must do
-3. 3.0 Place of Performance — where work happens
-4. 4.0 Period of Performance — start/end dates and key deadlines
-5. 5.0 Deliverables — concrete outputs the subcontractor must deliver
-6. 6.0 Compliance — only the specific regulatory and certification requirements that apply here
+1. 1.0 Background — what this contract is, who issued it (include the specific agency name), why it exists, and its role in the agency's mission
+2. 2.0 Scope of Work — precisely what the subcontractor must do, referencing specific requirements from the solicitation
+3. 3.0 Place of Performance — where work happens, including any remote/on-site split and travel requirements if stated
+4. 4.0 Period of Performance — start/end dates, key milestones, and the response deadline of ${responseDeadline}
+5. 5.0 Deliverables — concrete outputs following the DELIVERABLES GUIDANCE above; be specific to this solicitation
+6. 6.0 Compliance — only the specific regulatory and certification requirements that apply to this agency and NAICS code; do not list generic FAR clauses unless they appear in the solicitation data
 
 Return ONLY a valid JSON array of 6 objects. No markdown, no explanation.`
 
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAI().chat.completions.create({
     model: 'gpt-4o',
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.3,
-    max_tokens: 3000,
+    max_tokens: 4000,
     response_format: { type: 'json_object' },
   })
 
@@ -129,95 +167,6 @@ Return ONLY a valid JSON array of 6 objects. No markdown, no explanation.`
     return sections
   } catch {
     throw new Error(`Failed to parse OpenAI SOW response: ${raw.slice(0, 200)}`)
-  }
-}
-
-// ─── Plain Language Transformation ────────────────────────────────────────────
-
-export interface PlainLanguageSection {
-  title: string           // Business-friendly ALL CAPS heading
-  summary: string         // 1-2 sentence plain English overview
-  bullets: string[]       // Active-voice action items
-  whyItMatters: string    // Context explaining why the requirement exists
-  criticalItems: string[] // Deadlines, dollar amounts, hard requirements
-}
-
-/**
- * Transform formal government SOW sections into plain business language.
- * Implements AI-01 through AI-10 requirements.
- */
-export async function transformSOWToPlainLanguage(
-  sections: Array<{
-    title: string
-    summary?: string
-    bullets?: string[]
-    details?: string
-    content?: string
-  }>,
-  context: {
-    title: string
-    agency: string
-    solicitationNumber: string
-    deadline?: string
-  }
-): Promise<PlainLanguageSection[]> {
-  const sectionTexts = sections
-    .map((s, i) => {
-      const parts: string[] = [`SECTION ${i + 1}: ${s.title}`]
-      if (s.summary) parts.push(s.summary)
-      if (s.bullets?.length) parts.push(s.bullets.join('\n'))
-      if (s.details) parts.push(s.details)
-      if (!s.summary && !s.bullets?.length && !s.details && s.content) parts.push(s.content)
-      return parts.join('\n')
-    })
-    .join('\n\n---\n\n')
-
-  const prompt = `You are simplifying a federal government Statement of Work for a small business owner who is not familiar with government contracting jargon.
-
-PROJECT: ${context.title}
-AGENCY: ${context.agency}
-SOLICITATION: ${context.solicitationNumber}${context.deadline ? `\nRESPONSE DEADLINE: ${context.deadline}` : ''}
-
-ORIGINAL SOW SECTIONS:
-${sectionTexts}
-
-Transform each section into plain business language. Return a JSON object with key "sections" containing an array of ${sections.length} objects, each with:
-
-- "title": Short business-friendly name in ALL CAPS (e.g. "WHAT YOU'RE PROVIDING", "KEY DEADLINES", "RULES TO FOLLOW", "WHERE THE WORK HAPPENS")
-- "summary": 1-2 sentences in plain English. No acronyms without explanation. No passive voice.
-- "bullets": Array of 3-6 specific action items in active voice. Start each with "You must", "Provide", "Deliver", "Ensure", "Submit", "Coordinate", etc. Be concrete.
-- "whyItMatters": 1-2 sentences explaining WHY this requirement exists — the purpose behind it. Help the reader understand, not just comply.
-- "criticalItems": Array of strings for any deadlines, dollar amounts, penalties, or hard requirements. Format as "⏰ [Date] — [what's due]" or "⚠️ [requirement or penalty]". Empty array if none.
-
-Transformation rules:
-1. Translate every acronym on first use: write "FAR (Federal Acquisition Regulation)" then just "FAR" after
-2. Rewrite passive voice: "supplies must be delivered by" → "you must deliver supplies by"
-3. Break any sentence over 25 words into shorter sentences
-4. Preserve ALL factual requirements — do not omit, soften, or change any requirement
-5. Professional but conversational tone — like a knowledgeable colleague explaining it
-6. If the section mentions specific part numbers, NSNs, or spec numbers, keep them exactly
-
-Return ONLY valid JSON. No markdown fences, no extra text.`
-
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    messages: [{ role: 'user', content: prompt }],
-    temperature: 0.3,
-    max_tokens: 4000,
-    response_format: { type: 'json_object' },
-  })
-
-  const raw = response.choices[0]?.message?.content || '{}'
-
-  try {
-    const parsed = JSON.parse(raw)
-    const result: PlainLanguageSection[] = Array.isArray(parsed)
-      ? parsed
-      : parsed.sections || []
-    if (!result.length) throw new Error('Empty transformation result')
-    return result
-  } catch {
-    throw new Error(`Failed to parse plain language response: ${raw.slice(0, 200)}`)
   }
 }
 
@@ -367,7 +316,7 @@ Keep all language plain and direct. No FAR clause numbers in plain text unless c
 
 Return ONLY valid JSON. No markdown, no extra text.`
 
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAI().chat.completions.create({
     model: 'gpt-4o',
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.2,
@@ -472,7 +421,7 @@ Rules:
 Return ONLY valid JSON. No markdown, no extra text.`
 
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
@@ -521,7 +470,7 @@ export async function generateOpportunitySynopsis(
   agency: string,
   naicsCode?: string | null
 ): Promise<string> {
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAI().chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [
       {

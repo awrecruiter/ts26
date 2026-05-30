@@ -65,10 +65,10 @@ export default function AdminDashboard() {
 
   if (status === 'loading') {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
+          <p className="mt-4 text-stone-600">Loading...</p>
         </div>
       </div>
     )
@@ -76,13 +76,13 @@ export default function AdminDashboard() {
 
   if (status === 'authenticated' && session?.user?.role !== 'ADMIN') {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h1>
-          <p className="text-gray-600 mb-4">You must be an administrator to access this page.</p>
+          <h1 className="text-2xl font-bold text-stone-900 mb-2">Access Denied</h1>
+          <p className="text-stone-600 mb-4">You must be an administrator to access this page.</p>
           <Link
             href="/dashboard"
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            className="px-4 py-2 bg-stone-800 text-white rounded-md hover:bg-stone-700"
           >
             Go to Dashboard
           </Link>
@@ -92,12 +92,12 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-stone-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="text-3xl font-bold text-stone-900">Admin Dashboard</h1>
+          <p className="mt-1 text-sm text-stone-500">
             System administration and maintenance
           </p>
         </div>
@@ -110,9 +110,9 @@ export default function AdminDashboard() {
           {/* Backfill SOWs Card */}
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-start">
-              <div className="flex-shrink-0 bg-blue-100 rounded-md p-3">
+              <div className="flex-shrink-0 bg-stone-100 rounded-md p-3">
                 <svg
-                  className="h-6 w-6 text-blue-600"
+                  className="h-6 w-6 text-stone-600"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -126,16 +126,16 @@ export default function AdminDashboard() {
                 </svg>
               </div>
               <div className="ml-4 flex-1">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                <h3 className="text-lg font-semibold text-stone-900 mb-2">
                   Backfill SOWs
                 </h3>
-                <p className="text-sm text-gray-600 mb-4">
+                <p className="text-sm text-stone-600 mb-4">
                   Update all SOWs without structured content to the new format
                 </p>
                 <button
                   onClick={handleBackfillSOWs}
                   disabled={backfilling}
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full px-4 py-2 bg-stone-800 text-white rounded-md hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {backfilling ? (
                     <>
@@ -171,9 +171,9 @@ export default function AdminDashboard() {
             className="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow"
           >
             <div className="flex items-start">
-              <div className="flex-shrink-0 bg-purple-100 rounded-md p-3">
+              <div className="flex-shrink-0 bg-stone-100 rounded-md p-3">
                 <svg
-                  className="h-6 w-6 text-purple-600"
+                  className="h-6 w-6 text-stone-600"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -187,10 +187,10 @@ export default function AdminDashboard() {
                 </svg>
               </div>
               <div className="ml-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                <h3 className="text-lg font-semibold text-stone-900 mb-2">
                   User Management
                 </h3>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-stone-600">
                   Manage users, roles, and permissions
                 </p>
               </div>
@@ -203,9 +203,9 @@ export default function AdminDashboard() {
             className="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow"
           >
             <div className="flex items-start">
-              <div className="flex-shrink-0 bg-gray-100 rounded-md p-3">
+              <div className="flex-shrink-0 bg-stone-100 rounded-md p-3">
                 <svg
-                  className="h-6 w-6 text-gray-600"
+                  className="h-6 w-6 text-stone-600"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -225,10 +225,10 @@ export default function AdminDashboard() {
                 </svg>
               </div>
               <div className="ml-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                <h3 className="text-lg font-semibold text-stone-900 mb-2">
                   System Settings
                 </h3>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-stone-600">
                   Configure system-wide settings
                 </p>
               </div>
@@ -241,9 +241,9 @@ export default function AdminDashboard() {
             className="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow"
           >
             <div className="flex items-start">
-              <div className="flex-shrink-0 bg-orange-100 rounded-md p-3">
+              <div className="flex-shrink-0 bg-stone-100 rounded-md p-3">
                 <svg
-                  className="h-6 w-6 text-orange-600"
+                  className="h-6 w-6 text-stone-600"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -257,11 +257,43 @@ export default function AdminDashboard() {
                 </svg>
               </div>
               <div className="ml-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                <h3 className="text-lg font-semibold text-stone-900 mb-2">
                   System Logs
                 </h3>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-stone-600">
                   View system activity and error logs
+                </p>
+              </div>
+            </div>
+          </Link>
+
+          {/* API Status Card */}
+          <Link
+            href="/admin/api-status"
+            className="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow"
+          >
+            <div className="flex items-start">
+              <div className="flex-shrink-0 bg-stone-100 rounded-md p-3">
+                <svg
+                  className="h-6 w-6 text-stone-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                  />
+                </svg>
+              </div>
+              <div className="ml-4">
+                <h3 className="text-lg font-semibold text-stone-900 mb-2">
+                  API Status
+                </h3>
+                <p className="text-sm text-stone-600">
+                  Live health checks for all external APIs and calculation audit
                 </p>
               </div>
             </div>
@@ -273,15 +305,15 @@ export default function AdminDashboard() {
           <div
             className={`rounded-lg border-2 p-6 mb-8 ${
               backfillResult.success
-                ? 'bg-green-50 border-green-200'
-                : 'bg-red-50 border-red-200'
+                ? 'bg-stone-50 border-stone-300'
+                : 'bg-stone-100 border-stone-400'
             }`}
           >
             <div className="flex items-start">
               <div className="flex-shrink-0">
                 {backfillResult.success ? (
                   <svg
-                    className="h-6 w-6 text-green-600"
+                    className="h-6 w-6 text-stone-700"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -295,7 +327,7 @@ export default function AdminDashboard() {
                   </svg>
                 ) : (
                   <svg
-                    className="h-6 w-6 text-red-600"
+                    className="h-6 w-6 text-stone-900"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -310,38 +342,30 @@ export default function AdminDashboard() {
                 )}
               </div>
               <div className="ml-4 flex-1">
-                <h3
-                  className={`text-lg font-semibold mb-2 ${
-                    backfillResult.success ? 'text-green-900' : 'text-red-900'
-                  }`}
-                >
+                <h3 className="text-lg font-semibold mb-2 text-stone-900">
                   {backfillResult.success ? 'Backfill Successful' : 'Backfill Failed'}
                 </h3>
-                <p
-                  className={`text-sm mb-4 ${
-                    backfillResult.success ? 'text-green-700' : 'text-red-700'
-                  }`}
-                >
+                <p className="text-sm mb-4 text-stone-700">
                   {backfillResult.message}
                 </p>
 
                 {backfillResult.stats && (
                   <div className="grid grid-cols-3 gap-4 mb-4">
-                    <div className="bg-white rounded-lg p-3">
-                      <p className="text-xs text-gray-500">Found</p>
-                      <p className="text-2xl font-bold text-gray-900">
+                    <div className="bg-white rounded-lg p-3 border border-stone-200">
+                      <p className="text-xs text-stone-500">Found</p>
+                      <p className="text-2xl font-bold text-stone-900">
                         {backfillResult.stats.total_found}
                       </p>
                     </div>
-                    <div className="bg-white rounded-lg p-3">
-                      <p className="text-xs text-gray-500">Updated</p>
-                      <p className="text-2xl font-bold text-green-600">
+                    <div className="bg-white rounded-lg p-3 border border-stone-200">
+                      <p className="text-xs text-stone-500">Updated</p>
+                      <p className="text-2xl font-bold text-stone-900">
                         {backfillResult.stats.updated}
                       </p>
                     </div>
-                    <div className="bg-white rounded-lg p-3">
-                      <p className="text-xs text-gray-500">Errors</p>
-                      <p className="text-2xl font-bold text-red-600">
+                    <div className="bg-white rounded-lg p-3 border border-stone-200">
+                      <p className="text-xs text-stone-500">Errors</p>
+                      <p className="text-2xl font-bold text-stone-900">
                         {backfillResult.stats.errors}
                       </p>
                     </div>
@@ -350,16 +374,16 @@ export default function AdminDashboard() {
 
                 {backfillResult.errors && backfillResult.errors.length > 0 && (
                   <details className="mt-4">
-                    <summary className="cursor-pointer text-sm font-semibold text-red-900 hover:text-red-700">
+                    <summary className="cursor-pointer text-sm font-semibold text-stone-900 hover:text-stone-700">
                       View Errors ({backfillResult.errors.length})
                     </summary>
                     <div className="mt-2 space-y-2">
                       {backfillResult.errors.map((error, index) => (
-                        <div key={index} className="bg-white rounded p-2 text-sm">
-                          <p className="font-mono text-xs text-gray-600">
+                        <div key={index} className="bg-white rounded p-2 text-sm border border-stone-200">
+                          <p className="font-mono text-xs text-stone-600">
                             SOW ID: {error.sowId}
                           </p>
-                          <p className="text-red-700">{error.error}</p>
+                          <p className="text-stone-800">{error.error}</p>
                         </div>
                       ))}
                     </div>
@@ -368,11 +392,7 @@ export default function AdminDashboard() {
 
                 <button
                   onClick={() => setBackfillResult(null)}
-                  className={`mt-4 text-sm font-medium ${
-                    backfillResult.success
-                      ? 'text-green-700 hover:text-green-900'
-                      : 'text-red-700 hover:text-red-900'
-                  }`}
+                  className="mt-4 text-sm font-medium text-stone-600 hover:text-stone-900"
                 >
                   Dismiss
                 </button>
@@ -382,11 +402,11 @@ export default function AdminDashboard() {
         )}
 
         {/* Info Section */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+        <div className="bg-stone-50 border border-stone-200 rounded-lg p-6">
           <div className="flex items-start">
             <div className="flex-shrink-0">
               <svg
-                className="h-6 w-6 text-blue-600"
+                className="h-6 w-6 text-stone-600"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -400,10 +420,10 @@ export default function AdminDashboard() {
               </svg>
             </div>
             <div className="ml-4">
-              <h3 className="text-sm font-semibold text-blue-900 mb-2">
+              <h3 className="text-sm font-semibold text-stone-900 mb-2">
                 About the Backfill Tool
               </h3>
-              <p className="text-sm text-blue-700">
+              <p className="text-sm text-stone-700">
                 The backfill tool updates all SOWs that were created before the structured
                 content feature was added. It will generate standardized content for each
                 SOW based on its opportunity data, making them viewable and editable in the

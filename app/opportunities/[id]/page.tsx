@@ -10,6 +10,7 @@ import SubcontractorPanel from '@/components/workspace/panels/SubcontractorPanel
 import SOWPanel from '@/components/workspace/panels/SOWPanel'
 import EmailDraftPanel from '@/components/workspace/panels/EmailDraftPanel'
 import ScopeOverviewPanel from '@/components/workspace/panels/ScopeOverviewPanel'
+import AgentActivityPanel from '@/components/workspace/panels/AgentActivityPanel'
 import type { RichAttachment } from '@/lib/types/attachment'
 import { extractCity, extractStateCode } from '@/lib/opportunity-classification'
 
@@ -76,6 +77,28 @@ export default function OpportunityWorkspacePage() {
       })
       .catch(() => {})
   }, [opportunity?.id])
+
+  // Save assessment and immediately reflect the result in sidebar state —
+  // no full fetchData() needed, so there's no loading flicker.
+  const handleSaveAssessment = useCallback(async (data: {
+    estimatedValue: number | null
+    estimatedCost: number | null
+    strategicValue?: string | null
+    riskLevel?: string | null
+    notes?: string | null
+  }) => {
+    const res = await fetch(`/api/opportunities/${params.id}/assessment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.error || 'Failed to save assessment')
+    }
+    const { assessment: saved } = await res.json()
+    setAssessment(saved)
+  }, [params.id])
 
   const handleCreateBid = async () => {
     try {
@@ -183,7 +206,7 @@ export default function OpportunityWorkspacePage() {
     })
   }
 
-  // Save + full refresh — used after "Save & re-generate plain language"
+  // Save + full refresh
   const handleSaveSOWAndRefresh = async (content: any) => {
     await handleSaveSOW(content)
     await fetchData()
@@ -337,6 +360,7 @@ export default function OpportunityWorkspacePage() {
           brief={opportunity?.opportunityBrief ?? null}
           isGeneratingBrief={generatingBrief}
           onGenerateBrief={handleGenerateBrief}
+          onSaveAssessment={handleSaveAssessment}
         />
       ),
     },
@@ -434,6 +458,21 @@ export default function OpportunityWorkspacePage() {
         />
       ),
     },
+    {
+      id: 'agent',
+      label: 'Agent',
+      icon: (
+        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+        </svg>
+      ),
+      content: (
+        <AgentActivityPanel
+          opportunity={opportunity}
+          assessment={assessment}
+        />
+      ),
+    },
   ]
 
   // Add bid panel if bid exists
@@ -465,29 +504,29 @@ export default function OpportunityWorkspacePage() {
       progress={progress}
       nextAction={nextAction}
       headerContent={
-        <div className="px-4 py-3 flex items-center justify-between">
+        <div className="px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2 min-h-[48px]">
           {/* Left: Back + Title */}
-          <div className="flex items-center gap-4 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
             <button
               onClick={() => router.push('/opportunities')}
-              className="text-stone-400 hover:text-stone-600 p-1"
+              className="text-stone-400 hover:text-stone-600 p-1.5 flex-shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center"
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
             <div className="min-w-0">
-              <h1 className="text-sm font-medium text-stone-800 truncate">
+              <h1 className="text-sm font-medium text-stone-800 truncate leading-tight">
                 {opportunity.title}
               </h1>
-              <p className="text-xs text-stone-400">{opportunity.solicitationNumber}</p>
+              <p className="text-xs text-stone-400 truncate">{opportunity.solicitationNumber}</p>
             </div>
           </div>
 
           {/* Right: Deadline */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {deadline && daysLeft !== null && (
-              <div className={`px-3 py-1.5 rounded text-sm font-medium ${
+              <div className={`px-2.5 py-1.5 rounded text-xs sm:text-sm font-medium flex-shrink-0 ${
                 daysLeft <= 3 ? 'bg-stone-800 text-white' :
                 daysLeft <= 7 ? 'bg-stone-200 text-stone-700' :
                 'bg-stone-100 text-stone-600'
@@ -574,7 +613,7 @@ function OpportunitySidebar({
             View SOW
           </button>
         ) : (
-          <button onClick={onGenerateSOW} disabled={generatingSOW} className="w-full text-left px-3 py-2 text-xs font-medium text-stone-700 bg-stone-50 border border-stone-200 rounded hover:bg-stone-100 flex items-center gap-2 transition-colors disabled:opacity-50">
+          <button onClick={() => onGenerateSOW()} disabled={generatingSOW} className="w-full text-left px-3 py-2 text-xs font-medium text-stone-700 bg-stone-50 border border-stone-200 rounded hover:bg-stone-100 flex items-center gap-2 transition-colors disabled:opacity-50">
             {generatingSOW ? (
               <svg className="animate-spin w-2 h-2 flex-shrink-0" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />

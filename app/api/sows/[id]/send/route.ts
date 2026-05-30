@@ -201,6 +201,8 @@ export async function POST(
     const title = sow.opportunity?.title || 'SOW'
 
     // Attempt to send email with SOW as attachment
+    // Set Reply-To to the logged-in user's email so subcontractor replies land in their inbox
+    const senderEmail = session.user.email ?? undefined
     let emailWarning: string | undefined
     const emailResult = await sendEmail({
       to: email,
@@ -209,6 +211,7 @@ export async function POST(
       html: message
         ? `<p style="font-family:sans-serif;font-size:14px;color:#374151;white-space:pre-wrap;">${escapeHtml(message)}</p><hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">${synopsis.html}`
         : synopsis.html,
+      replyTo: senderEmail,
       attachments: [{
         filename: sow.fileName || 'SOW.html',
         content: htmlDocument,

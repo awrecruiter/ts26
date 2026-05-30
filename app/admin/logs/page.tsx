@@ -88,38 +88,38 @@ function AdminLogsPageContent() {
   const getLevelBadgeClass = (logLevel: string) => {
     switch (logLevel) {
       case 'ERROR':
-        return 'bg-red-100 text-red-800'
+        return 'bg-stone-100 text-stone-900'
       case 'WARNING':
-        return 'bg-yellow-100 text-yellow-800'
+        return 'bg-stone-200 text-stone-700'
       case 'INFO':
-        return 'bg-blue-100 text-blue-800'
+        return 'bg-stone-200 text-stone-800'
       case 'DEBUG':
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-stone-100 text-stone-800'
       default:
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-stone-100 text-stone-800'
     }
   }
 
   if (status === 'loading' || (status === 'authenticated' && session?.user?.role !== 'ADMIN')) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
+          <p className="mt-4 text-stone-600">Loading...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-stone-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">System Logs</h1>
-              <p className="mt-2 text-sm text-gray-600">
+              <h1 className="text-3xl font-bold text-stone-900">System Logs</h1>
+              <p className="mt-2 text-sm text-stone-600">
                 View system events and errors
               </p>
             </div>
@@ -128,13 +128,13 @@ function AdminLogsPageContent() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex gap-4">
             <select
               value={level}
               onChange={(e) => handleLevelChange(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-4 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-stone-900"
             >
               <option value="">All Levels</option>
               <option value="ERROR">Errors</option>
@@ -144,7 +144,7 @@ function AdminLogsPageContent() {
             </select>
             <button
               onClick={() => fetchLogs()}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              className="px-4 py-2 bg-stone-800 text-white rounded-md hover:bg-stone-700"
             >
               Refresh
             </button>
@@ -156,17 +156,17 @@ function AdminLogsPageContent() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {loading && (
           <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <p className="mt-4 text-gray-600">Loading logs...</p>
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
+            <p className="mt-4 text-stone-600">Loading logs...</p>
           </div>
         )}
 
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-red-800">{error}</p>
+          <div className="mb-4 p-4 bg-stone-100 border border-stone-400 rounded-md">
+            <p className="text-stone-900">{error}</p>
             <button
               onClick={() => { setError(''); fetchLogs(); }}
-              className="mt-2 text-sm text-red-600 underline"
+              className="mt-2 text-sm text-stone-900 underline"
             >
               Retry
             </button>
@@ -177,7 +177,7 @@ function AdminLogsPageContent() {
           <>
             <div className="bg-white shadow-sm rounded-lg overflow-hidden">
               {logs.length > 0 ? (
-                <div className="divide-y divide-gray-200">
+                <div className="divide-y divide-stone-200">
                   {logs.map((log) => (
                     <div key={log.id} className="p-4">
                       <div
@@ -190,15 +190,15 @@ function AdminLogsPageContent() {
                           {log.level}
                         </span>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-900 font-mono break-all">
+                          <p className="text-sm text-stone-900 font-mono break-all">
                             {log.message}
                           </p>
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-stone-500 mt-1">
                             {new Date(log.createdAt).toLocaleString()}
                           </p>
                         </div>
                         <svg
-                          className={`h-5 w-5 text-gray-400 transition-transform ${
+                          className={`h-5 w-5 text-stone-400 transition-transform ${
                             expandedLogs.has(log.id) ? 'rotate-180' : ''
                           }`}
                           fill="none"
@@ -209,8 +209,8 @@ function AdminLogsPageContent() {
                         </svg>
                       </div>
                       {expandedLogs.has(log.id) && log.context && (
-                        <div className="mt-4 ml-16 p-4 bg-gray-50 rounded-md">
-                          <pre className="text-xs text-gray-700 overflow-x-auto">
+                        <div className="mt-4 ml-16 p-4 bg-stone-50 rounded-md">
+                          <pre className="text-xs text-stone-700 overflow-x-auto">
                             {JSON.stringify(log.context, null, 2)}
                           </pre>
                         </div>
@@ -220,9 +220,9 @@ function AdminLogsPageContent() {
                 </div>
               ) : (
                 <div className="text-center py-12">
-                  <p className="text-gray-500">No logs found</p>
+                  <p className="text-stone-500">No logs found</p>
                   {level && (
-                    <p className="text-gray-400 mt-2 text-sm">
+                    <p className="text-stone-400 mt-2 text-sm">
                       Try adjusting your filters
                     </p>
                   )}
@@ -236,24 +236,24 @@ function AdminLogsPageContent() {
                 <button
                   onClick={() => handlePageChange(pagination.page - 1)}
                   disabled={pagination.page === 1}
-                  className="px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-white border border-stone-300 rounded-md hover:bg-stone-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Previous
                 </button>
-                <span className="text-gray-600">
+                <span className="text-stone-600">
                   Page {pagination.page} of {pagination.totalPages}
                 </span>
                 <button
                   onClick={() => handlePageChange(pagination.page + 1)}
                   disabled={pagination.page === pagination.totalPages}
-                  className="px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-white border border-stone-300 rounded-md hover:bg-stone-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Next
                 </button>
               </div>
             )}
 
-            <div className="text-center mt-4 text-sm text-gray-600">
+            <div className="text-center mt-4 text-sm text-stone-600">
               Showing {logs.length} of {pagination.total} logs
             </div>
           </>
@@ -266,10 +266,10 @@ function AdminLogsPageContent() {
 export default function AdminLogsPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <p className="mt-4 text-gray-600">Loading logs...</p>
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
+          <p className="mt-4 text-stone-600">Loading logs...</p>
         </div>
       </div>
     }>

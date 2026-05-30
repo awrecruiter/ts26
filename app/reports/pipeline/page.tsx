@@ -32,13 +32,13 @@ const STAGE_LABELS: Record<string, string> = {
 }
 
 const STAGE_COLORS: Record<string, string> = {
-  DISCOVERY: 'bg-gray-100 border-gray-300',
-  ASSESSMENT: 'bg-blue-100 border-blue-300',
-  SOW_CREATION: 'bg-indigo-100 border-indigo-300',
-  SOW_REVIEW: 'bg-purple-100 border-purple-300',
-  BID_ASSEMBLY: 'bg-pink-100 border-pink-300',
-  READY: 'bg-orange-100 border-orange-300',
-  SUBMITTED: 'bg-green-100 border-green-300',
+  DISCOVERY: 'bg-stone-100 border-stone-300',
+  ASSESSMENT: 'bg-stone-100 border-stone-300',
+  SOW_CREATION: 'bg-stone-200 border-stone-400',
+  SOW_REVIEW: 'bg-stone-100 border-stone-300',
+  BID_ASSEMBLY: 'bg-stone-200 border-stone-400',
+  READY: 'bg-stone-300 border-stone-500',
+  SUBMITTED: 'bg-stone-800 border-stone-900',
 }
 
 function formatCurrency(amount: number): string {
@@ -76,13 +76,13 @@ export default function PipelineReportPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-stone-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Pipeline Report</h1>
-            <p className="mt-2 text-sm text-gray-600">
+            <h1 className="text-3xl font-bold text-stone-900">Pipeline Report</h1>
+            <p className="mt-2 text-sm text-stone-600">
               Opportunities by stage in the bid pipeline
             </p>
           </div>
@@ -93,17 +93,17 @@ export default function PipelineReportPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {loading && (
           <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <p className="mt-4 text-gray-600">Loading pipeline data...</p>
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
+            <p className="mt-4 text-stone-600">Loading pipeline data...</p>
           </div>
         )}
 
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-red-800">{error}</p>
+          <div className="mb-4 p-4 bg-stone-50 border border-stone-200 rounded-md">
+            <p className="text-stone-700">{error}</p>
             <button
               onClick={() => { setError(''); fetchPipelineData(); }}
-              className="mt-2 text-sm text-red-600 underline"
+              className="mt-2 text-sm text-stone-600 underline"
             >
               Retry
             </button>
@@ -115,18 +115,18 @@ export default function PipelineReportPage() {
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
               <div className="bg-white rounded-lg shadow-sm p-6">
-                <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide">
+                <h3 className="text-sm font-medium text-stone-500 uppercase tracking-wide">
                   Total Opportunities
                 </h3>
-                <p className="text-3xl font-bold text-gray-900 mt-2">
+                <p className="text-3xl font-bold text-stone-900 mt-2">
                   {data.totalOpportunities}
                 </p>
               </div>
               <div className="bg-white rounded-lg shadow-sm p-6">
-                <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide">
+                <h3 className="text-sm font-medium text-stone-500 uppercase tracking-wide">
                   Total Pipeline Value
                 </h3>
-                <p className="text-3xl font-bold text-gray-900 mt-2">
+                <p className="text-3xl font-bold text-stone-900 mt-2">
                   {formatCurrency(data.totalPipelineValue)}
                 </p>
               </div>
@@ -138,7 +138,7 @@ export default function PipelineReportPage() {
                 <div
                   key={stageData.stage}
                   className={`bg-white rounded-lg shadow-sm border-l-4 ${
-                    STAGE_COLORS[stageData.stage] || 'border-gray-300'
+                    STAGE_COLORS[stageData.stage] || 'border-stone-300'
                   }`}
                 >
                   <div
@@ -152,23 +152,23 @@ export default function PipelineReportPage() {
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-4">
                         <div>
-                          <h3 className="text-lg font-semibold text-gray-900">
+                          <h3 className="text-lg font-semibold text-stone-900">
                             {STAGE_LABELS[stageData.stage] || stageData.stage}
                           </h3>
-                          <p className="text-sm text-gray-500">
+                          <p className="text-sm text-stone-500">
                             {stageData.count} opportunit{stageData.count === 1 ? 'y' : 'ies'}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-6">
                         <div className="text-right">
-                          <p className="text-lg font-semibold text-gray-900">
+                          <p className="text-lg font-semibold text-stone-900">
                             {formatCurrency(stageData.totalValue)}
                           </p>
-                          <p className="text-sm text-gray-500">Total Value</p>
+                          <p className="text-sm text-stone-500">Total Value</p>
                         </div>
                         <svg
-                          className={`h-5 w-5 text-gray-400 transition-transform ${
+                          className={`h-5 w-5 text-stone-400 transition-transform ${
                             expandedStage === stageData.stage ? 'rotate-180' : ''
                           }`}
                           fill="none"
@@ -187,9 +187,9 @@ export default function PipelineReportPage() {
 
                     {/* Progress bar showing percentage of total */}
                     <div className="mt-4">
-                      <div className="h-2 bg-gray-200 rounded-full">
+                      <div className="h-2 bg-stone-200 rounded-full">
                         <div
-                          className="h-2 bg-blue-600 rounded-full transition-all"
+                          className="h-2 bg-stone-600 rounded-full transition-all"
                           style={{
                             width: `${
                               data.totalOpportunities > 0
@@ -204,10 +204,10 @@ export default function PipelineReportPage() {
 
                   {/* Expanded opportunity list */}
                   {expandedStage === stageData.stage && stageData.opportunities.length > 0 && (
-                    <div className="border-t border-gray-200 px-6 py-4">
+                    <div className="border-t border-stone-200 px-6 py-4">
                       <table className="min-w-full">
                         <thead>
-                          <tr className="text-xs text-gray-500 uppercase tracking-wider">
+                          <tr className="text-xs text-stone-500 uppercase tracking-wider">
                             <th className="text-left pb-2">Opportunity</th>
                             <th className="text-left pb-2">Solicitation #</th>
                             <th className="text-right pb-2">Est. Value</th>
@@ -217,19 +217,19 @@ export default function PipelineReportPage() {
                           {stageData.opportunities.map((opp) => (
                             <tr
                               key={opp.id}
-                              className="hover:bg-gray-50 cursor-pointer"
+                              className="hover:bg-stone-50 cursor-pointer"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 router.push(`/opportunities/${opp.id}`)
                               }}
                             >
-                              <td className="py-2 text-sm text-gray-900">
+                              <td className="py-2 text-sm text-stone-900">
                                 {opp.title}
                               </td>
-                              <td className="py-2 text-sm text-gray-500">
+                              <td className="py-2 text-sm text-stone-500">
                                 {opp.solicitationNumber}
                               </td>
-                              <td className="py-2 text-sm text-gray-900 text-right">
+                              <td className="py-2 text-sm text-stone-900 text-right">
                                 {opp.estimatedValue
                                   ? formatCurrency(opp.estimatedValue)
                                   : '-'}

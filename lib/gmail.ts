@@ -20,6 +20,8 @@ export interface GmailSendOptions {
   body: string      // plain text fallback
   html?: string
   from?: string     // defaults to authenticated user's address
+  /** Reply-To address — typically the logged-in user's email so replies land in their inbox */
+  replyTo?: string
   threadId?: string // pass to reply in an existing thread
   attachments?: Array<{
     filename: string
@@ -59,6 +61,10 @@ function buildRawMessage(opts: GmailSendOptions, fromAddress: string): string {
     `Subject: ${opts.subject}`,
     `MIME-Version: 1.0`,
   ]
+
+  if (opts.replyTo) {
+    headers.push(`Reply-To: ${opts.replyTo}`)
+  }
 
   if (opts.threadId) {
     // For threading — Gmail uses References/In-Reply-To headers

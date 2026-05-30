@@ -36,11 +36,11 @@ function formatCurrency(amount: number): string {
 }
 
 function getBucketColor(min: number): string {
-  if (min >= 25) return 'bg-green-100 border-green-400 text-green-800'
-  if (min >= 15) return 'bg-blue-100 border-blue-400 text-blue-800'
-  if (min >= 10) return 'bg-yellow-100 border-yellow-400 text-yellow-800'
-  if (min >= 5) return 'bg-orange-100 border-orange-400 text-orange-800'
-  return 'bg-red-100 border-red-400 text-red-800'
+  if (min >= 25) return 'bg-stone-100 border-stone-400 text-stone-800'
+  if (min >= 15) return 'bg-stone-200 border-stone-400 text-stone-800'
+  if (min >= 10) return 'bg-stone-100 border-stone-400 text-stone-800'
+  if (min >= 5) return 'bg-stone-200 border-stone-300 text-stone-700'
+  return 'bg-stone-100 border-stone-400 text-stone-800'
 }
 
 export default function MarginsReportPage() {
@@ -69,13 +69,13 @@ export default function MarginsReportPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-stone-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Margin Analysis</h1>
-            <p className="mt-2 text-sm text-gray-600">
+            <h1 className="text-3xl font-bold text-stone-900">Margin Analysis</h1>
+            <p className="mt-2 text-sm text-stone-600">
               Profit margin distribution across opportunities
             </p>
           </div>
@@ -86,17 +86,17 @@ export default function MarginsReportPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {loading && (
           <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <p className="mt-4 text-gray-600">Loading margins data...</p>
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
+            <p className="mt-4 text-stone-600">Loading margins data...</p>
           </div>
         )}
 
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-red-800">{error}</p>
+          <div className="mb-4 p-4 bg-stone-100 border border-stone-400 rounded-md">
+            <p className="text-stone-900">{error}</p>
             <button
               onClick={() => { setError(''); fetchMarginsData(); }}
-              className="mt-2 text-sm text-red-600 underline"
+              className="mt-2 text-sm text-stone-900 underline"
             >
               Retry
             </button>
@@ -108,34 +108,34 @@ export default function MarginsReportPage() {
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
               <div className="bg-white rounded-lg shadow-sm p-6">
-                <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide">
+                <h3 className="text-sm font-medium text-stone-500 uppercase tracking-wide">
                   Average Margin
                 </h3>
-                <p className="text-3xl font-bold text-gray-900 mt-2">
+                <p className="text-3xl font-bold text-stone-900 mt-2">
                   {data.averageMargin.toFixed(1)}%
                 </p>
               </div>
               <div className="bg-white rounded-lg shadow-sm p-6">
-                <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide">
+                <h3 className="text-sm font-medium text-stone-500 uppercase tracking-wide">
                   Assessed Opportunities
                 </h3>
-                <p className="text-3xl font-bold text-gray-900 mt-2">
+                <p className="text-3xl font-bold text-stone-900 mt-2">
                   {data.totalAssessed}
                 </p>
               </div>
               <div className="bg-white rounded-lg shadow-sm p-6">
-                <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide">
+                <h3 className="text-sm font-medium text-stone-500 uppercase tracking-wide">
                   Meets Target (10%+)
                 </h3>
-                <p className="text-3xl font-bold text-green-600 mt-2">
+                <p className="text-3xl font-bold text-stone-900 mt-2">
                   {data.meetsTargetCount}
                 </p>
               </div>
               <div className="bg-white rounded-lg shadow-sm p-6">
-                <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide">
+                <h3 className="text-sm font-medium text-stone-500 uppercase tracking-wide">
                   Target Rate
                 </h3>
-                <p className="text-3xl font-bold text-gray-900 mt-2">
+                <p className="text-3xl font-bold text-stone-900 mt-2">
                   {data.meetsTargetPercent.toFixed(0)}%
                 </p>
               </div>
@@ -143,14 +143,14 @@ export default function MarginsReportPage() {
 
             {/* Margin Buckets */}
             <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">Margin Distribution</h2>
+              <div className="px-6 py-4 border-b border-stone-200">
+                <h2 className="text-lg font-semibold text-stone-900">Margin Distribution</h2>
               </div>
-              <div className="divide-y divide-gray-200">
+              <div className="divide-y divide-stone-200">
                 {data.buckets.map((bucket) => (
                   <div key={bucket.range}>
                     <div
-                      className="p-6 cursor-pointer hover:bg-gray-50"
+                      className="p-6 cursor-pointer hover:bg-stone-50"
                       onClick={() =>
                         setExpandedBucket(
                           expandedBucket === bucket.range ? null : bucket.range
@@ -166,16 +166,16 @@ export default function MarginsReportPage() {
                           >
                             {bucket.range}
                           </span>
-                          <span className="text-gray-900 font-medium">
+                          <span className="text-stone-900 font-medium">
                             {bucket.count} opportunit{bucket.count === 1 ? 'y' : 'ies'}
                           </span>
                         </div>
                         <div className="flex items-center gap-6">
-                          <span className="text-gray-600">
+                          <span className="text-stone-600">
                             {formatCurrency(bucket.totalValue)} total value
                           </span>
                           <svg
-                            className={`h-5 w-5 text-gray-400 transition-transform ${
+                            className={`h-5 w-5 text-stone-400 transition-transform ${
                               expandedBucket === bucket.range ? 'rotate-180' : ''
                             }`}
                             fill="none"
@@ -194,11 +194,9 @@ export default function MarginsReportPage() {
 
                       {/* Visual bar */}
                       <div className="mt-3">
-                        <div className="h-2 bg-gray-200 rounded-full">
+                        <div className="h-2 bg-stone-200 rounded-full">
                           <div
-                            className={`h-2 rounded-full ${
-                              bucket.min >= 10 ? 'bg-green-500' : 'bg-yellow-500'
-                            }`}
+                            className="h-2 rounded-full bg-stone-600"
                             style={{
                               width: `${
                                 data.totalAssessed > 0
@@ -213,38 +211,38 @@ export default function MarginsReportPage() {
 
                     {/* Expanded list */}
                     {expandedBucket === bucket.range && bucket.opportunities.length > 0 && (
-                      <div className="bg-gray-50 px-6 py-4 border-t border-gray-100">
+                      <div className="bg-stone-50 px-6 py-4 border-t border-stone-100">
                         <table className="min-w-full">
                           <thead>
-                            <tr className="text-xs text-gray-500 uppercase tracking-wider">
+                            <tr className="text-xs text-stone-500 uppercase tracking-wider">
                               <th className="text-left pb-2">Opportunity</th>
                               <th className="text-left pb-2">Solicitation #</th>
                               <th className="text-right pb-2">Margin</th>
                               <th className="text-right pb-2">Value</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-200">
+                          <tbody className="divide-y divide-stone-200">
                             {bucket.opportunities.map((opp) => (
                               <tr
                                 key={opp.id}
-                                className="hover:bg-gray-100 cursor-pointer"
+                                className="hover:bg-stone-100 cursor-pointer"
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   router.push(`/opportunities/${opp.id}`)
                                 }}
                               >
-                                <td className="py-2 text-sm text-gray-900">
+                                <td className="py-2 text-sm text-stone-900">
                                   {opp.title}
                                 </td>
-                                <td className="py-2 text-sm text-gray-500">
+                                <td className="py-2 text-sm text-stone-500">
                                   {opp.solicitationNumber}
                                 </td>
-                                <td className="py-2 text-sm text-gray-900 text-right">
+                                <td className="py-2 text-sm text-stone-900 text-right">
                                   {opp.profitMarginPercent !== null
                                     ? `${opp.profitMarginPercent.toFixed(1)}%`
                                     : '-'}
                                 </td>
-                                <td className="py-2 text-sm text-gray-900 text-right">
+                                <td className="py-2 text-sm text-stone-900 text-right">
                                   {opp.estimatedValue
                                     ? formatCurrency(opp.estimatedValue)
                                     : '-'}

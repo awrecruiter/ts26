@@ -2,11 +2,13 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import BidCard from '@/components/bids/BidCard'
 
 function BidsPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { status: sessionStatus } = useSession()
 
   const [bids, setBids] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -19,13 +21,16 @@ function BidsPageContent() {
     totalPages: 0,
   })
 
-  // Filters
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const [status, setStatus] = useState(searchParams.get('status') || '')
 
   useEffect(() => {
-    fetchBids()
-  }, [searchParams])
+    if (sessionStatus === 'unauthenticated') {
+      router.push('/login')
+    } else if (sessionStatus === 'authenticated') {
+      fetchBids()
+    }
+  }, [sessionStatus, searchParams])
 
   const fetchBids = async () => {
     try {
@@ -48,7 +53,6 @@ function BidsPageContent() {
       const data = await response.json()
       setBids(data.bids || [])
 
-      // Handle pagination from API response
       if (data.pagination) {
         setPagination(data.pagination)
       } else {
@@ -100,21 +104,32 @@ function BidsPageContent() {
     { value: 'REJECTED', label: 'Rejected' },
   ]
 
+  if (sessionStatus === 'loading') {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
+          <p className="mt-4 text-stone-500">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-stone-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Bids</h1>
-              <p className="mt-2 text-sm text-gray-600">
+              <h1 className="text-3xl font-bold text-stone-900">Bids</h1>
+              <p className="mt-2 text-sm text-stone-600">
                 Manage and track your bid pricing analysis
               </p>
             </div>
             <button
               onClick={() => router.push('/opportunities')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              className="px-4 py-2 bg-stone-800 text-white rounded-md hover:bg-stone-700"
             >
               Generate New Bid
             </button>
@@ -123,20 +138,20 @@ function BidsPageContent() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <form onSubmit={handleSearchSubmit} className="flex gap-4">
+          <form onSubmit={handleSearchSubmit} className="flex flex-wrap gap-4">
             <input
               type="text"
               placeholder="Search by opportunity name or solicitation number..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 px-4 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-stone-400"
             />
             <select
               value={status}
               onChange={(e) => handleStatusChange(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-4 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-stone-400"
             >
               {statuses.map((s) => (
                 <option key={s.value} value={s.value}>
@@ -146,7 +161,7 @@ function BidsPageContent() {
             </select>
             <button
               type="submit"
-              className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              className="px-6 py-2 bg-stone-800 text-white rounded-md hover:bg-stone-700"
             >
               Search
             </button>
@@ -158,17 +173,17 @@ function BidsPageContent() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {loading && (
           <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <p className="mt-4 text-gray-600">Loading bids...</p>
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
+            <p className="mt-4 text-stone-600">Loading bids...</p>
           </div>
         )}
 
         {error && (
           <div className="text-center py-12">
-            <p className="text-red-600 text-lg">{error}</p>
+            <p className="text-stone-600 text-lg">{error}</p>
             <button
               onClick={() => fetchBids()}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              className="mt-4 px-4 py-2 bg-stone-800 text-white rounded-md hover:bg-stone-700"
             >
               Retry
             </button>
@@ -177,15 +192,15 @@ function BidsPageContent() {
 
         {!loading && !error && bids.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-gray-600 text-lg">No bids found</p>
-            <p className="text-gray-500 mt-2">
+            <p className="text-stone-600 text-lg">No bids found</p>
+            <p className="text-stone-500 mt-2">
               {search || status
                 ? 'Try adjusting your filters'
                 : 'Generate your first bid from an opportunity'}
             </p>
             <button
               onClick={() => router.push('/opportunities')}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              className="mt-4 px-4 py-2 bg-stone-800 text-white rounded-md hover:bg-stone-700"
             >
               View Opportunities
             </button>
@@ -206,24 +221,24 @@ function BidsPageContent() {
                 <button
                   onClick={() => handlePageChange(pagination.page - 1)}
                   disabled={pagination.page === 1}
-                  className="px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-white border border-stone-300 rounded-md hover:bg-stone-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Previous
                 </button>
-                <span className="text-gray-600">
+                <span className="text-stone-600">
                   Page {pagination.page} of {pagination.totalPages}
                 </span>
                 <button
                   onClick={() => handlePageChange(pagination.page + 1)}
                   disabled={pagination.page === pagination.totalPages}
-                  className="px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-white border border-stone-300 rounded-md hover:bg-stone-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Next
                 </button>
               </div>
             )}
 
-            <div className="text-center mt-4 text-sm text-gray-600">
+            <div className="text-center mt-4 text-sm text-stone-600">
               Showing {bids.length} of {pagination.total} bids
             </div>
           </>
@@ -236,10 +251,10 @@ function BidsPageContent() {
 export default function BidsPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <p className="mt-4 text-gray-600">Loading bids...</p>
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
+          <p className="mt-4 text-stone-600">Loading bids...</p>
         </div>
       </div>
     }>

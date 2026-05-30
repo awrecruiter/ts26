@@ -10,6 +10,10 @@ interface PlaceSearchResult {
   types: string[]
   rating: number | null
   totalRatings: number | null
+  /** Latitude from Places API geometry — used for distance computation */
+  lat?: number | null
+  /** Longitude from Places API geometry — used for distance computation */
+  lng?: number | null
 }
 
 interface PlaceDetails {
@@ -21,6 +25,9 @@ interface PlaceDetails {
 interface Subcontractor extends PlaceSearchResult, PlaceDetails {
   service?: string
   location?: string
+  /** Straight-line distance in km from the place of performance. Null when POP
+   * coordinates couldn't be determined (no geocode / no vendor geometry). */
+  distanceKm?: number | null
 }
 
 // NAICS code to service type mapping for search queries
@@ -30,6 +37,9 @@ const NAICS_SERVICE_MAP: Record<string, string[]> = {
   '238210': ['Electrical Contractor', 'Electrician'],
   '238220': ['Plumbing Contractor', 'HVAC Contractor'],
   '238910': ['Site Preparation Contractor'],
+  '334210': ['Telephone Apparatus', 'Communications Equipment'],
+  '334220': ['Communications Equipment Repair', 'Electronics Repair', 'RF Electronics'],
+  '334290': ['Communications Equipment', 'Electronic Components'],
   '334511': ['Radar Systems', 'Navigation Equipment'],
   '334519': ['Measuring Instruments', 'Testing Equipment'],
   '336411': ['Aircraft Manufacturing', 'Aerospace Contractor'],
@@ -111,6 +121,57 @@ const STATE_NAMES: Record<string, string> = {
 }
 
 /**
+ * Haversine formula — returns straight-line distance in kilometres between
+ * two lat/lng coordinate pairs.
+ */
+function haversineKm(
+  lat1: number, lng1: number,
+  lat2: number, lng2: number
+): number {
+  const R = 6371 // Earth radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLng = ((lng2 - lng1) * Math.PI) / 180
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
+/**
+ * Geocode a place-of-performance string (e.g. "Anchorage, Alaska, USA") to
+ * lat/lng using the Google Geocoding API. Returns null when the API is not
+ * configured or the request fails — callers treat null as "distance unknown".
+ */
+export async function geocodePlaceOfPerformance(
+  placeOfPerformance: string
+): Promise<{ lat: number; lng: number } | null> {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY
+  if (!apiKey || apiKey.includes('your_actual') || apiKey.includes('your_google')) {
+    return null
+  }
+
+  try {
+    const url = new URL('https://maps.googleapis.com/maps/api/geocode/json')
+    url.searchParams.set('address', placeOfPerformance)
+    url.searchParams.set('key', apiKey)
+
+    const res = await fetch(url.toString())
+    const data = await res.json()
+
+    if (data.status === 'OK' && data.results?.[0]?.geometry?.location) {
+      const { lat, lng } = data.results[0].geometry.location
+      return { lat, lng }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Returns true when a Google formatted_address contains the given city name.
  * Case-insensitive substring match.
  */
@@ -134,17 +195,23 @@ function addressMatchesState(address: string, stateCode: string): boolean {
   return false
 }
 
+interface SearchBusinessesResult {
+  results: PlaceSearchResult[]
+  /** Set when the Places API returns a non-OK status (e.g. REQUEST_DENIED) */
+  apiError?: string
+}
+
 export async function searchBusinesses(
   query: string,
   location: string = 'United States',
   maxResults: number = 5,
   stateCode?: string | null
-): Promise<PlaceSearchResult[]> {
+): Promise<SearchBusinessesResult> {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY
 
   if (!apiKey || apiKey.includes('your_actual') || apiKey.includes('your_google')) {
     console.warn('GOOGLE_PLACES_API_KEY not configured properly. Key present:', !!apiKey, 'Key length:', apiKey?.length || 0)
-    return []
+    return { results: [] }
   }
 
   try {
@@ -173,7 +240,7 @@ export async function searchBusinesses(
       if (data.status === 'REQUEST_DENIED') {
         console.error('[Google Places] Check if Places API is enabled and API key is valid')
       }
-      return []
+      return { results: [], apiError: data.status as string }
     }
 
     const allResults: PlaceSearchResult[] = data.results.map((place: any) => ({
@@ -183,6 +250,9 @@ export async function searchBusinesses(
       types: place.types || [],
       rating: place.rating || null,
       totalRatings: place.user_ratings_total || null,
+      // Extract geometry coordinates for downstream distance computation
+      lat: place.geometry?.location?.lat ?? null,
+      lng: place.geometry?.location?.lng ?? null,
     }))
 
     // Post-filter by state: the legacy Places API text search does not
@@ -200,10 +270,10 @@ export async function searchBusinesses(
       businesses = allResults
     }
 
-    return businesses.slice(0, maxResults)
+    return { results: businesses.slice(0, maxResults) }
   } catch (error) {
     console.error('[Google Places] Search failed:', error)
-    return []
+    return { results: [] }
   }
 }
 
@@ -247,6 +317,12 @@ export async function getPlaceDetails(placeId: string): Promise<PlaceDetails> {
   }
 }
 
+export interface FindSubcontractorsResult {
+  vendors: Subcontractor[]
+  /** Set when the Places API returned a non-OK status on any search call */
+  apiError?: string
+}
+
 export async function findSubcontractorsForOpportunity(opportunity: {
   naicsCode?: string | null
   /** Full place of performance string e.g. "Anchorage, Alaska, USA" */
@@ -258,8 +334,11 @@ export async function findSubcontractorsForOpportunity(opportunity: {
   radiusMiles?: 25 | 50 | 100 | 250
   /** City name for city-level post-filtering at 25mi radius */
   city?: string | null
-}): Promise<Subcontractor[]> {
-  const { naicsCode, placeOfPerformance, stateCode, title, radiusMiles = 50, city } = opportunity
+  /** Pre-geocoded POP coordinates — computed once by the caller to avoid
+   * repeated Geocoding API calls per search query. Pass null to skip distance. */
+  popCoords?: { lat: number; lng: number } | null
+}): Promise<FindSubcontractorsResult> {
+  const { naicsCode, placeOfPerformance, stateCode, title, radiusMiles = 50, city, popCoords } = opportunity
 
   // Build search queries — prioritize NAICS, then title keywords
   let searchQueries: string[] = []
@@ -305,16 +384,22 @@ export async function findSubcontractorsForOpportunity(opportunity: {
   const allSubcontractors: Subcontractor[] = []
   const seenNames = new Set<string>()
   const seenPlaceIds = new Set<string>()
+  let firstApiError: string | undefined
 
   // Search up to 3 queries, 5 results each, to get good coverage
   for (const query of searchQueries.slice(0, 3)) {
     // Pass stateCode so searchBusinesses can add a locationbias bounding box
-    const businesses = await searchBusinesses(query, location, 5, stateCode)
+    const searchResult = await searchBusinesses(query, location, 5, stateCode)
+
+    // Capture the first API error we encounter (e.g. REQUEST_DENIED)
+    if (searchResult.apiError && !firstApiError) {
+      firstApiError = searchResult.apiError
+    }
 
     // At 25mi: additionally post-filter by city name for tightest radius
     const filteredBusinesses = (radiusMiles === 25 && city)
-      ? businesses.filter(b => addressMatchesCity(b.address, city))
-      : businesses
+      ? searchResult.results.filter(b => addressMatchesCity(b.address, city))
+      : searchResult.results
 
     for (const business of filteredBusinesses) {
       // Deduplicate by name AND placeId
@@ -325,6 +410,15 @@ export async function findSubcontractorsForOpportunity(opportunity: {
       seenNames.add(nameLower)
       if (business.placeId) seenPlaceIds.add(business.placeId)
 
+      // Compute straight-line distance from place of performance when both
+      // the POP coordinates and the vendor's geometry are available.
+      let distanceKm: number | null = null
+      if (popCoords && business.lat != null && business.lng != null) {
+        distanceKm = Math.round(
+          haversineKm(popCoords.lat, popCoords.lng, business.lat, business.lng)
+        )
+      }
+
       // Get detailed information
       const details = await getPlaceDetails(business.placeId)
 
@@ -333,11 +427,15 @@ export async function findSubcontractorsForOpportunity(opportunity: {
         ...details,
         service: query,
         location: placeOfPerformance || (stateCode ? `${stateCode}, USA` : 'USA'),
+        distanceKm,
       })
     }
   }
 
-  return allSubcontractors
+  return {
+    vendors: allSubcontractors,
+    ...(firstApiError && { apiError: firstApiError }),
+  }
 }
 
 export interface GoogleMapsEnrichment {
@@ -365,7 +463,7 @@ export async function enrichWithGoogleMaps(
 
   try {
     const location = state ? `${state}, USA` : 'United States'
-    const results = await searchBusinesses(businessName, location, 1)
+    const { results } = await searchBusinesses(businessName, location, 1)
 
     if (results.length === 0) return null
 

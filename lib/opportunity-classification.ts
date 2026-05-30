@@ -152,6 +152,59 @@ export function extractPlaceOfPerformance(rawData: any, fallbackState?: string |
   return fallbackState ? `${fallbackState}, USA` : 'United States'
 }
 
+/**
+ * Suggest a default search radius (in miles) based on place of performance density.
+ *
+ * Logic:
+ * - Dense metro cities (NYC, LA, Chicago, DC, etc.)  → 25 mi
+ * - Most named cities                                 → 50 mi  (default)
+ * - Sparsely populated states (AK, MT, WY, ND, SD, ID, NM) → 100 mi
+ * - No city specified (state-only or nationwide)      → 100 mi
+ *
+ * Returns one of the RADIUS_TIERS values: 25 | 50 | 100 | 250.
+ */
+export function suggestSearchRadius(
+  city: string | null | undefined,
+  stateCode: string | null | undefined
+): 25 | 50 | 100 | 250 {
+  // Sparsely populated states — widen by default
+  const SPARSE_STATES = new Set(['AK', 'MT', 'WY', 'ND', 'SD', 'ID', 'NM', 'NV', 'VT', 'ME', 'NH', 'WV'])
+  if (!city) {
+    return stateCode && SPARSE_STATES.has(stateCode.toUpperCase()) ? 100 : 100
+  }
+
+  const cityLower = city.toLowerCase().trim()
+
+  // Dense metro areas — tight radius to keep results hyper-local
+  const DENSE_METROS = new Set([
+    'new york', 'new york city', 'nyc', 'brooklyn', 'queens', 'bronx', 'manhattan',
+    'los angeles', 'la', 'chicago', 'houston', 'phoenix', 'philadelphia',
+    'san antonio', 'san diego', 'dallas', 'san jose', 'austin', 'jacksonville',
+    'fort worth', 'columbus', 'charlotte', 'indianapolis', 'san francisco',
+    'seattle', 'denver', 'washington', 'washington dc', 'nashville', 'oklahoma city',
+    'el paso', 'boston', 'portland', 'las vegas', 'memphis', 'baltimore', 'milwaukee',
+    'albuquerque', 'tucson', 'fresno', 'sacramento', 'mesa', 'kansas city',
+    'atlanta', 'omaha', 'colorado springs', 'raleigh', 'long beach', 'virginia beach',
+    'minneapolis', 'tampa', 'new orleans', 'arlington', 'wichita', 'bakersfield',
+    'aurora', 'anaheim', 'santa ana', 'corpus christi', 'riverside', 'st. louis',
+    'lexington', 'pittsburgh', 'anchorage', 'stockton', 'cincinnati', 'st. paul',
+    'toledo', 'greensboro', 'newark', 'plano', 'henderson', 'lincoln', 'buffalo',
+    'jersey city', 'chula vista', 'fort wayne', 'orlando', 'st. petersburg',
+    'norfolk', 'laredo', 'madison', 'durham', 'lubbock', 'winston-salem',
+    'garland', 'glendale', 'hialeah', 'reno', 'baton rouge', 'irvine',
+    'chesapeake', 'irving', 'scottsdale', 'north las vegas', 'fremont',
+    'gilbert', 'san bernardino', 'birmingham', 'boise',
+  ])
+
+  if (DENSE_METROS.has(cityLower)) return 25
+
+  // Sparse states with a city specified — still use 100mi
+  if (stateCode && SPARSE_STATES.has(stateCode.toUpperCase())) return 100
+
+  // Default: named city that isn't a mega-metro
+  return 50
+}
+
 const STATE_NAME_TO_CODE: Record<string, string> = {
   'ALABAMA': 'AL', 'ALASKA': 'AK', 'ARIZONA': 'AZ', 'ARKANSAS': 'AR',
   'CALIFORNIA': 'CA', 'COLORADO': 'CO', 'CONNECTICUT': 'CT', 'DELAWARE': 'DE',

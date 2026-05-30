@@ -292,10 +292,11 @@ model Subcontractor {
   googleEnrichedAt     DateTime?
 
   // Categorization
-  service   String?
-  location  String?
-  naicsCode String?
-  source    String? // 'sam_gov', 'google_places', 'manual'
+  service    String?
+  location   String?
+  naicsCode  String?
+  source     String?  // 'sam_gov', 'google_places', 'manual'
+  distanceKm Float?   // straight-line km from place of performance (null = unknown)
 
   // Vendor Workflow
   callCompleted   Boolean   @default(false)

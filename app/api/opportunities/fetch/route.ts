@@ -23,7 +23,7 @@ export async function POST(req: Request) {
 
     const apiKey = process.env.SAM_GOV_API_KEY
     if (!apiKey) {
-      return NextResponse.json({ error: 'SAM_GOV_API_KEY not configured' }, { status: 500 })
+      return NextResponse.json({ error: 'SAM_GOV_API_KEY not configured' }, { status: 503 })
     }
 
     // Calculate date range

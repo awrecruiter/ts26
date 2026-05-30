@@ -26,6 +26,8 @@ interface EmailOptions {
   body: string
   html?: string
   from?: string
+  /** Reply-To address — typically the logged-in user's email so replies land in their inbox */
+  replyTo?: string
   attachments?: EmailAttachment[]
   /** Gmail OAuth tokens — required when EMAIL_PROVIDER=gmail */
   googleAccessToken?: string
@@ -97,6 +99,7 @@ async function sendViaSMTP(options: EmailOptions): Promise<EmailResult> {
       subject: options.subject,
       text: options.body,
       html: options.html,
+      ...(options.replyTo ? { replyTo: options.replyTo } : {}),
       attachments: options.attachments?.map(a => ({
         filename: a.filename,
         content: a.content,
@@ -149,6 +152,7 @@ async function sendViaSendGrid(options: EmailOptions): Promise<EmailResult> {
           },
         ],
         from: { email: from },
+        ...(options.replyTo ? { reply_to: { email: options.replyTo } } : {}),
         subject: options.subject,
         content: [
           {
@@ -207,6 +211,7 @@ async function sendViaGmailProvider(options: EmailOptions): Promise<EmailResult>
     body: options.body,
     html: options.html,
     from: options.from,
+    replyTo: options.replyTo,
     threadId: options.gmailThreadId,
     attachments: options.attachments,
   })

@@ -145,15 +145,18 @@ export function analyzeHistoricalPricing(
   naicsCode?: string | null
 ): PricingAnalysis {
   if (contracts.length === 0) {
+    const costBasedPrice = estimatedCost && estimatedCost > 0 ? estimatedCost * 1.20 : 0
     return {
       averageContractValue: 0,
       medianContractValue: 0,
       minContractValue: 0,
       maxContractValue: 0,
       totalContracts: 0,
-      recommendedBidPrice: 0,
+      recommendedBidPrice: costBasedPrice,
       confidence: 'no_data',
-      dataSource: 'No historical contracts found on USASpending.gov for this NAICS code and agency',
+      dataSource: costBasedPrice > 0
+        ? 'Cost-based estimate (20% markup) — no USASpending.gov historical data found for this NAICS code'
+        : 'No historical contracts found on USASpending.gov for this NAICS code and agency',
       historicalContracts: [],
     }
   }

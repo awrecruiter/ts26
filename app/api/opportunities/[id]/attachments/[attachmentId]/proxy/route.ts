@@ -5,13 +5,19 @@ import { extractAttachmentsFromRawData } from '@/lib/samgov'
 /**
  * GET /api/opportunities/[id]/attachments/[attachmentId]/proxy
  * Proxies SAM.gov attachment downloads server-side to avoid CORS/redirect issues.
+ *
+ * Query params:
+ *   ?download=1  — force Content-Disposition: attachment (triggers browser save dialog)
+ *                  Default (no param) is inline so PDFs and images render in the viewer.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string; attachmentId: string }> }
 ) {
   try {
     const { id, attachmentId } = await params
+    const { searchParams } = new URL(request.url)
+    const forceDownload = searchParams.get('download') === '1'
 
     const opportunity = await prisma.opportunity.findUnique({
       where: { id },
@@ -69,10 +75,16 @@ export async function GET(
       // Sanitize filename for Content-Disposition header
       const safeFilename = attachment.name.replace(/[^\w.\-\s]/g, '_')
 
+      // Use 'attachment' only when the caller explicitly requests a download.
+      // Default to 'inline' so browsers render PDFs and images inside the viewer iframe.
+      const disposition = forceDownload
+        ? `attachment; filename="${safeFilename}"`
+        : `inline; filename="${safeFilename}"`
+
       return new NextResponse(data, {
         headers: {
           'Content-Type': contentType,
-          'Content-Disposition': `inline; filename="${safeFilename}"`,
+          'Content-Disposition': disposition,
           'Content-Length': data.byteLength.toString(),
           'Cache-Control': 'private, max-age=3600',
         },

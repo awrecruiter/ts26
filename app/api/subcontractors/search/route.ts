@@ -27,11 +27,11 @@ export async function GET(request: Request) {
     const location = state ? `${state}, USA` : 'United States'
 
     // Search Google Places
-    const businesses = await searchBusinesses(query, location, 10)
+    const { results: businesses } = await searchBusinesses(query, location, 10)
 
     // Get details for each business
     const results = await Promise.all(
-      businesses.map(async (business) => {
+      businesses.map(async (business: { placeId: string; name: string; address: string; rating: number | null; types: string[] }) => {
         const details = await getPlaceDetails(business.placeId)
         return {
           id: `google-${business.placeId}`,
@@ -42,9 +42,9 @@ export async function GET(request: Request) {
           address: business.address,
           rating: business.rating,
           service: business.types
-            ?.filter(t => !['point_of_interest', 'establishment'].includes(t))
+            ?.filter((t: string) => !['point_of_interest', 'establishment'].includes(t))
             .slice(0, 2)
-            .map(t => t.replace(/_/g, ' '))
+            .map((t: string) => t.replace(/_/g, ' '))
             .join(', ') || null,
           source: 'google_places',
           relevanceScore: business.rating ? business.rating / 5 : 0.5,

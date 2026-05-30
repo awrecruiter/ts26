@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 
 interface Vendor {
@@ -23,10 +24,10 @@ interface Vendor {
 
 function VendorTypeBadge({ type }: { type: Vendor['type'] }) {
   const styles: Record<Vendor['type'], string> = {
-    SUBCONTRACTOR: 'bg-blue-100 text-blue-800',
-    SUPPLIER: 'bg-purple-100 text-purple-800',
-    PARTNER: 'bg-green-100 text-green-800',
-    CONSULTANT: 'bg-indigo-100 text-indigo-800',
+    SUBCONTRACTOR: 'bg-stone-100 text-stone-700',
+    SUPPLIER: 'bg-stone-200 text-stone-700',
+    PARTNER: 'bg-stone-100 text-stone-700',
+    CONSULTANT: 'bg-stone-100 text-stone-700',
   }
   return (
     <span className={`px-2 py-1 text-xs font-medium rounded-full ${styles[type]}`}>
@@ -37,10 +38,10 @@ function VendorTypeBadge({ type }: { type: Vendor['type'] }) {
 
 function VendorStatusBadge({ status }: { status: Vendor['status'] }) {
   const styles: Record<Vendor['status'], string> = {
-    PROSPECT: 'bg-yellow-100 text-yellow-800',
-    ACTIVE: 'bg-green-100 text-green-800',
-    INACTIVE: 'bg-gray-100 text-gray-800',
-    BLACKLISTED: 'bg-red-100 text-red-800',
+    PROSPECT: 'bg-stone-200 text-stone-700',
+    ACTIVE: 'bg-stone-100 text-stone-700',
+    INACTIVE: 'bg-stone-100 text-stone-600',
+    BLACKLISTED: 'bg-stone-100 text-stone-500',
   }
   return (
     <span className={`px-2 py-1 text-xs font-medium rounded-full ${styles[status]}`}>
@@ -52,6 +53,7 @@ function VendorStatusBadge({ status }: { status: Vendor['status'] }) {
 function VendorsPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { status: sessionStatus } = useSession()
 
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [loading, setLoading] = useState(true)
@@ -70,8 +72,12 @@ function VendorsPageContent() {
   const [status, setStatus] = useState(searchParams.get('status') || '')
 
   useEffect(() => {
-    fetchVendors()
-  }, [searchParams])
+    if (sessionStatus === 'unauthenticated') {
+      router.push('/login')
+    } else if (sessionStatus === 'authenticated') {
+      fetchVendors()
+    }
+  }, [sessionStatus, searchParams])
 
   const fetchVendors = async () => {
     try {
@@ -115,21 +121,32 @@ function VendorsPageContent() {
     router.push(`/vendors?${params.toString()}`)
   }
 
+  if (sessionStatus === 'loading') {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
+          <p className="mt-4 text-stone-500">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-stone-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Vendors</h1>
-              <p className="mt-2 text-sm text-gray-600">
+              <h1 className="text-3xl font-bold text-stone-900">Vendors</h1>
+              <p className="mt-2 text-sm text-stone-600">
                 Manage your subcontractors, suppliers, and partners
               </p>
             </div>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              className="px-4 py-2 bg-stone-800 text-white rounded-md hover:bg-stone-700"
             >
               Add Vendor
             </button>
@@ -138,20 +155,20 @@ function VendorsPageContent() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <form onSubmit={handleSearchSubmit} className="flex gap-4">
+          <form onSubmit={handleSearchSubmit} className="flex flex-wrap gap-4">
             <input
               type="text"
               placeholder="Search by name, email, or phone..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 px-4 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-stone-400"
             />
             <select
               value={type}
               onChange={(e) => { setType(e.target.value); updateFilters({ search, type: e.target.value, status }); }}
-              className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-4 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-stone-400"
             >
               <option value="">All Types</option>
               <option value="SUBCONTRACTOR">Subcontractor</option>
@@ -162,7 +179,7 @@ function VendorsPageContent() {
             <select
               value={status}
               onChange={(e) => { setStatus(e.target.value); updateFilters({ search, type, status: e.target.value }); }}
-              className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-4 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-stone-400"
             >
               <option value="">All Statuses</option>
               <option value="PROSPECT">Prospect</option>
@@ -172,7 +189,7 @@ function VendorsPageContent() {
             </select>
             <button
               type="submit"
-              className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              className="px-6 py-2 bg-stone-800 text-white rounded-md hover:bg-stone-700"
             >
               Search
             </button>
@@ -184,15 +201,15 @@ function VendorsPageContent() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {loading && (
           <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <p className="mt-4 text-gray-600">Loading vendors...</p>
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
+            <p className="mt-4 text-stone-600">Loading vendors...</p>
           </div>
         )}
 
         {error && (
           <div className="text-center py-12">
-            <p className="text-red-600 text-lg">{error}</p>
-            <button onClick={fetchVendors} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+            <p className="text-stone-600 text-lg">{error}</p>
+            <button onClick={fetchVendors} className="mt-4 px-4 py-2 bg-stone-800 text-white rounded-md hover:bg-stone-700">
               Retry
             </button>
           </div>
@@ -200,10 +217,10 @@ function VendorsPageContent() {
 
         {!loading && !error && vendors.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-gray-600 text-lg">No vendors found</p>
+            <p className="text-stone-600 text-lg">No vendors found</p>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              className="mt-4 px-4 py-2 bg-stone-800 text-white rounded-md hover:bg-stone-700"
             >
               Add Your First Vendor
             </button>
@@ -213,27 +230,27 @@ function VendorsPageContent() {
         {!loading && !error && vendors.length > 0 && (
           <>
             <div className="bg-white shadow-sm rounded-lg overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-stone-200">
+                <thead className="bg-stone-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Contact</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Vendor</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Type</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Contact</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-stone-500 uppercase tracking-wider">Last Contact</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-stone-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white divide-y divide-stone-200">
                   {vendors.map((vendor) => (
-                    <tr key={vendor.id} className="hover:bg-gray-50">
+                    <tr key={vendor.id} className="hover:bg-stone-50">
                       <td className="px-6 py-4">
                         <div>
-                          <Link href={`/vendors/${vendor.id}`} className="text-sm font-medium text-gray-900 hover:text-blue-600">
+                          <Link href={`/vendors/${vendor.id}`} className="text-sm font-medium text-stone-900 hover:text-stone-600">
                             {vendor.name}
                           </Link>
                           {vendor.naicsCodes.length > 0 && (
-                            <p className="text-xs text-gray-500 mt-1">
+                            <p className="text-xs text-stone-500 mt-1">
                               NAICS: {vendor.naicsCodes.slice(0, 2).join(', ')}
                               {vendor.naicsCodes.length > 2 && `... +${vendor.naicsCodes.length - 2}`}
                             </p>
@@ -246,11 +263,11 @@ function VendorsPageContent() {
                       <td className="px-6 py-4">
                         <VendorStatusBadge status={vendor.status} />
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
+                      <td className="px-6 py-4 text-sm text-stone-500">
                         {vendor.email && <div>{vendor.email}</div>}
                         {vendor.phone && <div>{vendor.phone}</div>}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
+                      <td className="px-6 py-4 text-sm text-stone-500">
                         {vendor.lastContacted
                           ? new Date(vendor.lastContacted).toLocaleDateString()
                           : 'Never'}
@@ -258,7 +275,7 @@ function VendorsPageContent() {
                       <td className="px-6 py-4 text-right">
                         <Link
                           href={`/vendors/${vendor.id}`}
-                          className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                          className="text-stone-700 hover:text-stone-900 text-sm font-medium"
                         >
                           View
                         </Link>
@@ -275,17 +292,17 @@ function VendorsPageContent() {
                 <button
                   onClick={() => handlePageChange(pagination.page - 1)}
                   disabled={pagination.page === 1}
-                  className="px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                  className="px-4 py-2 bg-white border border-stone-300 rounded-md hover:bg-stone-50 disabled:opacity-50"
                 >
                   Previous
                 </button>
-                <span className="text-gray-600">
+                <span className="text-stone-600">
                   Page {pagination.page} of {pagination.totalPages}
                 </span>
                 <button
                   onClick={() => handlePageChange(pagination.page + 1)}
                   disabled={pagination.page === pagination.totalPages}
-                  className="px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                  className="px-4 py-2 bg-white border border-stone-300 rounded-md hover:bg-stone-50 disabled:opacity-50"
                 >
                   Next
                 </button>
@@ -356,72 +373,72 @@ function CreateVendorModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50">
       <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">Add New Vendor</h2>
+        <div className="px-6 py-4 border-b border-stone-200">
+          <h2 className="text-xl font-semibold text-stone-900">Add New Vendor</h2>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-800 text-sm">
+            <div className="p-3 bg-stone-50 border border-stone-200 rounded-md text-stone-700 text-sm">
               {error}
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+            <label className="block text-sm font-medium text-stone-700 mb-1">Name *</label>
             <input
               type="text"
               required
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-stone-400"
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-stone-700 mb-1">Email</label>
               <input
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-stone-400"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+              <label className="block text-sm font-medium text-stone-700 mb-1">Phone</label>
               <input
                 type="tel"
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-stone-400"
               />
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Website</label>
+            <label className="block text-sm font-medium text-stone-700 mb-1">Website</label>
             <input
               type="url"
               value={formData.website}
               onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-stone-400"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+            <label className="block text-sm font-medium text-stone-700 mb-1">Address</label>
             <input
               type="text"
               value={formData.address}
               onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-stone-400"
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+              <label className="block text-sm font-medium text-stone-700 mb-1">Type</label>
               <select
                 value={formData.type}
                 onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-stone-400"
               >
                 <option value="SUBCONTRACTOR">Subcontractor</option>
                 <option value="SUPPLIER">Supplier</option>
@@ -430,11 +447,11 @@ function CreateVendorModal({
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+              <label className="block text-sm font-medium text-stone-700 mb-1">Status</label>
               <select
                 value={formData.status}
                 onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-stone-400"
               >
                 <option value="PROSPECT">Prospect</option>
                 <option value="ACTIVE">Active</option>
@@ -443,36 +460,36 @@ function CreateVendorModal({
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">NAICS Codes (comma separated)</label>
+            <label className="block text-sm font-medium text-stone-700 mb-1">NAICS Codes (comma separated)</label>
             <input
               type="text"
               value={formData.naicsCodes}
               onChange={(e) => setFormData({ ...formData, naicsCodes: e.target.value })}
               placeholder="541330, 541512"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-stone-400"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+            <label className="block text-sm font-medium text-stone-700 mb-1">Notes</label>
             <textarea
               rows={3}
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-2 focus:ring-stone-400"
             />
           </div>
           <div className="flex gap-3 pt-4">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              className="flex-1 px-4 py-2 border border-stone-300 rounded-md text-stone-700 hover:bg-stone-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+              className="flex-1 px-4 py-2 bg-stone-800 text-white rounded-md hover:bg-stone-700 disabled:opacity-50"
             >
               {saving ? 'Creating...' : 'Create Vendor'}
             </button>
@@ -487,10 +504,10 @@ export default function VendorsPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="min-h-screen bg-stone-50 flex items-center justify-center">
           <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <p className="mt-4 text-gray-600">Loading vendors...</p>
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
+            <p className="mt-4 text-stone-600">Loading vendors...</p>
           </div>
         </div>
       }

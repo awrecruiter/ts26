@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import OpportunityCard from '@/components/opportunities/OpportunityCard'
 
 const DEADLINE_OPTIONS = [
@@ -32,6 +33,7 @@ function FilterBadge({ label, onRemove }: { label: string; onRemove: () => void 
 function OpportunitiesContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { status: sessionStatus } = useSession()
 
   const [opportunities, setOpportunities] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -59,8 +61,12 @@ function OpportunitiesContent() {
   const [maxMargin, setMaxMargin] = useState(searchParams.get('maxMargin') || '')
 
   useEffect(() => {
-    fetchOpportunities()
-  }, [searchParams])
+    if (sessionStatus === 'unauthenticated') {
+      router.push('/login')
+    } else if (sessionStatus === 'authenticated') {
+      fetchOpportunities()
+    }
+  }, [sessionStatus, searchParams])
 
   const buildParams = () => {
     const params = new URLSearchParams()
@@ -152,8 +158,19 @@ function OpportunitiesContent() {
     router.push(`/opportunities?${params.toString()}`)
   }
 
+  if (sessionStatus === 'loading') {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-stone-600"></div>
+          <p className="mt-4 text-stone-500">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="min-h-screen bg-stone-50 overflow-x-hidden">
       {/* Header */}
       <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -179,13 +196,13 @@ function OpportunitiesContent() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <form onSubmit={handleSearch}>
             {/* Search row */}
-            <div className="flex gap-3 mb-3">
+            <div className="flex flex-wrap gap-3 mb-3">
               <input
                 type="text"
                 placeholder="Search by title, solicitation number, or description..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="flex-1 px-4 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none"
+                className="flex-1 min-w-0 px-4 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none"
               />
               <button
                 type="submit"
@@ -325,7 +342,7 @@ function OpportunitiesContent() {
                 </div>
 
                 {/* Row 3: Margin range */}
-                <div className="flex items-end gap-3">
+                <div className="flex flex-wrap items-end gap-3">
                   <div className="w-36">
                     <label className="block text-xs font-medium text-stone-600 mb-1">Min Margin %</label>
                     <input

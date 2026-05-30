@@ -1,5 +1,6 @@
 'use client'
 
+import { Suspense } from 'react'
 import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import Navigation from './Navigation'
@@ -21,7 +22,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <>
-      {showNavigation && <Navigation />}
+      {showNavigation && <Suspense fallback={null}><Navigation /></Suspense>}
       {showNavigation && <Breadcrumbs />}
       <main>
         {children}

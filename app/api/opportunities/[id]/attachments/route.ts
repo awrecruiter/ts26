@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { auth } from '@/lib/auth'
 import { getOpportunityAttachments, getSamGovUrl, fetchNoticeDescription } from '@/lib/samgov'
 import type { RichAttachment } from '@/lib/types/attachment'
 
@@ -8,6 +9,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
     const { id } = await params
 
     const opportunity = await prisma.opportunity.findUnique({

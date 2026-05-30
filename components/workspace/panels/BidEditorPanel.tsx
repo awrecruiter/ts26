@@ -65,7 +65,7 @@ export default function BidEditorPanel({
   }
 
   return (
-    <div className="h-full overflow-auto p-6">
+    <div className="h-full overflow-auto p-4 sm:p-6">
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-start justify-between">
@@ -99,12 +99,12 @@ export default function BidEditorPanel({
           </div>
 
           {/* Quick adjustments */}
-          <div className="flex gap-2 mt-4">
+          <div className="flex gap-2 mt-4 flex-wrap">
             {[-10, -5, 0, 5, 10].map((pct) => (
               <button
                 key={pct}
                 onClick={() => adjustAmount(pct)}
-                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                className={`px-3 py-2 text-xs font-medium rounded transition-colors min-h-[44px] flex items-center ${
                   pct === 0
                     ? 'bg-stone-800 text-white'
                     : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
@@ -142,7 +142,7 @@ export default function BidEditorPanel({
         </div>
 
         {/* Auto-filled details */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-2 gap-4">
           <div className="p-4 bg-stone-50 border border-stone-200 rounded-lg">
             <p className="text-xs text-stone-400 uppercase tracking-wide mb-1">Cost basis</p>
             <p className="text-sm font-medium text-stone-700">

@@ -54,13 +54,15 @@ export async function POST(req: Request) {
 
     // Calculate profit analysis based on recommended price
     const recommendedPrice = pricingAnalysis.recommendedBidPrice
-    const costBasis = estimatedCost || recommendedPrice * 0.75 // Estimate 75% cost if unknown
-    const potentialProfit = recommendedPrice - costBasis
-    const grossMargin = ((potentialProfit / recommendedPrice) * 100).toFixed(2)
+    const costBasis = estimatedCost || (recommendedPrice > 0 ? recommendedPrice * 0.75 : 0)
+    const potentialProfit = recommendedPrice > 0 ? recommendedPrice - costBasis : 0
+    const marginPercent = recommendedPrice > 0
+      ? (potentialProfit / recommendedPrice) * 100
+      : 0
+    const grossMargin = marginPercent.toFixed(2)
 
     // Determine profitability rating
     let profitabilityRating = 'Low'
-    const marginPercent = parseFloat(grossMargin)
     if (marginPercent >= 30) profitabilityRating = 'Excellent'
     else if (marginPercent >= 20) profitabilityRating = 'Good'
     else if (marginPercent >= 10) profitabilityRating = 'Moderate'
@@ -155,57 +157,42 @@ export async function POST(req: Request) {
       },
     })
 
-    // Auto-create or update assessment based on bid analysis
-    const profitMarginPercent = parseFloat(grossMargin)
-    const meetsMarginTarget = profitMarginPercent >= 10
+    // Auto-create assessment only if none exists — never overwrite a user's manual assessment
+    if (!opportunity.assessment && recommendedPrice > 0) {
+      const autoMarginPercent = parseFloat(grossMargin)
+      const meetsMarginTarget = autoMarginPercent >= 10
 
-    // Determine recommendation
-    let recommendation = 'NO_GO'
-    if (profitMarginPercent >= 20) recommendation = 'GO'
-    else if (profitMarginPercent >= 10) recommendation = 'REVIEW'
+      let recommendation = 'NO_GO'
+      if (autoMarginPercent >= 20) recommendation = 'GO'
+      else if (autoMarginPercent >= 10) recommendation = 'REVIEW'
 
-    // Determine strategic value and risk based on opportunity size and confidence
-    let strategicValue: 'HIGH' | 'MEDIUM' | 'LOW' = 'MEDIUM'
-    if (opportunitySize === 'Large') strategicValue = 'HIGH'
-    else if (opportunitySize === 'Micro') strategicValue = 'LOW'
+      let strategicValue: 'HIGH' | 'MEDIUM' | 'LOW' = 'MEDIUM'
+      if (opportunitySize === 'Large') strategicValue = 'HIGH'
+      else if (opportunitySize === 'Micro') strategicValue = 'LOW'
 
-    let riskLevel: 'HIGH' | 'MEDIUM' | 'LOW' = 'MEDIUM'
-    if (pricingAnalysis.confidence === 'high' || pricingAnalysis.confidence === 'medium') {
-      riskLevel = 'LOW'
-    } else if (pricingAnalysis.confidence === 'very_low') {
-      riskLevel = 'HIGH'
+      let riskLevel: 'HIGH' | 'MEDIUM' | 'LOW' = 'MEDIUM'
+      if (pricingAnalysis.confidence === 'high' || pricingAnalysis.confidence === 'medium') {
+        riskLevel = 'LOW'
+      } else if (pricingAnalysis.confidence === 'very_low') {
+        riskLevel = 'HIGH'
+      }
+
+      await prisma.opportunityAssessment.create({
+        data: {
+          opportunityId,
+          estimatedValue: recommendedPrice,
+          estimatedCost: costBasis,
+          profitMarginDollar: potentialProfit,
+          profitMarginPercent: autoMarginPercent,
+          meetsMarginTarget,
+          strategicValue,
+          riskLevel,
+          recommendation,
+          notes: `Auto-generated from bid analysis. ${pricingAnalysis.totalContracts} historical contracts analyzed.`,
+          assessedById: session.user.id,
+        },
+      })
     }
-
-    // Create or update assessment
-    await prisma.opportunityAssessment.upsert({
-      where: { opportunityId },
-      create: {
-        opportunityId,
-        estimatedValue: recommendedPrice,
-        estimatedCost: costBasis,
-        profitMarginDollar: potentialProfit,
-        profitMarginPercent,
-        meetsMarginTarget,
-        strategicValue,
-        riskLevel,
-        recommendation,
-        notes: `Auto-generated from bid analysis. ${pricingAnalysis.totalContracts} historical contracts analyzed.`,
-        assessedById: session.user.id,
-      },
-      update: {
-        estimatedValue: recommendedPrice,
-        estimatedCost: costBasis,
-        profitMarginDollar: potentialProfit,
-        profitMarginPercent,
-        meetsMarginTarget,
-        strategicValue,
-        riskLevel,
-        recommendation,
-        notes: `Auto-generated from bid analysis. ${pricingAnalysis.totalContracts} historical contracts analyzed.`,
-        assessedById: session.user.id,
-        assessedAt: new Date(),
-      },
-    })
 
     // Update progress to ASSESSMENT stage if not already past it
     await prisma.opportunityProgress.upsert({

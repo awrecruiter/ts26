@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { format } from 'date-fns'
-import type { PlainLanguageSection } from '@/lib/openai'
 
 interface SOWSection {
   title: string
@@ -18,11 +17,6 @@ interface Attachment {
   url: string
   type?: string
   size?: number
-}
-
-interface PlainLanguageCache {
-  generatedAt: string
-  sections: PlainLanguageSection[]
 }
 
 interface SOWPanelProps {
@@ -70,74 +64,6 @@ interface SOWPanelProps {
   onGenerate?: () => Promise<void>
   onStatusChange?: (status: string) => Promise<void>
   isGenerating?: boolean
-}
-
-// ─── Plain Language Section Card ─────────────────────────────────────────────
-
-function PlainSectionCard({ section }: { section: PlainLanguageSection }) {
-  return (
-    <div className="border border-stone-200 rounded-lg overflow-hidden">
-      <div className="px-5 py-3 bg-stone-900 text-white">
-        <h3 className="text-xs font-bold tracking-widest uppercase">{section.title}</h3>
-      </div>
-
-      <div className="p-5 space-y-4">
-        <p className="text-sm text-stone-700 leading-relaxed">{section.summary}</p>
-
-        {section.bullets.length > 0 && (
-          <ul className="space-y-2">
-            {section.bullets.map((bullet, i) => (
-              <li key={i} className="flex items-start gap-2.5 text-sm text-stone-700">
-                <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-stone-400" />
-                <span>{bullet}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {section.criticalItems.length > 0 && (
-          <div className="rounded-lg border border-stone-300 bg-stone-50 divide-y divide-stone-200">
-            {section.criticalItems.map((item, i) => (
-              <p key={i} className="px-4 py-2.5 text-sm font-medium text-stone-800">
-                {item}
-              </p>
-            ))}
-          </div>
-        )}
-
-        {section.whyItMatters && (
-          <div className="flex items-start gap-2.5 rounded-lg bg-stone-50 border border-stone-100 px-4 py-3">
-            <svg className="h-4 w-4 text-stone-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <p className="text-xs text-stone-500 italic leading-relaxed">
-              <span className="font-medium not-italic text-stone-600">Why this matters: </span>
-              {section.whyItMatters}
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─── Generating skeleton ──────────────────────────────────────────────────────
-
-function TransformingSkeleton() {
-  return (
-    <div className="space-y-4 animate-pulse">
-      {[0, 1, 2, 3].map((i) => (
-        <div key={i} className="border border-stone-200 rounded-lg overflow-hidden">
-          <div className="px-5 py-3 bg-stone-200 h-9" />
-          <div className="p-5 space-y-3">
-            <div className="h-4 bg-stone-100 rounded w-full" />
-            <div className="h-4 bg-stone-100 rounded w-4/5" />
-            <div className="h-4 bg-stone-100 rounded w-3/5" />
-          </div>
-        </div>
-      ))}
-    </div>
-  )
 }
 
 // ─── Auto-resize textarea ─────────────────────────────────────────────────────
@@ -222,13 +148,6 @@ export default function SOWPanel({
     sow?.content?.sections ? convertStructuredSections(sow.content.sections) : buildDefaultSections()
   )
 
-  const [isTransforming, setIsTransforming] = useState(false)
-  const [showPlainLanguage, setShowPlainLanguage] = useState(false)
-  const [transformError, setTransformError] = useState('')
-  const [plainCache, setPlainCache] = useState<PlainLanguageCache | null>(
-    (sow?.metadata?.plainLanguage as PlainLanguageCache) ?? null
-  )
-
   // Auto-save state
   const [isSaving, setIsSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<Date | null>(null)
@@ -241,25 +160,8 @@ export default function SOWPanel({
     if (sow?.content?.sections) {
       setSections(convertStructuredSections(sow.content.sections))
     }
-    if (sow?.metadata?.plainLanguage) {
-      setPlainCache(sow.metadata.plainLanguage as PlainLanguageCache)
-    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sow])
-
-  // Auto-generate plain language on first load if SOW exists but no cache yet
-  useEffect(() => {
-    if (sow && !plainCache && !isTransforming && !hasAutoTriggered.current) {
-      hasAutoTriggered.current = true
-      handleTransform()
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sow?.id])
-
-  // Show plain language section when cache becomes available
-  useEffect(() => {
-    if (plainCache) setShowPlainLanguage(true)
-  }, [plainCache])
 
   const buildContent = useCallback((currentSections: SOWSection[]) => ({
     header: {
@@ -285,23 +187,6 @@ export default function SOWPanel({
       }
     }, 400)
   }, [onSave, buildContent])
-
-  const handleTransform = async () => {
-    if (!sow) return
-    setIsTransforming(true)
-    setTransformError('')
-    try {
-      const res = await fetch(`/api/sows/${sow.id}/transform`, { method: 'POST' })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Transformation failed')
-      setPlainCache(data.plainLanguage)
-      setShowPlainLanguage(true)
-    } catch (err) {
-      setTransformError(err instanceof Error ? err.message : 'Transformation failed')
-    } finally {
-      setIsTransforming(false)
-    }
-  }
 
   const handleSectionTitleChange = (index: number, value: string) => {
     const updated = [...sections]
@@ -365,11 +250,11 @@ export default function SOWPanel({
   // ── SOW exists ──────────────────────────────────────────────────────────
   return (
     <div className="h-full flex flex-col">
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto p-4 sm:p-6">
         <div className="max-w-3xl mx-auto space-y-5">
 
           {/* ── Header row ── */}
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div>
               <h1 className="text-lg font-semibold text-stone-900">Statement of Work</h1>
               <p className="text-sm text-stone-500 mt-0.5">
@@ -387,16 +272,6 @@ export default function SOWPanel({
               </span>
             </div>
           </div>
-
-          {/* Transform error */}
-          {transformError && (
-            <div className="bg-stone-50 border border-stone-300 text-stone-700 text-sm px-4 py-3 rounded-lg flex items-center justify-between">
-              <span>{transformError}</span>
-              <button onClick={handleTransform} className="text-xs font-medium underline underline-offset-2 ml-4">
-                Retry
-              </button>
-            </div>
-          )}
 
           {/* ── DOCUMENT — always visible, always editable ── */}
           <div className="bg-stone-50 rounded-lg">
@@ -421,7 +296,7 @@ export default function SOWPanel({
             {/* Document page card */}
             <div className="bg-white shadow-md rounded-lg overflow-hidden">
               {/* Document header */}
-              <div className="px-10 pt-10 pb-6 border-b border-stone-200 text-center">
+              <div className="px-6 sm:px-10 pt-8 sm:pt-10 pb-6 border-b border-stone-200 text-center">
                 <p className="text-xs font-semibold tracking-widest uppercase text-stone-400 mb-2">
                   Statement of Work
                 </p>
@@ -444,7 +319,7 @@ export default function SOWPanel({
               {/* Sections — always editable inline */}
               <div className="divide-y divide-stone-100">
                 {sections.map((section, idx) => (
-                  <div key={idx} className="px-10 py-6">
+                  <div key={idx} className="px-4 sm:px-10 py-5 sm:py-6">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-6 h-6 bg-stone-900 text-white text-xs font-bold rounded flex items-center justify-center flex-shrink-0">
                         {idx + 1}
@@ -505,7 +380,7 @@ export default function SOWPanel({
               </div>
 
               {/* Add section */}
-              <div className="px-10 py-4 bg-stone-50 border-t border-stone-100">
+              <div className="px-4 sm:px-10 py-4 bg-stone-50 border-t border-stone-100">
                 <button
                   onClick={handleAddSection}
                   className="w-full py-2 text-xs text-stone-400 hover:text-stone-600 flex items-center justify-center gap-1 transition-colors"
@@ -517,79 +392,6 @@ export default function SOWPanel({
                 </button>
               </div>
             </div>
-          </div>
-
-          {/* ── Plain Language — collapsible section below document ── */}
-          <div className="border border-stone-200 rounded-lg overflow-hidden bg-white">
-            <button
-              onClick={() => setShowPlainLanguage(v => !v)}
-              className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-stone-700 hover:bg-stone-50 transition-colors"
-            >
-              <span className="flex items-center gap-2">
-                <svg className="h-3.5 w-3.5 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                </svg>
-                Plain Language Breakdown
-                {plainCache && (
-                  <span className="text-xs text-stone-400 font-normal">
-                    · {format(new Date(plainCache.generatedAt), 'MMM d, yyyy')}
-                  </span>
-                )}
-              </span>
-              <svg
-                className={`h-4 w-4 text-stone-400 transition-transform ${showPlainLanguage ? 'rotate-180' : ''}`}
-                fill="none" stroke="currentColor" viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {showPlainLanguage && (
-              <div className="border-t border-stone-100 p-4 space-y-4">
-                {isTransforming ? (
-                  <div>
-                    <p className="text-xs text-stone-400 mb-4 flex items-center gap-2">
-                      <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      Simplifying with AI…
-                    </p>
-                    <TransformingSkeleton />
-                  </div>
-                ) : plainCache ? (
-                  <>
-                    <div className="flex items-center justify-between text-xs text-stone-400 px-1">
-                      <span>AI-simplified for plain English readability</span>
-                      <button
-                        onClick={handleTransform}
-                        disabled={isTransforming}
-                        className="text-stone-400 hover:text-stone-600 underline underline-offset-2 disabled:opacity-50"
-                      >
-                        Re-generate
-                      </button>
-                    </div>
-                    {plainCache.sections.map((section, idx) => (
-                      <PlainSectionCard key={idx} section={section} />
-                    ))}
-                  </>
-                ) : (
-                  <div className="text-center py-4">
-                    <p className="text-sm text-stone-600 mb-1">Plain language not yet generated</p>
-                    <p className="text-xs text-stone-400 mb-4">
-                      AI rewrites this SOW in clear business language — active voice, plain English, why each requirement matters.
-                    </p>
-                    <button
-                      onClick={handleTransform}
-                      disabled={isTransforming}
-                      className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 mx-auto"
-                    >
-                      Generate Plain Language Version
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           {/* ── Actions ── */}
