@@ -352,7 +352,7 @@ function OpportunitiesContent() {
                       type="text"
                       placeholder="e.g., 334519"
                       value={naicsFilter}
-                      onChange={(e) => { if (/^\d*$/.test(e.target.value)) setNaicsFilter(e.target.value) }}
+                      onChange={(e) => setNaicsFilter(e.target.value)}
                       onPaste={(e) => { e.preventDefault(); setNaicsFilter(e.clipboardData.getData('text/plain').replace(/\D/g, '').slice(0, 6)) }}
                       autoComplete="new-password"
                       className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none bg-white"
@@ -364,7 +364,7 @@ function OpportunitiesContent() {
                       type="text"
                       placeholder="e.g., Defense"
                       value={agencyFilter}
-                      onChange={(e) => { if (!e.target.value.includes('://')) setAgencyFilter(e.target.value) }}
+                      onChange={(e) => setAgencyFilter(e.target.value)}
                       onPaste={(e) => { e.preventDefault(); const t = e.clipboardData.getData('text/plain'); if (!t.includes('://')) setAgencyFilter(t) }}
                       autoComplete="new-password"
                       className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none bg-white"
