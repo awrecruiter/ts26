@@ -231,8 +231,6 @@ function DashboardContent() {
                   placeholder="Search by title, solicitation number, or description..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  autoComplete="new-password"
-                  onPaste={(e) => { e.preventDefault(); setSearch(e.clipboardData.getData('text/plain')) }}
                   className="w-full px-4 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none pr-8"
                 />
                 {search && (
@@ -320,8 +318,6 @@ function DashboardContent() {
                       placeholder="e.g., 334519"
                       value={naicsFilter}
                       onChange={(e) => setNaicsFilter(e.target.value)}
-                      onPaste={(e) => { e.preventDefault(); setNaicsFilter(e.clipboardData.getData('text/plain').replace(/\D/g, '').slice(0, 6)) }}
-                      autoComplete="new-password"
                       className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white"
                     />
                   </div>
@@ -332,8 +328,6 @@ function DashboardContent() {
                       placeholder="e.g., Defense"
                       value={agencyFilter}
                       onChange={(e) => setAgencyFilter(e.target.value)}
-                      onPaste={(e) => { e.preventDefault(); const t = e.clipboardData.getData('text/plain'); if (!t.includes('://')) setAgencyFilter(t) }}
-                      autoComplete="new-password"
                       className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white"
                     />
                   </div>
