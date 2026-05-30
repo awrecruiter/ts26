@@ -1,709 +1,515 @@
 "use client"
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import Link from 'next/link'
-import WIPProgressTracker from '@/components/progress/WIPProgressTracker'
+import OpportunityCard from '@/components/opportunities/OpportunityCard'
 
-// Force dynamic rendering
 export const dynamic = 'force-dynamic'
 
-export default function DashboardPage() {
+const SORT_OPTIONS = [
+  { label: 'Deadline (soonest)', value: 'deadline_asc' },
+  { label: 'Deadline (latest)', value: 'deadline_desc' },
+  { label: 'Recently posted', value: 'posted_desc' },
+  { label: 'Oldest posted', value: 'posted_asc' },
+  { label: 'Title A–Z', value: 'title_asc' },
+  { label: 'Title Z–A', value: 'title_desc' },
+]
+
+const DEADLINE_OPTIONS = [
+  { label: 'Any deadline', value: '' },
+  { label: 'Next 7 days', value: '7' },
+  { label: 'Next 14 days', value: '14' },
+  { label: 'Next 30 days', value: '30' },
+  { label: 'Next 60 days', value: '60' },
+]
+
+function FilterBadge({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-stone-100 text-stone-700 rounded-full">
+      {label}
+      <button onClick={onRemove} className="ml-0.5 text-stone-400 hover:text-stone-700" aria-label="Remove filter">
+        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </span>
+  )
+}
+
+function DashboardContent() {
   const router = useRouter()
-  const { data: session, status } = useSession()
-  const [stats, setStats] = useState({
-    totalOpportunities: 0,
-    activeOpportunities: 0,
-    totalBids: 0,
-    totalSubcontractors: 0,
-    totalSOWs: 0,
-    pendingApprovalSOWs: 0,
-  })
-  const [assessmentStats, setAssessmentStats] = useState<any>(null)
-  const [recentAssessments, setRecentAssessments] = useState<any[]>([])
-  const [recentOpportunities, setRecentOpportunities] = useState<any[]>([])
-  const [pendingSOWs, setPendingSOWs] = useState<any[]>([])
-  const [opportunitiesInProgress, setOpportunitiesInProgress] = useState<any[]>([])
+  const searchParams = useSearchParams()
+  const { data: session, status: sessionStatus } = useSession()
+
+  const [opportunities, setOpportunities] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 })
+  const [filtersOpen, setFiltersOpen] = useState(true)
   const [fetching, setFetching] = useState(false)
   const [fetchResult, setFetchResult] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/login')
-    } else if (status === 'authenticated') {
-      fetchDashboardData()
-    }
-  }, [status])
+  const [search, setSearch] = useState(searchParams.get('search') || '')
+  const [naicsFilter, setNaicsFilter] = useState(searchParams.get('naics') || '')
+  const [agencyFilter, setAgencyFilter] = useState(searchParams.get('agency') || '')
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'ACTIVE')
+  const [sort, setSort] = useState(searchParams.get('sort') || 'deadline_asc')
+  const [deadlineDays, setDeadlineDays] = useState(searchParams.get('deadlineDays') || '')
+  const [hasSOW, setHasSOW] = useState(searchParams.get('hasSOW') || '')
+  const [hasBid, setHasBid] = useState(searchParams.get('hasBid') || '')
+  const [recommendation, setRecommendation] = useState(searchParams.get('recommendation') || '')
+  const [minMargin, setMinMargin] = useState(searchParams.get('minMargin') || '')
+  const [maxMargin, setMaxMargin] = useState(searchParams.get('maxMargin') || '')
 
-  const handleFetchOpportunities = async () => {
-    setFetching(true)
-    setFetchResult(null)
-    try {
-      const res = await fetch('/api/opportunities/fetch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 50, posted_days_ago: 90 }) })
-      const data = await res.json()
-      if (res.ok) {
-        setFetchResult(`Fetched ${data.saved || 0} new opportunities`)
-        fetchDashboardData()
-      } else {
-        setFetchResult(`Error: ${data.error || 'Failed to fetch'}`)
-      }
-    } catch {
-      setFetchResult('Network error fetching opportunities')
-    } finally {
-      setFetching(false)
+  useEffect(() => {
+    if (sessionStatus === 'unauthenticated') {
+      router.push('/login')
+    } else if (sessionStatus === 'authenticated') {
+      fetchOpportunities()
     }
+  }, [sessionStatus, searchParams])
+
+  const buildParams = () => {
+    const params = new URLSearchParams()
+    if (search) params.set('search', search)
+    if (naicsFilter) params.set('naics', naicsFilter)
+    if (agencyFilter) params.set('agency', agencyFilter)
+    if (statusFilter) params.set('status', statusFilter)
+    if (sort && sort !== 'deadline_asc') params.set('sort', sort)
+    if (deadlineDays) params.set('deadlineDays', deadlineDays)
+    if (hasSOW) params.set('hasSOW', hasSOW)
+    if (hasBid) params.set('hasBid', hasBid)
+    if (recommendation) params.set('recommendation', recommendation)
+    if (minMargin) params.set('minMargin', minMargin)
+    if (maxMargin) params.set('maxMargin', maxMargin)
+    return params
   }
 
-  const fetchDashboardData = async () => {
+  const fetchOpportunities = async () => {
     try {
-      // Fetch recent opportunities
-      const oppResponse = await fetch('/api/opportunities?limit=5')
-      if (oppResponse.ok) {
-        const data = await oppResponse.json()
-        const opportunities = data.opportunities || []
-
-        // Fetch or auto-generate assessment for each opportunity
-        const oppsWithAssessments = await Promise.all(
-          opportunities.map(async (opp: any) => {
-            try {
-              let assessmentResponse = await fetch(`/api/opportunities/${opp.id}/assessment`)
-              if (assessmentResponse.ok) {
-                const assessmentData = await assessmentResponse.json()
-                if (!assessmentData.assessment) {
-                  const autoGenResponse = await fetch(`/api/opportunities/${opp.id}/assessment/auto-generate`, {
-                    method: 'POST',
-                  })
-                  if (autoGenResponse.ok) {
-                    const autoGenData = await autoGenResponse.json()
-                    return { ...opp, assessment: autoGenData.assessment }
-                  }
-                } else {
-                  return { ...opp, assessment: assessmentData.assessment }
-                }
-              }
-            } catch (err) {
-              console.error(`Failed to fetch/generate assessment for ${opp.id}:`, err)
-            }
-            return opp
-          })
-        )
-
-        setRecentOpportunities(oppsWithAssessments)
-        setStats(prev => ({
-          ...prev,
-          totalOpportunities: data.pagination?.total || 0,
-          activeOpportunities: oppsWithAssessments.length,
-        }))
-
-        // Fetch progress for first 3 opportunities
-        const oppsWithProgress = await Promise.all(
-          oppsWithAssessments.slice(0, 3).map(async (opp: any) => {
-            try {
-              const progressResponse = await fetch(`/api/opportunities/${opp.id}/progress`)
-              if (progressResponse.ok) {
-                const progressData = await progressResponse.json()
-                return { ...opp, progress: progressData }
-              }
-            } catch (err) {
-              console.error(`Failed to fetch progress for ${opp.id}:`, err)
-            }
-            return null
-          })
-        )
-
-        setOpportunitiesInProgress(
-          oppsWithProgress.filter((opp) => opp && opp.progress)
-        )
-      }
-
-      // Fetch SOWs data
-      const sowResponse = await fetch('/api/sows?limit=100')
-      if (sowResponse.ok) {
-        const sowData = await sowResponse.json()
-        const allSOWs = sowData.sows || []
-        const pending = allSOWs.filter((sow: any) => sow.status === 'PENDING_REVIEW')
-
-        setStats(prev => ({
-          ...prev,
-          totalSOWs: sowData.pagination?.total || 0,
-          pendingApprovalSOWs: pending.length,
-        }))
-        setPendingSOWs(pending.slice(0, 5))
-      }
-
-      // Fetch bids count
-      const bidsResponse = await fetch('/api/bids?limit=1')
-      if (bidsResponse.ok) {
-        const bidsData = await bidsResponse.json()
-        setStats(prev => ({ ...prev, totalBids: bidsData.pagination?.total || 0 }))
-      }
-
-      // Fetch assessment statistics
-      const assessmentResponse = await fetch('/api/assessments/stats')
-      if (assessmentResponse.ok) {
-        const assessmentData = await assessmentResponse.json()
-        setAssessmentStats(assessmentData.stats)
-        setRecentAssessments(assessmentData.recentAssessments || [])
-      }
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error)
+      setLoading(true)
+      setError('')
+      const params = new URLSearchParams(searchParams.toString())
+      params.set('page', searchParams.get('page') || '1')
+      const res = await fetch(`/api/opportunities?${params.toString()}`)
+      if (!res.ok) throw new Error('Failed to fetch opportunities')
+      const data = await res.json()
+      setOpportunities(data.opportunities || [])
+      setPagination(data.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setLoading(false)
     }
   }
 
-  if (status === 'loading' || loading) {
+  const applyFilters = () => {
+    const params = buildParams()
+    params.set('page', '1')
+    router.push(`/dashboard?${params.toString()}`)
+  }
+
+  const applyFiltersWithOverride = (overrides: Record<string, string>) => {
+    const params = buildParams()
+    Object.entries(overrides).forEach(([k, v]) => {
+      if (v) params.set(k, v); else params.delete(k)
+    })
+    params.set('page', '1')
+    router.push(`/dashboard?${params.toString()}`)
+  }
+
+  const handleSortChange = (newSort: string) => {
+    setSort(newSort)
+    const params = buildParams()
+    if (newSort && newSort !== 'deadline_asc') params.set('sort', newSort)
+    else params.delete('sort')
+    params.set('page', '1')
+    router.push(`/dashboard?${params.toString()}`)
+  }
+
+  const clearAllFilters = () => {
+    setSearch(''); setNaicsFilter(''); setAgencyFilter('')
+    setStatusFilter('ACTIVE'); setSort('deadline_asc'); setDeadlineDays('')
+    setHasSOW(''); setHasBid(''); setRecommendation('')
+    setMinMargin(''); setMaxMargin('')
+    router.push('/dashboard?status=ACTIVE&page=1')
+  }
+
+  const handlePageChange = (newPage: number) => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('page', newPage.toString())
+    router.push(`/dashboard?${params.toString()}`)
+  }
+
+  const handleFetchFromSAM = async () => {
+    setFetching(true)
+    setFetchResult(null)
+    try {
+      const res = await fetch('/api/opportunities/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 50, posted_days_ago: 90 }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setFetchResult(`Fetched ${data.saved || 0} new opportunities`)
+        fetchOpportunities()
+      } else {
+        setFetchResult(`Error: ${data.error || 'Failed to fetch'}`)
+      }
+    } catch {
+      setFetchResult('Network error — please try again')
+    } finally {
+      setFetching(false)
+    }
+  }
+
+  // Active filter badges
+  const activeFilters: { label: string; clear: () => void }[] = []
+  if (search) activeFilters.push({ label: `"${search}"`, clear: () => { setSearch(''); applyFiltersWithOverride({ search: '' }) } })
+  if (naicsFilter) activeFilters.push({ label: `NAICS: ${naicsFilter}`, clear: () => { setNaicsFilter(''); applyFiltersWithOverride({ naics: '' }) } })
+  if (agencyFilter) activeFilters.push({ label: `Agency: ${agencyFilter}`, clear: () => { setAgencyFilter(''); applyFiltersWithOverride({ agency: '' }) } })
+  if (deadlineDays) activeFilters.push({ label: `≤ ${deadlineDays} days`, clear: () => { setDeadlineDays(''); applyFiltersWithOverride({ deadlineDays: '' }) } })
+  if (hasSOW === 'yes') activeFilters.push({ label: 'Has SOW', clear: () => { setHasSOW(''); applyFiltersWithOverride({ hasSOW: '' }) } })
+  if (hasSOW === 'no') activeFilters.push({ label: 'No SOW', clear: () => { setHasSOW(''); applyFiltersWithOverride({ hasSOW: '' }) } })
+  if (hasBid === 'yes') activeFilters.push({ label: 'Has Bid', clear: () => { setHasBid(''); applyFiltersWithOverride({ hasBid: '' }) } })
+  if (hasBid === 'no') activeFilters.push({ label: 'No Bid', clear: () => { setHasBid(''); applyFiltersWithOverride({ hasBid: '' }) } })
+  if (recommendation) activeFilters.push({ label: recommendation.replace('_', ' '), clear: () => { setRecommendation(''); applyFiltersWithOverride({ recommendation: '' }) } })
+  if (minMargin) activeFilters.push({ label: `Margin ≥ ${minMargin}%`, clear: () => { setMinMargin(''); applyFiltersWithOverride({ minMargin: '' }) } })
+  if (maxMargin) activeFilters.push({ label: `Margin ≤ ${maxMargin}%`, clear: () => { setMaxMargin(''); applyFiltersWithOverride({ maxMargin: '' }) } })
+
+  if (sessionStatus === 'loading') {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-stone-600"></div>
-          <p className="mt-4 text-stone-500">Loading dashboard...</p>
-        </div>
+        <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-stone-600" />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="min-h-screen bg-stone-50 overflow-x-hidden">
       {/* Header */}
       <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
             <div>
-              <h1 className="text-2xl font-bold text-stone-900">Dashboard</h1>
+              <h1 className="text-2xl font-bold text-stone-900">
+                Welcome back{session?.user?.name ? `, ${session.user.name.split(' ')[0]}` : ''}
+              </h1>
               <p className="mt-0.5 text-sm text-stone-500">
-                Welcome back, {session?.user?.name || 'User'}!
+                {pagination.total > 0
+                  ? `${pagination.total} opportunities in your pipeline`
+                  : 'Your federal bid pipeline'}
               </p>
             </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              {session?.user?.role === 'ADMIN' && (
-                <button
-                  onClick={handleFetchOpportunities}
-                  disabled={fetching}
-                  className="px-4 py-2 text-sm font-medium text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 disabled:opacity-50 transition-colors min-h-[44px]"
-                >
-                  {fetching ? 'Fetching...' : 'Fetch from SAM.gov'}
-                </button>
-              )}
-              <Link
-                href="/opportunities"
-                className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 transition-colors min-h-[44px] flex items-center"
+            {session?.user?.role === 'ADMIN' && (
+              <button
+                onClick={handleFetchFromSAM}
+                disabled={fetching}
+                className="px-4 py-2 text-sm font-medium text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 disabled:opacity-50 transition-colors"
               >
-                View All Opportunities
-              </Link>
-            </div>
-          </div>
-          {fetchResult && (
-            <p className="mt-2 text-sm text-stone-600">{fetchResult}</p>
-          )}
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-lg border border-stone-200 p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 bg-stone-100 rounded-lg p-3">
-                <svg className="h-6 w-6 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-stone-500">Total Opportunities</p>
-                <p className="text-2xl font-semibold text-stone-900">{stats.totalOpportunities}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg border border-stone-200 p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 bg-stone-100 rounded-lg p-3">
-                <svg className="h-6 w-6 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-stone-500">Active Opportunities</p>
-                <p className="text-2xl font-semibold text-stone-900">{stats.activeOpportunities}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg border border-stone-200 p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 bg-stone-100 rounded-lg p-3">
-                <svg className="h-6 w-6 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-stone-500">Total Bids</p>
-                <p className="text-2xl font-semibold text-stone-900">{stats.totalBids}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg border border-stone-200 p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 bg-stone-100 rounded-lg p-3">
-                <svg className="h-6 w-6 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-stone-500">Subcontractors</p>
-                <p className="text-2xl font-semibold text-stone-900">{stats.totalSubcontractors}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* SOW Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          <div className="bg-white rounded-lg border border-stone-200 p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 bg-stone-100 rounded-lg p-3">
-                <svg className="h-6 w-6 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <div className="ml-4 flex-1">
-                <p className="text-sm font-medium text-stone-500">Total SOWs</p>
-                <p className="text-2xl font-semibold text-stone-900">{stats.totalSOWs}</p>
-              </div>
-              <Link
-                href="/sows"
-                className="text-sm text-stone-500 hover:text-stone-800 font-medium"
-              >
-                View All →
-              </Link>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg border border-stone-200 p-6">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 bg-stone-100 rounded-lg p-3">
-                <svg className="h-6 w-6 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div className="ml-4 flex-1">
-                <p className="text-sm font-medium text-stone-500">Pending Approval</p>
-                <p className="text-2xl font-semibold text-stone-900">{stats.pendingApprovalSOWs}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Assessment & Financial Metrics */}
-        {assessmentStats && (
-          <>
-            {/* Financial Summary Card */}
-            <div className="bg-stone-900 rounded-lg border border-stone-800 p-6 mb-8 text-white">
-              <h2 className="text-base font-semibold text-stone-100 mb-4">Financial Overview</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                <div>
-                  <p className="text-stone-400 text-xs font-medium uppercase tracking-wide mb-1">Total Pipeline Value</p>
-                  <p className="text-3xl font-bold text-white">
-                    ${(assessmentStats.totalEstimatedValue || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-stone-400 text-xs font-medium uppercase tracking-wide mb-1">Estimated Profit</p>
-                  <p className="text-3xl font-bold text-white">
-                    ${(assessmentStats.totalEstimatedProfit || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-stone-400 text-xs font-medium uppercase tracking-wide mb-1">Avg Profit Margin</p>
-                  <p className="text-3xl font-bold text-white">
-                    {(assessmentStats.avgProfitMargin || 0).toFixed(1)}%
-                  </p>
-                  <p className="text-stone-400 text-xs mt-1">
-                    {assessmentStats.meetsTargetCount || 0} of {assessmentStats.totalAssessments || 0} meet target (≥10%)
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Assessment Stats Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 mb-8">
-              <div className="bg-white rounded-lg border border-stone-200 p-6">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0 bg-stone-100 rounded-lg p-3">
-                    <svg className="h-6 w-6 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                    </svg>
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-stone-500">Total Assessments</p>
-                    <p className="text-2xl font-semibold text-stone-900">{assessmentStats.totalAssessments || 0}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg border border-stone-200 p-6">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0 bg-stone-100 rounded-lg p-3">
-                    <svg className="h-6 w-6 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-stone-500">GO</p>
-                    <p className="text-2xl font-semibold text-stone-900">{assessmentStats.goCount || 0}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg border border-stone-200 p-6">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0 bg-stone-100 rounded-lg p-3">
-                    <svg className="h-6 w-6 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-stone-500">REVIEW</p>
-                    <p className="text-2xl font-semibold text-stone-900">{assessmentStats.reviewCount || 0}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg border border-stone-200 p-6">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0 bg-stone-100 rounded-lg p-3">
-                    <svg className="h-6 w-6 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-stone-500">NO GO</p>
-                    <p className="text-2xl font-semibold text-stone-900">{assessmentStats.noGoCount || 0}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Recent Assessments */}
-        {recentAssessments.length > 0 && (
-          <div className="bg-white rounded-lg border border-stone-200 mb-8">
-            <div className="px-6 py-4 border-b border-stone-100">
-              <h2 className="text-base font-semibold text-stone-900">Recent Margin Assessments</h2>
-              <p className="text-xs text-stone-500 mt-0.5">Latest opportunity assessments and profit analysis</p>
-            </div>
-            <div className="p-6">
-              <div className="space-y-3">
-                {recentAssessments.map((assessment) => (
-                  <Link
-                    key={assessment.id}
-                    href={`/opportunities/${assessment.opportunityId}`}
-                    className="block border border-stone-200 rounded-lg p-4 hover:border-stone-400 hover:shadow-sm transition-all"
-                  >
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex-1">
-                        <h3 className="font-medium text-stone-900 text-sm">
-                          {assessment.opportunityTitle}
-                        </h3>
-                        <p className="text-xs text-stone-400 mt-0.5">
-                          {assessment.solicitationNumber}
-                        </p>
-                      </div>
-                      <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
-                        assessment.recommendation === 'GO' ? 'bg-stone-800 text-white' :
-                        assessment.recommendation === 'REVIEW' ? 'bg-stone-200 text-stone-700' :
-                        'bg-stone-100 text-stone-500'
-                      }`}>
-                        {assessment.recommendation?.replace('_', ' ') || 'N/A'}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      <div>
-                        <p className="text-xs text-stone-400">Contract Value</p>
-                        <p className="font-semibold text-stone-900 text-sm">
-                          ${(assessment.estimatedValue || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-stone-400">Profit Margin</p>
-                        <p className="font-semibold text-stone-900 text-sm">
-                          {(assessment.profitMarginPercent || 0).toFixed(1)}%
-                        </p>
-                      </div>
-                      <div className="col-span-2 sm:col-span-1">
-                        <p className="text-xs text-stone-400">Profit ($)</p>
-                        <p className="font-semibold text-stone-900 text-sm">
-                          ${(assessment.profitMarginDollar || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-3 pt-3 border-t border-stone-100 flex flex-wrap justify-between items-center gap-2">
-                      <div className="flex gap-2 text-xs flex-wrap">
-                        <span className="px-2 py-0.5 rounded bg-stone-100 text-stone-600">
-                          Strategic: {assessment.strategicValue || 'N/A'}
-                        </span>
-                        <span className="px-2 py-0.5 rounded bg-stone-100 text-stone-600">
-                          Risk: {assessment.riskLevel || 'N/A'}
-                        </span>
-                      </div>
-                      <p className="text-xs text-stone-400">
-                        Assessed by {assessment.assessedBy}
-                      </p>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Pending Approvals Section */}
-        {pendingSOWs.length > 0 && (
-          <div className="bg-white rounded-lg border border-stone-200 mb-8">
-            <div className="px-6 py-4 border-b border-stone-100">
-              <h2 className="text-base font-semibold text-stone-900">SOWs Pending Your Approval</h2>
-            </div>
-            <div className="p-6">
-              <div className="space-y-3">
-                {pendingSOWs.map((sow) => (
-                  <Link
-                    key={sow.id}
-                    href={`/sows/${sow.id}`}
-                    className="block border border-stone-200 bg-stone-50 rounded-lg p-4 hover:border-stone-400 hover:shadow-sm transition-all"
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h3 className="font-medium text-stone-900 text-sm">
-                          {sow.opportunity?.title || 'Untitled'}
-                        </h3>
-                        <p className="text-xs text-stone-500 mt-0.5">
-                          {sow.opportunity?.solicitationNumber || 'N/A'} · Version {sow.version}
-                        </p>
-                        {sow.generatedBy && (
-                          <p className="text-xs text-stone-400 mt-0.5">
-                            Generated by {sow.generatedBy.name || 'Unknown'}
-                          </p>
-                        )}
-                      </div>
-                      <span className="px-2.5 py-1 bg-stone-200 text-stone-700 text-xs font-semibold rounded-full">
-                        Pending Review
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Opportunities in Progress */}
-        {opportunitiesInProgress.length > 0 && (
-          <div className="bg-white rounded-lg border border-stone-200 mb-8">
-            <div className="px-6 py-4 border-b border-stone-100">
-              <h2 className="text-base font-semibold text-stone-900">Opportunities in Progress</h2>
-              <p className="text-xs text-stone-500 mt-0.5">Track your active opportunities through the pipeline</p>
-            </div>
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {opportunitiesInProgress.map((opp) => (
-                  <Link key={opp.id} href={`/opportunities/${opp.id}`} className="block border border-stone-200 rounded-lg p-4 hover:border-stone-400 hover:shadow-sm transition-all">
-                    <div className="mb-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-medium text-stone-900 text-sm line-clamp-2">
-                          {opp.title}
-                        </h3>
-                        {opp.assessment && (
-                          <span className={`px-2 py-0.5 text-xs font-semibold rounded-full flex-shrink-0 ${
-                            opp.assessment.recommendation === 'GO' ? 'bg-stone-800 text-white' :
-                            opp.assessment.recommendation === 'REVIEW' ? 'bg-stone-200 text-stone-700' :
-                            opp.assessment.recommendation === 'NO_GO' ? 'bg-stone-100 text-stone-500' :
-                            'bg-stone-100 text-stone-500'
-                          }`}>
-                            {opp.assessment.recommendation?.replace('_', ' ') || 'N/A'}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-stone-400">
-                        {opp.solicitationNumber}
-                      </p>
-
-                      {opp.assessment && (
-                        <div className="mt-2 pt-2 border-t border-stone-100">
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div>
-                              <p className="text-stone-400">Value</p>
-                              <p className="font-semibold text-stone-900">
-                                ${(opp.assessment.estimatedValue || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-stone-400">Margin</p>
-                              <p className="font-semibold text-stone-800">
-                                {(opp.assessment.profitMarginPercent || 0).toFixed(1)}%
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <WIPProgressTracker
-                      opportunityId={opp.id}
-                      progress={opp.progress}
-                      compact={true}
-                    />
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Recent Opportunities */}
-        <div className="bg-white rounded-lg border border-stone-200">
-          <div className="px-6 py-4 border-b border-stone-100">
-            <h2 className="text-base font-semibold text-stone-900">Recent Opportunities</h2>
-          </div>
-          <div className="p-6">
-            {recentOpportunities.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-stone-500">No opportunities yet</p>
-                <p className="text-stone-400 text-sm mt-1">
-                  Use "Fetch from SAM.gov" above to pull in opportunities
-                </p>
-                {session?.user?.role === 'ADMIN' && (
-                  <div className="mt-4 flex flex-col items-center gap-2">
-                    <button
-                      onClick={handleFetchOpportunities}
-                      disabled={fetching}
-                      className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 disabled:opacity-50 transition-colors"
-                    >
-                      {fetching ? 'Fetching from SAM.gov...' : 'Fetch Opportunities from SAM.gov'}
-                    </button>
-                    {fetchResult && <p className="text-sm text-stone-600">{fetchResult}</p>}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {recentOpportunities.map((opp) => (
-                  <Link
-                    key={opp.id}
-                    href={`/opportunities/${opp.id}`}
-                    className="block border border-stone-200 rounded-lg p-4 hover:border-stone-400 hover:shadow-sm transition-all"
-                  >
-                    <div className="flex justify-between items-start mb-3 gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-medium text-stone-900 text-sm">
-                            {opp.title}
-                          </h3>
-                          {opp.assessment && (
-                            <span className={`px-2 py-0.5 text-xs font-semibold rounded-full flex-shrink-0 ${
-                              opp.assessment.recommendation === 'GO' ? 'bg-stone-800 text-white' :
-                              opp.assessment.recommendation === 'REVIEW' ? 'bg-stone-200 text-stone-700' :
-                              opp.assessment.recommendation === 'NO_GO' ? 'bg-stone-100 text-stone-500' :
-                              'bg-stone-100 text-stone-500'
-                            }`}>
-                              {opp.assessment.recommendation?.replace('_', ' ') || 'NOT ASSESSED'}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-stone-400 mt-0.5 truncate">
-                          {opp.solicitationNumber} · {opp.agency}
-                        </p>
-                      </div>
-                      {opp.responseDeadline && (
-                        <span className="text-xs text-stone-500 flex items-center gap-1 flex-shrink-0">
-                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          {Math.ceil((new Date(opp.responseDeadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24))}d
-                        </span>
-                      )}
-                    </div>
-
-                    {opp.assessment ? (
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 pt-3 border-t border-stone-100">
-                        <div>
-                          <p className="text-xs text-stone-400">Contract Value</p>
-                          <p className="font-semibold text-stone-900 text-sm">
-                            ${(opp.assessment.estimatedValue || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-stone-400">Est. Cost</p>
-                          <p className="font-semibold text-stone-900 text-sm">
-                            ${(opp.assessment.estimatedCost || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-stone-400">Profit Margin</p>
-                          <p className="font-semibold text-stone-800 text-sm">
-                            {(opp.assessment.profitMarginPercent || 0).toFixed(1)}%
-                            <span className="hidden sm:inline"> · ${(opp.assessment.profitMarginDollar || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-stone-400">Risk / Strategic</p>
-                          <div className="flex gap-1 flex-wrap">
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 font-medium">
-                              {opp.assessment.riskLevel || '—'}
-                            </span>
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 font-medium">
-                              {opp.assessment.strategicValue || '—'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="mt-3 pt-3 border-t border-stone-100">
-                        <p className="text-xs text-stone-400">No assessment yet — click to auto-calculate margins</p>
-                      </div>
-                    )}
-                  </Link>
-                ))}
-              </div>
+                {fetching ? 'Fetching...' : 'Fetch from SAM.gov'}
+              </button>
             )}
           </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Link
-            href="/opportunities"
-            className="bg-white rounded-lg border border-stone-200 p-6 hover:border-stone-400 hover:shadow-sm transition-all"
-          >
-            <h3 className="font-semibold text-stone-900 mb-1.5">Browse Opportunities</h3>
-            <p className="text-sm text-stone-500">
-              Search and filter government contracting opportunities
-            </p>
-          </Link>
-
-          <Link
-            href="/sows"
-            className="bg-white rounded-lg border border-stone-200 p-6 hover:border-stone-400 hover:shadow-sm transition-all"
-          >
-            <h3 className="font-semibold text-stone-900 mb-1.5">Manage SOWs</h3>
-            <p className="text-sm text-stone-500">
-              Generate, approve, and track Statements of Work
-            </p>
-          </Link>
-
-          <div className="bg-white rounded-lg border border-stone-200 p-6 opacity-50 cursor-not-allowed">
-            <h3 className="font-semibold text-stone-900 mb-1.5">Find Subcontractors</h3>
-            <p className="text-sm text-stone-500">
-              Discover qualified subcontractors via Google Places (Coming soon)
-            </p>
-          </div>
+          {fetchResult && <p className="mt-2 text-sm text-stone-600">{fetchResult}</p>}
         </div>
       </div>
+
+      {/* Search + Filter Bar */}
+      <div className="bg-white border-b border-stone-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <form onSubmit={(e) => { e.preventDefault(); applyFilters() }}>
+            {/* Search row */}
+            <div className="flex flex-wrap gap-3 mb-3">
+              <input
+                type="text"
+                placeholder="Search by title, solicitation number, or description..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="flex-1 min-w-0 px-4 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 transition-colors"
+              >
+                Search
+              </button>
+              {/* Sort */}
+              <div className="relative">
+                <select
+                  value={sort}
+                  onChange={(e) => handleSortChange(e.target.value)}
+                  className="appearance-none pl-8 pr-8 py-2 text-sm font-medium text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 focus:ring-2 focus:ring-stone-400 outline-none cursor-pointer"
+                >
+                  {SORT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                <svg className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+                </svg>
+                <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+              {/* Filters toggle */}
+              <button
+                type="button"
+                onClick={() => setFiltersOpen((v) => !v)}
+                className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors flex items-center gap-2 ${
+                  activeFilters.length > 0
+                    ? 'bg-stone-100 border-stone-400 text-stone-800'
+                    : 'bg-white border-stone-300 text-stone-600 hover:bg-stone-50'
+                }`}
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                {filtersOpen ? 'Hide Filters' : 'Filters'}
+                {activeFilters.length > 0 && (
+                  <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-stone-800 text-white rounded-full">
+                    {activeFilters.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Active filter badges */}
+            {activeFilters.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {activeFilters.map((f, i) => (
+                  <FilterBadge key={i} label={f.label} onRemove={f.clear} />
+                ))}
+                <button
+                  type="button"
+                  onClick={clearAllFilters}
+                  className="text-xs text-stone-400 hover:text-stone-700 underline underline-offset-2 ml-1"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
+
+            {/* Filter panel */}
+            {filtersOpen && (
+              <div className="border border-stone-200 rounded-lg p-4 bg-stone-50 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-stone-600 mb-1">NAICS Code</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., 334519"
+                      value={naicsFilter}
+                      onChange={(e) => setNaicsFilter(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-600 mb-1">Agency</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., Defense"
+                      value={agencyFilter}
+                      onChange={(e) => setAgencyFilter(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-600 mb-1">Status</label>
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white"
+                    >
+                      <option value="">All</option>
+                      <option value="ACTIVE">Active</option>
+                      <option value="EXPIRED">Expired</option>
+                      <option value="AWARDED">Awarded</option>
+                      <option value="CANCELLED">Cancelled</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-stone-600 mb-1">Deadline Window</label>
+                    <select
+                      value={deadlineDays}
+                      onChange={(e) => setDeadlineDays(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white"
+                    >
+                      {DEADLINE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-600 mb-1">Assessment</label>
+                    <select
+                      value={recommendation}
+                      onChange={(e) => setRecommendation(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white"
+                    >
+                      <option value="">Any assessment</option>
+                      <option value="GO">GO</option>
+                      <option value="REVIEW">REVIEW</option>
+                      <option value="NO_GO">NO GO</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-600 mb-1">Has SOW</label>
+                    <select
+                      value={hasSOW}
+                      onChange={(e) => setHasSOW(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white"
+                    >
+                      <option value="">Any</option>
+                      <option value="yes">Has SOW</option>
+                      <option value="no">No SOW</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-stone-600 mb-1">Has Bid</label>
+                    <select
+                      value={hasBid}
+                      onChange={(e) => setHasBid(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white"
+                    >
+                      <option value="">Any</option>
+                      <option value="yes">Has Bid</option>
+                      <option value="no">No Bid</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="w-36">
+                    <label className="block text-xs font-medium text-stone-600 mb-1">Min Margin %</label>
+                    <input
+                      type="number"
+                      min="0" max="100"
+                      placeholder="0"
+                      value={minMargin}
+                      onChange={(e) => setMinMargin(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white"
+                    />
+                  </div>
+                  <div className="w-36">
+                    <label className="block text-xs font-medium text-stone-600 mb-1">Max Margin %</label>
+                    <input
+                      type="number"
+                      min="0" max="100"
+                      placeholder="100"
+                      value={maxMargin}
+                      onChange={(e) => setMaxMargin(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white"
+                    />
+                  </div>
+                  <div className="flex gap-2 ml-auto">
+                    <button
+                      type="button"
+                      onClick={clearAllFilters}
+                      className="px-4 py-2 text-sm font-medium text-stone-600 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 transition-colors"
+                    >
+                      Apply Filters
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </form>
+        </div>
+      </div>
+
+      {/* Opportunities list */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {error && (
+          <div className="bg-stone-50 border border-stone-300 text-stone-700 px-4 py-3 rounded-lg mb-6">
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-center py-16">
+            <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-stone-600" />
+            <p className="mt-4 text-stone-500">Loading opportunities...</p>
+          </div>
+        ) : opportunities.length === 0 ? (
+          <div className="text-center py-16">
+            <p className="text-stone-500 text-lg">No opportunities found</p>
+            <p className="text-stone-400 mt-2 text-sm">
+              {activeFilters.length > 0
+                ? 'Try adjusting your filters'
+                : 'Use "Fetch from SAM.gov" to pull in opportunities'}
+            </p>
+            {activeFilters.length > 0 && (
+              <button
+                onClick={clearAllFilters}
+                className="mt-4 px-4 py-2 text-sm font-medium text-stone-600 border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors"
+              >
+                Clear all filters
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="mb-5 flex items-center justify-between">
+              <p className="text-sm text-stone-500">
+                Showing <span className="font-medium text-stone-800">{opportunities.length}</span> of{' '}
+                <span className="font-medium text-stone-800">{pagination.total}</span> opportunities
+              </p>
+            </div>
+
+            <div className="grid gap-5">
+              {opportunities.map((opp) => (
+                <OpportunityCard key={opp.id} opportunity={opp} />
+              ))}
+            </div>
+
+            {pagination.totalPages > 1 && (
+              <div className="mt-8 flex justify-center items-center gap-2">
+                <button
+                  onClick={() => handlePageChange(pagination.page - 1)}
+                  disabled={pagination.page === 1}
+                  className="px-4 py-2 text-sm font-medium text-stone-600 border border-stone-300 rounded-lg disabled:opacity-40 hover:bg-stone-50 transition-colors"
+                >
+                  Previous
+                </button>
+                <span className="px-4 py-2 text-sm text-stone-600">
+                  Page {pagination.page} of {pagination.totalPages}
+                </span>
+                <button
+                  onClick={() => handlePageChange(pagination.page + 1)}
+                  disabled={pagination.page === pagination.totalPages}
+                  className="px-4 py-2 text-sm font-medium text-stone-600 border border-stone-300 rounded-lg disabled:opacity-40 hover:bg-stone-50 transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
+  )
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
+        <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-stone-600" />
+      </div>
+    }>
+      <DashboardContent />
+    </Suspense>
   )
 }
