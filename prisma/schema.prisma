@@ -19,7 +19,7 @@ model User {
   password      String? // Hashed, nullable for OAuth users
   emailVerified DateTime?
   image         String?
-  role          UserRole  @default(USER)
+  role          UserRole  @default(AGENT)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -48,7 +48,7 @@ model User {
 }
 
 enum UserRole {
-  USER
+  AGENT
   ADMIN
   VIEWER
 }

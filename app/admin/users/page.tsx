@@ -8,7 +8,7 @@ interface User {
   id: string
   email: string
   name: string | null
-  role: 'USER' | 'ADMIN' | 'VIEWER'
+  role: 'AGENT' | 'ADMIN' | 'VIEWER'
   createdAt: string
   _count?: {
     bids: number
@@ -51,7 +51,7 @@ export default function AdminUsersPage() {
     }
   }
 
-  const updateUserRole = async (userId: string, newRole: 'USER' | 'ADMIN' | 'VIEWER') => {
+  const updateUserRole = async (userId: string, newRole: 'AGENT' | 'ADMIN' | 'VIEWER') => {
     try {
       setUpdatingUserId(userId)
       const response = await fetch(`/api/admin/users/${userId}`, {
@@ -89,7 +89,7 @@ export default function AdminUsersPage() {
     switch (role) {
       case 'ADMIN':
         return 'bg-stone-100 text-stone-900'
-      case 'USER':
+      case 'AGENT':
         return 'bg-stone-200 text-stone-800'
       case 'VIEWER':
         return 'bg-stone-100 text-stone-800'
@@ -187,14 +187,14 @@ export default function AdminUsersPage() {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <select
                         value={user.role}
-                        onChange={(e) => updateUserRole(user.id, e.target.value as 'USER' | 'ADMIN' | 'VIEWER')}
+                        onChange={(e) => updateUserRole(user.id, e.target.value as 'AGENT' | 'ADMIN' | 'VIEWER')}
                         disabled={updatingUserId === user.id || user.id === session?.user?.id}
                         className={`px-2 py-1 text-xs font-medium rounded-full border-0 ${getRoleBadgeClass(user.role)} ${
                           user.id === session?.user?.id ? 'cursor-not-allowed' : 'cursor-pointer'
                         }`}
                       >
                         <option value="VIEWER">Viewer</option>
-                        <option value="USER">User</option>
+                        <option value="AGENT">Agent</option>
                         <option value="ADMIN">Admin</option>
                       </select>
                     </td>

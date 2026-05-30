@@ -60,7 +60,7 @@ export async function POST(
       const hasPermission = canApproveSQW(
         session.user.id,
         sow.currentApproverId,
-        session.user.role as 'USER' | 'ADMIN' | 'VIEWER'
+        session.user.role as 'AGENT' | 'ADMIN' | 'VIEWER'
       )
 
       if (!hasPermission) {

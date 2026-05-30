@@ -75,7 +75,7 @@ export async function POST(req: Request) {
       data: {
         email,
         name: name || null,
-        role: role || 'USER',
+        role: role || 'AGENT',
       },
     })
 

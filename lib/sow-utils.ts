@@ -177,9 +177,8 @@ export function canViewSOW(
     return true
   }
 
-  // For USER role, default to allowing view for now
-  // Can be restricted further based on business rules
-  return userRole === 'USER'
+  // Agents can view by default
+  return userRole === 'AGENT'
 }
 
 /**

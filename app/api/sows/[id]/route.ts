@@ -116,7 +116,7 @@ export async function GET(
     const hasPermission = canViewSOW(
       session.user.id,
       sow,
-      session.user.role as 'USER' | 'ADMIN' | 'VIEWER'
+      session.user.role as 'AGENT' | 'ADMIN' | 'VIEWER'
     )
 
     if (!hasPermission) {
