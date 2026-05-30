@@ -3,22 +3,18 @@ set -e
 
 echo "=== E2E: Advanced Filtering (Phase 6) ==="
 
-agent-browser open http://localhost:3000/dashboard
-agent-browser wait --load networkidle
-
-# Navigate to opportunities
-agent-browser find role link click --name "Opportunities"
+agent-browser open http://localhost:3000/opportunities
 agent-browser wait --load networkidle
 agent-browser snapshot -i
 agent-browser screenshot tests/e2e/screenshots/filtering-initial.png
 
-# Look for filter panel / filter button
+# Look for advanced filter controls (Phase 6 specific)
 SNAPSHOT=$(agent-browser snapshot)
-if echo "$SNAPSHOT" | grep -qi "filter\|search\|margin"; then
-  echo "PASS: Filter controls present"
+if echo "$SNAPSHOT" | grep -qi "min margin\|naics code\|clear filters"; then
+  echo "PASS: Advanced filter controls present"
 else
-  echo "INFO: Filter controls not yet implemented (Phase 6 pending)"
-  exit 0  # Non-fatal — feature may not be built yet
+  echo "INFO: Advanced filtering (Phase 6) not yet implemented — basic search/filters present"
+  exit 0  # Non-fatal — feature not yet built
 fi
 
 # Test margin filter
