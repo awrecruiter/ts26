@@ -461,6 +461,98 @@ Return ONLY valid JSON. No markdown, no extra text.`
   }
 }
 
+// ─── Agent Briefing ───────────────────────────────────────────────────────────
+
+export interface AgentBriefing {
+  summary: string
+  talkingPoints: string[]
+  qualifications: string[]
+  complianceFlags: string[]
+  generatedAt: string
+}
+
+interface AgentBriefingInput {
+  title: string
+  agency: string
+  naicsCode?: string | null
+  setAside?: string | null
+  description?: string | null
+  rawData?: Record<string, unknown> | null
+  parsedAttachments?: {
+    structured?: {
+      scope?: string[]
+      deliverables?: string[]
+      compliance?: string[]
+    }
+  } | null
+}
+
+export async function generateAgentBriefing(input: AgentBriefingInput): Promise<AgentBriefing> {
+  const { title, agency, naicsCode, setAside, description, rawData, parsedAttachments } = input
+  const structured = parsedAttachments?.structured
+
+  const contextBlock = [
+    `Title: ${title}`,
+    `Agency: ${agency}`,
+    naicsCode ? `NAICS Code: ${naicsCode}` : null,
+    setAside ? `Set-Aside: ${setAside}` : null,
+    rawData?.estimatedValue ? `Estimated Value: ${rawData.estimatedValue}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  const parsedBlock = structured
+    ? '\n\nPARSED SOLICITATION CONTENT:\n' +
+      (structured.scope?.length ? `Scope:\n${structured.scope.slice(0, 5).join('\n')}\n` : '') +
+      (structured.deliverables?.length ? `Deliverables:\n${structured.deliverables.slice(0, 5).join('\n')}\n` : '') +
+      (structured.compliance?.length ? `Compliance:\n${structured.compliance.slice(0, 5).join('\n')}\n` : '')
+    : description
+    ? `\n\nSOLICITATION DESCRIPTION:\n${description.slice(0, 4000)}`
+    : ''
+
+  const prompt = `You are briefing a field agent (non-technical small business representative) on a federal solicitation they are working to win. Write in plain English — no jargon, no government acronyms without explanation, nothing generic.
+
+OPPORTUNITY:
+${contextBlock}${parsedBlock}
+
+Return a JSON object with exactly this structure:
+{
+  "summary": "2–3 plain-English sentences. What is the government buying? Who needs it? What is the core work the contractor must perform?",
+  "talkingPoints": ["3–5 bullets: key facts a field agent would want to know when discussing this opportunity — size of contract, type of work, who the end user is, anything that makes this a strong or weak fit"],
+  "qualifications": ["Exact eligibility requirements drawn from the solicitation: required licenses, certifications, clearances, set-aside eligibility, minimum experience thresholds, bonding. Every bullet must name a specific requirement — no generic items like 'must be qualified'. If no specific requirements are stated, return an empty array."],
+  "complianceFlags": ["Compliance requirements and gotchas: mandatory on-site presence, reporting cadences, FAR clauses with real consequences, insurance minimums, specific deliverable formats. Every bullet must be specific and actionable. If none apply, return an empty array."],
+  "generatedAt": "${new Date().toISOString()}"
+}
+
+Rules:
+- Every bullet in qualifications and complianceFlags must come from the actual solicitation data — no invented or generic items
+- Use plain language any small business owner can act on
+- Return ONLY valid JSON. No markdown, no extra text.`
+
+  const response = await getOpenAI().chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.2,
+    max_tokens: 1500,
+    response_format: { type: 'json_object' },
+  })
+
+  const raw = response.choices[0]?.message?.content || '{}'
+  try {
+    const parsed = JSON.parse(raw) as AgentBriefing
+    if (!parsed.summary) throw new Error('Missing summary')
+    return {
+      summary: parsed.summary,
+      talkingPoints: parsed.talkingPoints || [],
+      qualifications: parsed.qualifications || [],
+      complianceFlags: parsed.complianceFlags || [],
+      generatedAt: parsed.generatedAt || new Date().toISOString(),
+    }
+  } catch {
+    throw new Error(`Failed to parse agent briefing: ${raw.slice(0, 200)}`)
+  }
+}
+
 /**
  * Generate a concise AI synopsis for an opportunity description.
  */

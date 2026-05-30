@@ -36,6 +36,10 @@ model User {
   sowVersions   SOWVersion[]
   sowActivities SOWActivity[]
 
+  // Bid Approval Relations
+  submittedApprovals BidApprovalRequest[] @relation("BidSubmitter")
+  reviewedApprovals  BidApprovalRequest[] @relation("BidReviewer")
+
   // Assessment Relations
   assessments OpportunityAssessment[] @relation("AssessmentAuthor")
 
@@ -118,6 +122,7 @@ model Opportunity {
   rawData            Json? // Store full SAM.gov response
   parsedAttachments  Json? // Cached parsed text from solicitation attachments
   opportunityBrief   Json? // Cached AI-generated opportunity brief (OpportunityBrief)
+  agentBriefing      Json? // Cached AI-generated agent briefing (AgentBriefing)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -130,6 +135,7 @@ model Opportunity {
   assessment          OpportunityAssessment?
   attachmentOverrides AttachmentOverride[]
   attachmentFormData  AttachmentFormData[]
+  bidApprovalRequests BidApprovalRequest[]
 
   @@index([solicitationNumber])
   @@index([responseDeadline])
@@ -365,8 +371,9 @@ model Bid {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  user        User?       @relation(fields: [userId], references: [id])
+  opportunity      Opportunity          @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  user             User?                @relation(fields: [userId], references: [id])
+  approvalRequests BidApprovalRequest[]
 
   @@index([opportunityId])
   @@index([status])
@@ -378,6 +385,39 @@ enum BidStatus {
   REVIEWED
   SUBMITTED
   AWARDED
+  REJECTED
+}
+
+// ============ BID APPROVAL REQUESTS ============
+
+model BidApprovalRequest {
+  id            String            @id @default(cuid())
+  opportunityId String
+  bidId         String
+  submittedById String
+  agentNote     String?           @db.Text
+
+  status        BidApprovalStatus @default(PENDING)
+  reviewedById  String?
+  reviewerNote  String?           @db.Text
+  reviewedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  bid           Bid         @relation(fields: [bidId], references: [id], onDelete: Cascade)
+  submittedBy   User        @relation("BidSubmitter", fields: [submittedById], references: [id])
+  reviewedBy    User?       @relation("BidReviewer", fields: [reviewedById], references: [id])
+
+  @@index([opportunityId])
+  @@index([status])
+  @@map("bid_approval_requests")
+}
+
+enum BidApprovalStatus {
+  PENDING
+  APPROVED
   REJECTED
 }
 

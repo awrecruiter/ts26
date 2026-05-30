@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { format, differenceInDays } from 'date-fns'
 import WorkspaceLayout from '@/components/workspace/WorkspaceLayout'
 import OpportunitySummaryPanel from '@/components/workspace/panels/OpportunitySummaryPanel'
@@ -17,6 +18,7 @@ import { extractCity, extractStateCode } from '@/lib/opportunity-classification'
 export default function OpportunityWorkspacePage() {
   const params = useParams()
   const router = useRouter()
+  const { data: session } = useSession()
   const [opportunity, setOpportunity] = useState<any>(null)
   const [assessment, setAssessment] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -452,6 +454,7 @@ export default function OpportunityWorkspacePage() {
           templateType={emailTemplateType}
           availableAttachments={solicitationAttachments}
           sowFileName={currentSOW?.fileName}
+          sowId={currentSOW?.id}
           opportunityId={opportunity.id}
           selectedAttachmentIds={emailSelectedAttachments}
           onSelectionChange={setEmailSelectedAttachments}
@@ -489,6 +492,7 @@ export default function OpportunityWorkspacePage() {
         <BidEditorPanel
           bid={currentBid}
           opportunity={opportunity}
+          userRole={session?.user?.role}
           onSave={handleSaveBid}
           onStatusChange={handleBidStatusChange}
         />

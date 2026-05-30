@@ -149,12 +149,28 @@ export async function GET(req: Request) {
         },
         bids: {
           select: {
+            id: true,
             source: true,
             confidence: true,
             historicalData: true,
+            status: true,
+            recommendedPrice: true,
+            approvalRequests: {
+              select: {
+                id: true,
+                status: true,
+                createdAt: true,
+                reviewerNote: true,
+              },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
           },
           orderBy: { createdAt: 'desc' },
           take: 1,
+        },
+        progress: {
+          select: { currentStage: true },
         },
       },
     })

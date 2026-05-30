@@ -197,6 +197,24 @@ export default function AdminDashboard() {
             </div>
           </Link>
 
+          {/* Bid Reviews Card */}
+          <Link
+            href="/admin/bid-approvals"
+            className="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow"
+          >
+            <div className="flex items-start">
+              <div className="flex-shrink-0 bg-stone-100 rounded-md p-3">
+                <svg className="h-6 w-6 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+              </div>
+              <div className="ml-4">
+                <h3 className="text-lg font-semibold text-stone-900 mb-2">Bid Reviews</h3>
+                <p className="text-sm text-stone-600">Review and approve agent bid submissions before they go to the government.</p>
+              </div>
+            </div>
+          </Link>
+
           {/* Settings Card */}
           <Link
             href="/admin/settings"

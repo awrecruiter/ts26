@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import OpportunityCard from '@/components/opportunities/OpportunityCard'
+import AgentDashboard from '@/components/dashboard/AgentDashboard'
 
 export const dynamic = 'force-dynamic'
 
@@ -187,6 +188,11 @@ function DashboardContent() {
         <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-stone-600" />
       </div>
     )
+  }
+
+  // AGENT and VIEWER get the simplified agent dashboard
+  if (session?.user?.role === 'AGENT' || session?.user?.role === 'VIEWER') {
+    return <AgentDashboard userName={session.user.name ?? undefined} />
   }
 
   return (

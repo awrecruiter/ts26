@@ -27,6 +27,17 @@ export async function GET(
         bids: {
           orderBy: { createdAt: 'desc' },
           take: 5,
+          include: {
+            approvalRequests: {
+              select: {
+                id: true,
+                status: true,
+                createdAt: true,
+                reviewerNote: true,
+              },
+              orderBy: { createdAt: 'desc' },
+            },
+          },
         },
         subcontractors: {
           orderBy: { createdAt: 'desc' },

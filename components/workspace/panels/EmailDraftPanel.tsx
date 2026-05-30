@@ -17,6 +17,7 @@ interface EmailDraftPanelProps {
   onSend?: (email: { to: string; subject: string; body: string }) => Promise<void>
   availableAttachments?: RichAttachment[]
   sowFileName?: string
+  sowId?: string
   opportunityId?: string
   /** IDs of pre-selected attachments (parent-controlled, survives panel switching) */
   selectedAttachmentIds?: Set<string>
@@ -185,6 +186,7 @@ export default function EmailDraftPanel({
   onSend,
   availableAttachments,
   sowFileName,
+  sowId,
   opportunityId,
   selectedAttachmentIds,
   onSelectionChange,
@@ -311,6 +313,31 @@ export default function EmailDraftPanel({
               <option value="custom">Custom</option>
             </select>
           </div>
+
+          {/* Send SOW quick action — only shown when SOW exists */}
+          {sowId && (
+            <div className="p-3 bg-stone-50 border border-stone-200 rounded-lg flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <svg className="h-4 w-4 text-stone-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-stone-700 truncate">Send SOW to subcontractor</p>
+                  <p className="text-[11px] text-stone-400">Pre-fills subject and body with SOW delivery template</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedTemplate('sow_delivery')
+                  setSubject(`SOW — ${opportunityTitle}`)
+                }}
+                className="shrink-0 px-3 py-1.5 text-xs font-medium text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors"
+              >
+                Use template
+              </button>
+            </div>
+          )}
 
           {/* SOW Synopsis Preview */}
           {sowSynopsis && (
