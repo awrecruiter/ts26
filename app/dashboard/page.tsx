@@ -222,7 +222,7 @@ function DashboardContent() {
       {/* Search + Filter Bar */}
       <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <form onSubmit={(e) => { e.preventDefault(); applyFilters() }}>
+          <form onSubmit={(e) => { e.preventDefault(); applyFilters() }} autoComplete="off">
             {/* Search row */}
             <div className="flex flex-wrap gap-3 mb-3">
               <div className="relative flex-1 min-w-0">
@@ -319,6 +319,7 @@ function DashboardContent() {
                       placeholder="e.g., 334519"
                       value={naicsFilter}
                       onChange={(e) => setNaicsFilter(e.target.value)}
+                      onFocus={(e) => { if (!/^\d*$/.test(e.target.value)) setNaicsFilter('') }}
                       autoComplete="new-password"
                       className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white"
                     />
