@@ -46,7 +46,7 @@ function DashboardContent() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 })
-  const [filtersOpen, setFiltersOpen] = useState(true)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [fetching, setFetching] = useState(false)
   const [fetchResult, setFetchResult] = useState<string | null>(null)
 
@@ -72,6 +72,7 @@ function DashboardContent() {
 
   const buildParams = () => {
     const params = new URLSearchParams()
+    params.set('engaged', 'true')
     if (search) params.set('search', search)
     if (naicsFilter) params.set('naics', naicsFilter)
     if (agencyFilter) params.set('agency', agencyFilter)
@@ -91,6 +92,7 @@ function DashboardContent() {
       setLoading(true)
       setError('')
       const params = new URLSearchParams(searchParams.toString())
+      params.set('engaged', 'true')
       params.set('page', searchParams.get('page') || '1')
       const res = await fetch(`/api/opportunities?${params.toString()}`)
       if (!res.ok) throw new Error('Failed to fetch opportunities')
@@ -133,7 +135,7 @@ function DashboardContent() {
     setStatusFilter('ACTIVE'); setSort('deadline_asc'); setDeadlineDays('')
     setHasSOW(''); setHasBid(''); setRecommendation('')
     setMinMargin(''); setMaxMargin('')
-    router.push('/dashboard?status=ACTIVE&page=1')
+    router.push('/dashboard?engaged=true&status=ACTIVE&page=1')
   }
 
   const handlePageChange = (newPage: number) => {

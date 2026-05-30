@@ -29,6 +29,8 @@ export async function GET(req: Request) {
     const maxMargin = parseFloat(searchParams.get('maxMargin') || '')
     const sort = searchParams.get('sort') || 'deadline_asc'
 
+    const engaged = searchParams.get('engaged') === 'true'
+
     // Legacy params
     const minDaysUntilClose = parseInt(searchParams.get('minDays') || '14')
     const showExpiring = searchParams.get('showExpiring') === 'true'
@@ -93,6 +95,20 @@ export async function GET(req: Request) {
     }
     if (Object.keys(assessmentWhere).length > 0) {
       where.assessment = assessmentWhere
+    }
+
+    if (engaged) {
+      where.AND = [
+        {
+          OR: [
+            { sows: { some: {} } },
+            { bids: { some: {} } },
+            { subcontractors: { some: {} } },
+            { progress: { isNot: null } },
+            { assessment: { isNot: null } },
+          ],
+        },
+      ]
     }
 
     const total = await prisma.opportunity.count({ where })
