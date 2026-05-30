@@ -87,6 +87,7 @@ export async function POST(
         recommendation: 'REVIEW',
         notes: sourceNote,
         assessedById: session.user.id,
+        historicalData: pricingAnalysis.historicalContracts as any,
       },
       include: {
         assessedBy: {

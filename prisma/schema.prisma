@@ -211,6 +211,9 @@ model OpportunityAssessment {
   strategicValue    StrategicValue?   // How valuable is this strategically
   riskLevel         RiskLevel?        // Risk assessment
 
+  // Historical reference data
+  historicalData Json?     // Top 10 USASpending contracts used to derive estimatedValue
+
   // Decision
   recommendation String?   @db.Text // GO, NO_GO, REVIEW
   notes          String?   @db.Text

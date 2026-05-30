@@ -2,6 +2,18 @@
 
 import { useState } from 'react'
 
+interface HistoricalContract {
+  award_id: string
+  award_amount: number
+  awarding_agency_name: string
+  recipient_name: string
+  description: string
+  period_of_performance_start_date: string
+  period_of_performance_current_end_date: string
+  naics_code: string
+  naics_description: string
+}
+
 interface Assessment {
   id?: string
   estimatedValue: number | null
@@ -13,6 +25,7 @@ interface Assessment {
   riskLevel?: 'HIGH' | 'MEDIUM' | 'LOW' | null
   recommendation?: string | null
   notes?: string | null
+  historicalData?: HistoricalContract[] | null
   assessedBy?: { name: string; email: string }
   assessedAt?: string
 }
@@ -27,6 +40,20 @@ function confidenceFromRiskLevel(riskLevel?: string | null): { label: string; co
   if (riskLevel === 'LOW') return { label: 'High confidence', color: 'text-green-700 bg-green-50 border-green-200' }
   if (riskLevel === 'MEDIUM') return { label: 'Medium confidence', color: 'text-amber-700 bg-amber-50 border-amber-200' }
   return { label: 'Low confidence', color: 'text-stone-600 bg-stone-100 border-stone-200' }
+}
+
+function formatAmount(amount: number): string {
+  if (amount >= 1_000_000) return `$${(amount / 1_000_000).toFixed(1)}M`
+  if (amount >= 1_000) return `$${Math.round(amount / 1_000)}K`
+  return `$${amount.toLocaleString()}`
+}
+
+function contractDurationMonths(start: string, end: string): string {
+  if (!start || !end) return '—'
+  const months = Math.round(
+    (new Date(end).getTime() - new Date(start).getTime()) / (1000 * 60 * 60 * 24 * 30.4)
+  )
+  return months > 0 ? `${months} mo` : '—'
 }
 
 export default function MarginCalculator({ opportunityId, existingAssessment, onSave }: MarginCalculatorProps) {
@@ -49,6 +76,7 @@ export default function MarginCalculator({ opportunityId, existingAssessment, on
   const [notes, setNotes] = useState(existingAssessment?.notes || '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
 
   const value = parseFloat(estimatedValue) || 0
   const cost = parseFloat(estimatedCost) || 0
@@ -60,13 +88,16 @@ export default function MarginCalculator({ opportunityId, existingAssessment, on
   const recText = profitPercent >= 20 ? 'GO' : profitPercent >= 10 ? 'REVIEW' : 'NO GO'
   const recColor = profitPercent >= 20 ? 'text-green-700 bg-green-100' : profitPercent >= 10 ? 'text-amber-700 bg-amber-100' : 'text-red-700 bg-red-100'
 
-  // Source attribution from notes (set by auto-generate from USASpending)
   const dataSourceNote = existingAssessment?.notes || null
   const isFromUSASpending = dataSourceNote?.includes('USASpending')
   const hasValueFromUSASpending = existingAssessment?.estimatedValue && existingAssessment.estimatedValue > 0
   const noDataAvailable = !hasValueFromUSASpending && !estimatedValue
 
   const confidence = confidenceFromRiskLevel(existingAssessment?.riskLevel)
+
+  const historicalContracts: HistoricalContract[] = Array.isArray(existingAssessment?.historicalData)
+    ? (existingAssessment.historicalData as HistoricalContract[])
+    : []
 
   const handleSave = async () => {
     if (!estimatedValue || !estimatedCost) {
@@ -115,6 +146,62 @@ export default function MarginCalculator({ opportunityId, existingAssessment, on
                 {confidence.label}
               </span>
             </div>
+          </div>
+        )}
+
+        {/* Historical contracts toggle */}
+        {historicalContracts.length > 0 && (
+          <div className="border border-stone-200 rounded-lg overflow-hidden">
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              className="w-full flex items-center justify-between px-3 py-2 bg-stone-50 hover:bg-stone-100 transition-colors text-left"
+            >
+              <span className="text-xs font-medium text-stone-700">
+                Historical contracts ({historicalContracts.length} found)
+              </span>
+              <svg
+                className={`h-3.5 w-3.5 text-stone-400 transition-transform ${showHistory ? 'rotate-180' : ''}`}
+                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {showHistory && (
+              <div className="overflow-auto max-h-52">
+                <table className="w-full text-[11px]">
+                  <thead>
+                    <tr className="border-b border-stone-200 bg-white">
+                      <th className="text-left px-3 py-1.5 font-semibold text-stone-500 uppercase tracking-wider">Awardee</th>
+                      <th className="text-right px-3 py-1.5 font-semibold text-stone-500 uppercase tracking-wider">Amount</th>
+                      <th className="text-right px-3 py-1.5 font-semibold text-stone-500 uppercase tracking-wider">Duration</th>
+                      <th className="text-left px-3 py-1.5 font-semibold text-stone-500 uppercase tracking-wider">Agency</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historicalContracts.map((c, i) => (
+                      <tr key={c.award_id || i} className="border-b border-stone-100 last:border-0 hover:bg-stone-50">
+                        <td className="px-3 py-1.5 text-stone-800 max-w-[140px] truncate" title={c.recipient_name}>
+                          {c.recipient_name}
+                        </td>
+                        <td className="px-3 py-1.5 text-stone-900 font-medium text-right tabular-nums">
+                          {formatAmount(c.award_amount)}
+                        </td>
+                        <td className="px-3 py-1.5 text-stone-500 text-right tabular-nums">
+                          {contractDurationMonths(
+                            c.period_of_performance_start_date,
+                            c.period_of_performance_current_end_date
+                          )}
+                        </td>
+                        <td className="px-3 py-1.5 text-stone-500 max-w-[120px] truncate" title={c.awarding_agency_name}>
+                          {c.awarding_agency_name}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
