@@ -5,6 +5,15 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import OpportunityCard from '@/components/opportunities/OpportunityCard'
 
+const SORT_OPTIONS = [
+  { label: 'Deadline (soonest)', value: 'deadline_asc' },
+  { label: 'Deadline (latest)', value: 'deadline_desc' },
+  { label: 'Recently posted', value: 'posted_desc' },
+  { label: 'Oldest posted', value: 'posted_asc' },
+  { label: 'Title A–Z', value: 'title_asc' },
+  { label: 'Title Z–A', value: 'title_desc' },
+]
+
 const DEADLINE_OPTIONS = [
   { label: 'Any deadline', value: '' },
   { label: 'Next 7 days', value: '7' },
@@ -33,7 +42,7 @@ function FilterBadge({ label, onRemove }: { label: string; onRemove: () => void 
 function OpportunitiesContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { status: sessionStatus } = useSession()
+  const { data: session, status: sessionStatus } = useSession()
 
   const [opportunities, setOpportunities] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -44,13 +53,16 @@ function OpportunitiesContent() {
     total: 0,
     totalPages: 0,
   })
-  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(true)
+  const [fetching, setFetching] = useState(false)
+  const [fetchResult, setFetchResult] = useState<string | null>(null)
 
   // Basic filters
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const [naicsFilter, setNaicsFilter] = useState(searchParams.get('naics') || '')
   const [agencyFilter, setAgencyFilter] = useState(searchParams.get('agency') || '')
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'ACTIVE')
+  const [sort, setSort] = useState(searchParams.get('sort') || 'deadline_asc')
 
   // Advanced filters
   const [deadlineDays, setDeadlineDays] = useState(searchParams.get('deadlineDays') || '')
@@ -74,6 +86,7 @@ function OpportunitiesContent() {
     if (naicsFilter) params.set('naics', naicsFilter)
     if (agencyFilter) params.set('agency', agencyFilter)
     if (statusFilter) params.set('status', statusFilter)
+    if (sort && sort !== 'deadline_asc') params.set('sort', sort)
     if (deadlineDays) params.set('deadlineDays', deadlineDays)
     if (hasSOW) params.set('hasSOW', hasSOW)
     if (hasBid) params.set('hasBid', hasBid)
@@ -81,6 +94,29 @@ function OpportunitiesContent() {
     if (minMargin) params.set('minMargin', minMargin)
     if (maxMargin) params.set('maxMargin', maxMargin)
     return params
+  }
+
+  const handleFetchFromSAM = async () => {
+    setFetching(true)
+    setFetchResult(null)
+    try {
+      const res = await fetch('/api/opportunities/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 50, posted_days_ago: 90 }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setFetchResult(`Fetched ${data.saved || 0} new opportunities`)
+        fetchOpportunities()
+      } else {
+        setFetchResult(`Error: ${data.error || 'Failed to fetch'}`)
+      }
+    } catch {
+      setFetchResult('Network error — please try again')
+    } finally {
+      setFetching(false)
+    }
   }
 
   const fetchOpportunities = async () => {
@@ -115,11 +151,21 @@ function OpportunitiesContent() {
     applyFilters()
   }
 
+  const handleSortChange = (newSort: string) => {
+    setSort(newSort)
+    const params = buildParams()
+    if (newSort && newSort !== 'deadline_asc') params.set('sort', newSort)
+    else params.delete('sort')
+    params.set('page', '1')
+    router.push(`/opportunities?${params.toString()}`)
+  }
+
   const clearAllFilters = () => {
     setSearch('')
     setNaicsFilter('')
     setAgencyFilter('')
     setStatusFilter('ACTIVE')
+    setSort('deadline_asc')
     setDeadlineDays('')
     setHasSOW('')
     setHasBid('')
@@ -174,20 +220,34 @@ function OpportunitiesContent() {
       {/* Header */}
       <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
             <div>
               <h1 className="text-2xl font-bold text-stone-900">Opportunities</h1>
               <p className="mt-0.5 text-sm text-stone-500">
                 Browse and track government contracting opportunities
               </p>
             </div>
-            <button
-              onClick={() => router.push('/dashboard')}
-              className="px-4 py-2 text-sm font-medium text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors"
-            >
-              Dashboard
-            </button>
+            <div className="flex items-center gap-3 flex-wrap">
+              {sessionStatus === 'authenticated' && session?.user?.role === 'ADMIN' && (
+                <button
+                  onClick={handleFetchFromSAM}
+                  disabled={fetching}
+                  className="px-4 py-2 text-sm font-medium text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 disabled:opacity-50 transition-colors"
+                >
+                  {fetching ? 'Fetching...' : 'Fetch from SAM.gov'}
+                </button>
+              )}
+              <button
+                onClick={() => router.push('/dashboard')}
+                className="px-4 py-2 text-sm font-medium text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors"
+              >
+                Dashboard
+              </button>
+            </div>
           </div>
+          {fetchResult && (
+            <p className="mt-2 text-sm text-stone-600">{fetchResult}</p>
+          )}
         </div>
       </div>
 
@@ -210,11 +270,30 @@ function OpportunitiesContent() {
               >
                 Search
               </button>
+              {/* Sort */}
+              <div className="relative">
+                <select
+                  value={sort}
+                  onChange={(e) => handleSortChange(e.target.value)}
+                  className="appearance-none pl-8 pr-8 py-2 text-sm font-medium text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none cursor-pointer"
+                >
+                  {SORT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                <svg className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+                </svg>
+                <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+              {/* Filters toggle */}
               <button
                 type="button"
                 onClick={() => setFiltersOpen((v) => !v)}
                 className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors flex items-center gap-2 ${
-                  filtersOpen || activeFilters.length > 0
+                  activeFilters.length > 0
                     ? 'bg-stone-100 border-stone-400 text-stone-800'
                     : 'bg-white border-stone-300 text-stone-600 hover:bg-stone-50'
                 }`}
@@ -222,7 +301,7 @@ function OpportunitiesContent() {
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                 </svg>
-                Filters
+                {filtersOpen ? 'Hide Filters' : 'Filters'}
                 {activeFilters.length > 0 && (
                   <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-stone-800 text-white rounded-full">
                     {activeFilters.length}

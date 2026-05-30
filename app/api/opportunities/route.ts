@@ -27,6 +27,7 @@ export async function GET(req: Request) {
     const deadlineDays = searchParams.get('deadlineDays')     // '7' | '14' | '30' | '60' | null
     const minMargin = parseFloat(searchParams.get('minMargin') || '')
     const maxMargin = parseFloat(searchParams.get('maxMargin') || '')
+    const sort = searchParams.get('sort') || 'deadline_asc'
 
     // Legacy params
     const minDaysUntilClose = parseInt(searchParams.get('minDays') || '14')
@@ -96,9 +97,19 @@ export async function GET(req: Request) {
 
     const total = await prisma.opportunity.count({ where })
 
+    const SORT_MAP: Record<string, object> = {
+      deadline_asc:  { responseDeadline: 'asc' },
+      deadline_desc: { responseDeadline: 'desc' },
+      posted_desc:   { postedDate: 'desc' },
+      posted_asc:    { postedDate: 'asc' },
+      title_asc:     { title: 'asc' },
+      title_desc:    { title: 'desc' },
+    }
+    const orderBy = SORT_MAP[sort] ?? { responseDeadline: 'asc' }
+
     const opportunities = await prisma.opportunity.findMany({
       where,
-      orderBy: { responseDeadline: 'asc' },
+      orderBy,
       skip: (page - 1) * limit,
       take: limit,
       include: {
