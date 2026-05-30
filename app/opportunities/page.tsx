@@ -263,7 +263,7 @@ function OpportunitiesContent() {
                   placeholder="Search by title, solicitation number, or description..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  autoComplete="off"
+                  autoComplete="new-password"
                   className="w-full px-4 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none pr-8"
                 />
                 {search && (
@@ -352,7 +352,7 @@ function OpportunitiesContent() {
                       placeholder="e.g., 334519"
                       value={naicsFilter}
                       onChange={(e) => setNaicsFilter(e.target.value)}
-                      autoComplete="off"
+                      autoComplete="new-password"
                       className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none bg-white"
                     />
                   </div>
@@ -363,7 +363,7 @@ function OpportunitiesContent() {
                       placeholder="e.g., Defense"
                       value={agencyFilter}
                       onChange={(e) => setAgencyFilter(e.target.value)}
-                      autoComplete="off"
+                      autoComplete="new-password"
                       className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none bg-white"
                     />
                   </div>
