@@ -257,13 +257,27 @@ function OpportunitiesContent() {
           <form onSubmit={handleSearch}>
             {/* Search row */}
             <div className="flex flex-wrap gap-3 mb-3">
-              <input
-                type="text"
-                placeholder="Search by title, solicitation number, or description..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="flex-1 min-w-0 px-4 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none"
-              />
+              <div className="relative flex-1 min-w-0">
+                <input
+                  type="text"
+                  placeholder="Search by title, solicitation number, or description..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  autoComplete="off"
+                  className="w-full px-4 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none pr-8"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => { setSearch(''); applyFiltersWithOverride({ search: '' }) }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
               <button
                 type="submit"
                 className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 transition-colors"
@@ -338,6 +352,7 @@ function OpportunitiesContent() {
                       placeholder="e.g., 334519"
                       value={naicsFilter}
                       onChange={(e) => setNaicsFilter(e.target.value)}
+                      autoComplete="off"
                       className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none bg-white"
                     />
                   </div>
@@ -348,6 +363,7 @@ function OpportunitiesContent() {
                       placeholder="e.g., Defense"
                       value={agencyFilter}
                       onChange={(e) => setAgencyFilter(e.target.value)}
+                      autoComplete="off"
                       className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none bg-white"
                     />
                   </div>
