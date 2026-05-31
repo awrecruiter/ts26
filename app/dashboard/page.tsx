@@ -71,6 +71,22 @@ function DashboardContent() {
     }
   }, [sessionStatus, searchParams])
 
+  // Sync draft input state from URL so pill-clears, browser back/forward,
+  // and clearAllFilters all reset the inputs without manual setState plumbing.
+  useEffect(() => {
+    setSearch(searchParams.get('search') || '')
+    setNaicsFilter(searchParams.get('naics') || '')
+    setAgencyFilter(searchParams.get('agency') || '')
+    setStatusFilter(searchParams.get('status') || 'ACTIVE')
+    setSort(searchParams.get('sort') || 'deadline_asc')
+    setDeadlineDays(searchParams.get('deadlineDays') || '')
+    setHasSOW(searchParams.get('hasSOW') || '')
+    setHasBid(searchParams.get('hasBid') || '')
+    setRecommendation(searchParams.get('recommendation') || '')
+    setMinMargin(searchParams.get('minMargin') || '')
+    setMaxMargin(searchParams.get('maxMargin') || '')
+  }, [searchParams])
+
   const buildParams = () => {
     const params = new URLSearchParams()
     params.set('engaged', 'true')
@@ -115,6 +131,18 @@ function DashboardContent() {
 
   const applyFiltersWithOverride = (overrides: Record<string, string>) => {
     const params = buildParams()
+    Object.entries(overrides).forEach(([k, v]) => {
+      if (v) params.set(k, v); else params.delete(k)
+    })
+    params.set('page', '1')
+    router.push(`/dashboard?${params.toString()}`)
+  }
+
+  // Pill clears must not commit other in-progress drafts: start from the
+  // current URL (applied state) and only mutate the overridden keys.
+  const updateUrlOverride = (overrides: Record<string, string>) => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('engaged', 'true')
     Object.entries(overrides).forEach(([k, v]) => {
       if (v) params.set(k, v); else params.delete(k)
     })
@@ -168,19 +196,29 @@ function DashboardContent() {
     }
   }
 
-  // Active filter badges
+  // Active filter badges — derived from URL (applied state), not draft input state.
+  const appliedSearch = searchParams.get('search') || ''
+  const appliedNaics = searchParams.get('naics') || ''
+  const appliedAgency = searchParams.get('agency') || ''
+  const appliedDeadlineDays = searchParams.get('deadlineDays') || ''
+  const appliedHasSOW = searchParams.get('hasSOW') || ''
+  const appliedHasBid = searchParams.get('hasBid') || ''
+  const appliedRecommendation = searchParams.get('recommendation') || ''
+  const appliedMinMargin = searchParams.get('minMargin') || ''
+  const appliedMaxMargin = searchParams.get('maxMargin') || ''
+
   const activeFilters: { label: string; clear: () => void }[] = []
-  if (search) activeFilters.push({ label: `"${search}"`, clear: () => { setSearch(''); applyFiltersWithOverride({ search: '' }) } })
-  if (naicsFilter) activeFilters.push({ label: `NAICS: ${naicsFilter}`, clear: () => { setNaicsFilter(''); applyFiltersWithOverride({ naics: '' }) } })
-  if (agencyFilter) activeFilters.push({ label: `Agency: ${agencyFilter}`, clear: () => { setAgencyFilter(''); applyFiltersWithOverride({ agency: '' }) } })
-  if (deadlineDays) activeFilters.push({ label: `≤ ${deadlineDays} days`, clear: () => { setDeadlineDays(''); applyFiltersWithOverride({ deadlineDays: '' }) } })
-  if (hasSOW === 'yes') activeFilters.push({ label: 'Has SOW', clear: () => { setHasSOW(''); applyFiltersWithOverride({ hasSOW: '' }) } })
-  if (hasSOW === 'no') activeFilters.push({ label: 'No SOW', clear: () => { setHasSOW(''); applyFiltersWithOverride({ hasSOW: '' }) } })
-  if (hasBid === 'yes') activeFilters.push({ label: 'Has Bid', clear: () => { setHasBid(''); applyFiltersWithOverride({ hasBid: '' }) } })
-  if (hasBid === 'no') activeFilters.push({ label: 'No Bid', clear: () => { setHasBid(''); applyFiltersWithOverride({ hasBid: '' }) } })
-  if (recommendation) activeFilters.push({ label: recommendation.replace('_', ' '), clear: () => { setRecommendation(''); applyFiltersWithOverride({ recommendation: '' }) } })
-  if (minMargin) activeFilters.push({ label: `Margin ≥ ${minMargin}%`, clear: () => { setMinMargin(''); applyFiltersWithOverride({ minMargin: '' }) } })
-  if (maxMargin) activeFilters.push({ label: `Margin ≤ ${maxMargin}%`, clear: () => { setMaxMargin(''); applyFiltersWithOverride({ maxMargin: '' }) } })
+  if (appliedSearch) activeFilters.push({ label: `"${appliedSearch}"`, clear: () => updateUrlOverride({ search: '' }) })
+  if (appliedNaics) activeFilters.push({ label: `NAICS: ${appliedNaics}`, clear: () => updateUrlOverride({ naics: '' }) })
+  if (appliedAgency) activeFilters.push({ label: `Agency: ${appliedAgency}`, clear: () => updateUrlOverride({ agency: '' }) })
+  if (appliedDeadlineDays) activeFilters.push({ label: `≤ ${appliedDeadlineDays} days`, clear: () => updateUrlOverride({ deadlineDays: '' }) })
+  if (appliedHasSOW === 'yes') activeFilters.push({ label: 'Has SOW', clear: () => updateUrlOverride({ hasSOW: '' }) })
+  if (appliedHasSOW === 'no') activeFilters.push({ label: 'No SOW', clear: () => updateUrlOverride({ hasSOW: '' }) })
+  if (appliedHasBid === 'yes') activeFilters.push({ label: 'Has Bid', clear: () => updateUrlOverride({ hasBid: '' }) })
+  if (appliedHasBid === 'no') activeFilters.push({ label: 'No Bid', clear: () => updateUrlOverride({ hasBid: '' }) })
+  if (appliedRecommendation) activeFilters.push({ label: appliedRecommendation.replace('_', ' '), clear: () => updateUrlOverride({ recommendation: '' }) })
+  if (appliedMinMargin) activeFilters.push({ label: `Margin ≥ ${appliedMinMargin}%`, clear: () => updateUrlOverride({ minMargin: '' }) })
+  if (appliedMaxMargin) activeFilters.push({ label: `Margin ≤ ${appliedMaxMargin}%`, clear: () => updateUrlOverride({ maxMargin: '' }) })
 
   if (sessionStatus === 'loading') {
     return (
@@ -242,7 +280,10 @@ function DashboardContent() {
                 {search && (
                   <button
                     type="button"
-                    onClick={() => { setSearch(''); applyFiltersWithOverride({ search: '' }) }}
+                    onClick={() => {
+                      setSearch('')
+                      if (appliedSearch) updateUrlOverride({ search: '' })
+                    }}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700"
                   >
                     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
