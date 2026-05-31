@@ -5,6 +5,11 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import OpportunityCard from '@/components/opportunities/OpportunityCard'
 import AgentDashboard from '@/components/dashboard/AgentDashboard'
+import ChipInput from '@/components/shared/ChipInput'
+
+const NAICS_PATTERN = /^\d{2,6}$/
+const validateNaics = (v: string) => (NAICS_PATTERN.test(v.trim()) ? v.trim() : null)
+const parseNaicsParam = (raw: string) => raw.split(',').map((s) => s.trim()).filter(Boolean)
 
 export const dynamic = 'force-dynamic'
 
@@ -52,7 +57,7 @@ function DashboardContent() {
   const [fetchResult, setFetchResult] = useState<string | null>(null)
 
   const [search, setSearch] = useState(searchParams.get('search') || '')
-  const [naicsFilter, setNaicsFilter] = useState(searchParams.get('naics') || '')
+  const [naicsCodes, setNaicsCodes] = useState<string[]>(parseNaicsParam(searchParams.get('naics') || ''))
   const [agencyFilter, setAgencyFilter] = useState(searchParams.get('agency') || '')
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'ACTIVE')
   const [sort, setSort] = useState(searchParams.get('sort') || 'deadline_asc')
@@ -75,7 +80,7 @@ function DashboardContent() {
   // and clearAllFilters all reset the inputs without manual setState plumbing.
   useEffect(() => {
     setSearch(searchParams.get('search') || '')
-    setNaicsFilter(searchParams.get('naics') || '')
+    setNaicsCodes(parseNaicsParam(searchParams.get('naics') || ''))
     setAgencyFilter(searchParams.get('agency') || '')
     setStatusFilter(searchParams.get('status') || 'ACTIVE')
     setSort(searchParams.get('sort') || 'deadline_asc')
@@ -91,7 +96,7 @@ function DashboardContent() {
     const params = new URLSearchParams()
     params.set('engaged', 'true')
     if (search) params.set('search', search)
-    if (naicsFilter) params.set('naics', naicsFilter)
+    if (naicsCodes.length > 0) params.set('naics', naicsCodes.join(','))
     if (agencyFilter) params.set('agency', agencyFilter)
     if (statusFilter) params.set('status', statusFilter)
     if (sort && sort !== 'deadline_asc') params.set('sort', sort)
@@ -160,7 +165,7 @@ function DashboardContent() {
   }
 
   const clearAllFilters = () => {
-    setSearch(''); setNaicsFilter(''); setAgencyFilter('')
+    setSearch(''); setNaicsCodes([]); setAgencyFilter('')
     setStatusFilter('ACTIVE'); setSort('deadline_asc'); setDeadlineDays('')
     setHasSOW(''); setHasBid(''); setRecommendation('')
     setMinMargin(''); setMaxMargin('')
@@ -209,7 +214,15 @@ function DashboardContent() {
 
   const activeFilters: { label: string; clear: () => void }[] = []
   if (appliedSearch) activeFilters.push({ label: `"${appliedSearch}"`, clear: () => updateUrlOverride({ search: '' }) })
-  if (appliedNaics) activeFilters.push({ label: `NAICS: ${appliedNaics}`, clear: () => updateUrlOverride({ naics: '' }) })
+  parseNaicsParam(appliedNaics).forEach((code) => {
+    activeFilters.push({
+      label: `NAICS: ${code}`,
+      clear: () => {
+        const next = parseNaicsParam(appliedNaics).filter((c) => c !== code)
+        updateUrlOverride({ naics: next.join(',') })
+      },
+    })
+  })
   if (appliedAgency) activeFilters.push({ label: `Agency: ${appliedAgency}`, clear: () => updateUrlOverride({ agency: '' }) })
   if (appliedDeadlineDays) activeFilters.push({ label: `≤ ${appliedDeadlineDays} days`, clear: () => updateUrlOverride({ deadlineDays: '' }) })
   if (appliedHasSOW === 'yes') activeFilters.push({ label: 'Has SOW', clear: () => updateUrlOverride({ hasSOW: '' }) })
@@ -359,13 +372,12 @@ function DashboardContent() {
               <div className="border border-stone-200 rounded-lg p-4 bg-stone-50 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-stone-600 mb-1">NAICS Code</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., 334519"
-                      value={naicsFilter}
-                      onChange={(e) => setNaicsFilter(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 outline-none bg-white"
+                    <label className="block text-xs font-medium text-stone-600 mb-1">NAICS Codes</label>
+                    <ChipInput
+                      values={naicsCodes}
+                      onChange={setNaicsCodes}
+                      placeholder="e.g., 334519 (Enter to add)"
+                      validate={validateNaics}
                     />
                   </div>
                   <div>

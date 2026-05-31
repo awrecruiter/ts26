@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
+import { extractOpportunityValue } from '@/components/assessment/MarginCalculator'
 
 interface OpportunityCardProps {
   opportunity: {
@@ -14,6 +14,12 @@ interface OpportunityCardProps {
     responseDeadline?: Date | null
     postedDate?: Date | null
     status: string
+    rawData?: unknown
+    comparable?: {
+      value: number
+      source: string
+      totalContracts: number
+    } | null
     _count?: {
       bids: number
       subcontractors: number
@@ -79,15 +85,29 @@ function DataSourceIndicator({ bids }: { bids?: OpportunityCardProps['opportunit
 }
 
 export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
-  const initCost = opportunity.assessment?.estimatedCost
-  const [costStr, setCostStr] = useState<string>(initCost && initCost > 0 ? initCost.toString() : '')
+  const assessment = opportunity.assessment
+  const samValue = extractOpportunityValue(opportunity.rawData)
+  const comparable = opportunity.comparable
+  const valueVal = (assessment?.estimatedValue && assessment.estimatedValue > 0)
+    ? assessment.estimatedValue
+    : (samValue.value && samValue.value > 0)
+      ? samValue.value
+      : (comparable?.value && comparable.value > 0)
+        ? comparable.value
+        : 0
+  const valueSource = (assessment?.estimatedValue && assessment.estimatedValue > 0)
+    ? 'Saved estimate'
+    : (samValue.value && samValue.value > 0)
+      ? samValue.source
+      : comparable?.source ?? 'Insufficient data — enter manual estimate'
 
-  const costVal = parseFloat(costStr) || 0
-  const valueVal = opportunity.assessment?.estimatedValue || 0
-  const liveProfitDollar = valueVal - costVal
-  const liveProfitPercent = valueVal > 0 ? (liveProfitDollar / valueVal) * 100 : 0
-  const hasCost = costVal > 0
-  const marginColor = liveProfitPercent >= 20 ? 'text-green-700' : liveProfitPercent >= 10 ? 'text-amber-700' : 'text-red-700'
+  const costVal = assessment?.estimatedCost ?? 0
+  const marginPercent = assessment?.profitMarginPercent ?? null
+  const marginDollar = assessment?.profitMarginDollar ?? null
+  const hasMargin = marginPercent !== null && marginPercent !== 0
+  const marginColor = marginPercent !== null && marginPercent >= 20 ? 'text-green-700'
+    : marginPercent !== null && marginPercent >= 10 ? 'text-amber-700'
+    : 'text-red-700'
 
   const deadline = opportunity.responseDeadline ? new Date(opportunity.responseDeadline) : null
   const daysUntilDeadline = deadline
@@ -141,54 +161,49 @@ export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
           </p>
         )}
 
-        {/* Assessment Metrics */}
-        {opportunity.assessment ? (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 p-3 bg-stone-50 rounded-lg border border-stone-100">
-            <div>
-              <p className="text-xs text-stone-500 mb-1">Contract Value</p>
-              <p className="text-base font-bold text-stone-900">
-                ${(opportunity.assessment.estimatedValue || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-              </p>
-            </div>
-            <div onClick={e => e.stopPropagation()}>
-              <p className="text-xs text-stone-500 mb-1">Your Cost</p>
-              <div className="relative">
-                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-stone-400 text-xs pointer-events-none">$</span>
-                <input
-                  type="number"
-                  value={costStr}
-                  onChange={e => { e.stopPropagation(); setCostStr(e.target.value) }}
-                  placeholder="Enter cost"
-                  className="w-full pl-5 pr-1 py-1 text-sm font-bold text-stone-900 border border-stone-300 rounded focus:ring-1 focus:ring-stone-400 outline-none bg-white"
-                />
-              </div>
-            </div>
-            <div>
-              <p className="text-xs text-stone-500 mb-1">Margin</p>
-              <p className={`text-base font-bold ${hasCost ? marginColor : 'text-stone-400'}`}>
-                {hasCost ? `${liveProfitPercent.toFixed(1)}%` : '—'}
-              </p>
-              <p className={`text-xs ${hasCost ? marginColor : 'text-stone-400'}`}>
-                {hasCost ? `$${liveProfitDollar.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-stone-500 mb-1">Risk / Strategic</p>
-              <div className="flex gap-1">
-                <span className="text-xs px-2 py-0.5 rounded font-medium bg-stone-200 text-stone-700">
-                  {opportunity.assessment.riskLevel || '—'}
-                </span>
-                <span className="text-xs px-2 py-0.5 rounded font-medium bg-stone-100 text-stone-600">
-                  {opportunity.assessment.strategicValue || '—'}
-                </span>
-              </div>
+        {/* Assessment Metrics — always shown; sourced from saved assessment OR SAM.gov */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 p-3 bg-stone-50 rounded-lg border border-stone-100">
+          <div>
+            <p className="text-xs text-stone-500 mb-1">Contract Value</p>
+            <p className="text-base font-bold text-stone-900">
+              {valueVal > 0 ? `$${valueVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
+            </p>
+            {valueSource && (
+              <p className="text-[10px] text-stone-400 mt-0.5 truncate" title={valueSource}>{valueSource}</p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-stone-500 mb-1">Cost</p>
+            <p className="text-base font-bold text-stone-900">
+              {costVal > 0 ? `$${costVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
+            </p>
+            {costVal === 0 && (
+              <p className="text-[10px] text-stone-400 mt-0.5">Open to estimate</p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-stone-500 mb-1">Margin</p>
+            <p className={`text-base font-bold ${hasMargin ? marginColor : 'text-stone-400'}`}>
+              {hasMargin ? `${marginPercent!.toFixed(1)}%` : '—'}
+            </p>
+            <p className={`text-xs ${hasMargin ? marginColor : 'text-stone-400'}`}>
+              {hasMargin && marginDollar !== null
+                ? `$${marginDollar.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                : 'Run assessment'}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-stone-500 mb-1">Risk / Strategic</p>
+            <div className="flex gap-1">
+              <span className="text-xs px-2 py-0.5 rounded font-medium bg-stone-200 text-stone-700">
+                {assessment?.riskLevel || '—'}
+              </span>
+              <span className="text-xs px-2 py-0.5 rounded font-medium bg-stone-100 text-stone-600">
+                {assessment?.strategicValue || '—'}
+              </span>
             </div>
           </div>
-        ) : (
-          <div className="mb-4 p-3 bg-stone-50 border border-stone-200 rounded-lg">
-            <p className="text-sm text-stone-500">No assessment yet — open to auto-calculate margins</p>
-          </div>
-        )}
+        </div>
 
         {/* Meta Information */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 mb-4 text-sm">

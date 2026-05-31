@@ -8,6 +8,7 @@ interface OpportunityBriefCardProps {
   onGenerate: () => void
   opportunityTitle?: string
   agency?: string
+  error?: string | null
 }
 
 const HEADS_UP_ICONS: Record<string, string> = {
@@ -25,6 +26,7 @@ export default function OpportunityBriefCard({
   onGenerate,
   opportunityTitle,
   agency,
+  error = null,
 }: OpportunityBriefCardProps) {
   if (!brief) {
     return (
@@ -56,6 +58,11 @@ export default function OpportunityBriefCard({
             )}
           </button>
         </div>
+        {error && (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800">
+            {error}
+          </div>
+        )}
       </div>
     )
   }

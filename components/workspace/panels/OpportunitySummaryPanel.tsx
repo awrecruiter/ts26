@@ -6,7 +6,6 @@ import type { RichAttachment } from '@/lib/types/attachment'
 import type { OpportunityBrief } from '@/lib/openai'
 import OpportunityBriefCard from './OpportunityBriefCard'
 import FormFillModal from './FormFillModal'
-import MarginCalculator, { extractOpportunityValue } from '@/components/assessment/MarginCalculator'
 
 interface OpportunitySummaryPanelProps {
   opportunity: {
@@ -51,6 +50,16 @@ interface OpportunitySummaryPanelProps {
     notes?: string | null
     assessedAt?: string
     assessedBy?: { name: string; email: string }
+    historicalData?: Array<{
+      award_id?: string
+      award_amount?: number
+      awarding_agency_name?: string
+      recipient_name?: string
+      description?: string
+      period_of_performance_start_date?: string
+      period_of_performance_current_end_date?: string
+      naics_code?: string
+    }> | null
   } | null
   hasBid?: boolean
   hasSOW?: boolean
@@ -67,13 +76,7 @@ interface OpportunitySummaryPanelProps {
   brief?: OpportunityBrief | null
   isGeneratingBrief?: boolean
   onGenerateBrief?: () => void
-  onSaveAssessment?: (data: {
-    estimatedValue: number | null
-    estimatedCost: number | null
-    strategicValue?: string | null
-    riskLevel?: string | null
-    notes?: string | null
-  }) => Promise<void>
+  briefError?: string | null
 }
 
 export default function OpportunitySummaryPanel({
@@ -94,7 +97,7 @@ export default function OpportunitySummaryPanel({
   brief = null,
   isGeneratingBrief = false,
   onGenerateBrief,
-  onSaveAssessment,
+  briefError = null,
 }: OpportunitySummaryPanelProps) {
   const [attachments, setAttachments] = useState<RichAttachment[]>([])
   const [loadingAttachments, setLoadingAttachments] = useState(false)
@@ -113,6 +116,7 @@ export default function OpportunitySummaryPanel({
 
   // AI analysis state
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null)
 
   // Form fill modal
   const [fillingAttachment, setFillingAttachment] = useState<RichAttachment | null>(null)
@@ -175,20 +179,24 @@ export default function OpportunitySummaryPanel({
 
     const runAnalysis = async () => {
       setIsAnalyzing(true)
+      setAnalyzeError(null)
       try {
         const res = await fetch(`/api/opportunities/${opportunity.id}/attachments/analyze`, {
           method: 'POST',
         })
+        const data = await res.json().catch(() => ({}))
         if (res.ok) {
           // Re-fetch attachments to get updated formData
           const attRes = await fetch(`/api/opportunities/${opportunity.id}/attachments`)
           if (attRes.ok) {
-            const data = await attRes.json()
-            setAttachments(data.attachments || [])
+            const att = await attRes.json()
+            setAttachments(att.attachments || [])
           }
+        } else {
+          setAnalyzeError(data.error || `Naming failed (${res.status})`)
         }
-      } catch {
-        // Silent fail — analysis is best-effort
+      } catch (err) {
+        setAnalyzeError(err instanceof Error ? err.message : 'Network error')
       } finally {
         setIsAnalyzing(false)
       }
@@ -297,18 +305,9 @@ export default function OpportunitySummaryPanel({
 
   const workflowState = getWorkflowState(hasSOW, hasSubcontractors, hasBid)
 
-  // Derive SAM.gov value for pre-populating the margin calculator
-  const { value: oppValue, source: oppSource } = extractOpportunityValue(opportunity.rawData)
-  // Cast string → enum literal for MarginCalculator's strict Assessment type
-  const assessmentForCalc = assessment
-    ? {
-        ...assessment,
-        strategicValue: assessment.strategicValue as 'HIGH' | 'MEDIUM' | 'LOW' | null | undefined,
-        riskLevel: assessment.riskLevel as 'HIGH' | 'MEDIUM' | 'LOW' | null | undefined,
-        estimatedValue: assessment.estimatedValue ?? null,
-        estimatedCost: assessment.estimatedCost ?? null,
-      }
-    : null
+  const pastAwards = Array.isArray(assessment?.historicalData)
+    ? assessment!.historicalData!.filter((c) => c && typeof c.award_amount === 'number')
+    : []
 
   return (
     <div className="h-full overflow-auto">
@@ -321,6 +320,7 @@ export default function OpportunitySummaryPanel({
             onGenerate={onGenerateBrief ?? (() => {})}
             opportunityTitle={opportunity.title}
             agency={opportunity.agency}
+            error={briefError}
           />
         </div>
       </div>
@@ -415,11 +415,19 @@ export default function OpportunitySummaryPanel({
                   <button
                     onClick={async () => {
                       setIsAnalyzing(true)
+                      setAnalyzeError(null)
                       try {
-                        await fetch(`/api/opportunities/${opportunity.id}/attachments/analyze?force=true`, { method: 'POST' })
-                        const attRes = await fetch(`/api/opportunities/${opportunity.id}/attachments`)
-                        if (attRes.ok) setAttachments((await attRes.json()).attachments || [])
-                      } catch { /* silent */ } finally { setIsAnalyzing(false) }
+                        const res = await fetch(`/api/opportunities/${opportunity.id}/attachments/analyze?force=true`, { method: 'POST' })
+                        const data = await res.json().catch(() => ({}))
+                        if (res.ok) {
+                          const attRes = await fetch(`/api/opportunities/${opportunity.id}/attachments`)
+                          if (attRes.ok) setAttachments((await attRes.json()).attachments || [])
+                        } else {
+                          setAnalyzeError(data.error || `Naming failed (${res.status})`)
+                        }
+                      } catch (err) {
+                        setAnalyzeError(err instanceof Error ? err.message : 'Network error')
+                      } finally { setIsAnalyzing(false) }
                     }}
                     className="text-[10px] text-stone-400 hover:text-stone-600 transition-colors"
                     title="Re-analyze attachment names with AI"
@@ -429,6 +437,12 @@ export default function OpportunitySummaryPanel({
                 )}
               </div>
             </div>
+
+            {analyzeError && (
+              <div className="mb-3 p-2.5 bg-red-50 border border-red-200 rounded text-xs text-red-800">
+                <span className="font-medium">AI naming unavailable:</span> {analyzeError}
+              </div>
+            )}
 
             {loadingAttachments ? (
               <div className="py-4 text-center text-stone-400 text-sm">
@@ -510,15 +524,54 @@ export default function OpportunitySummaryPanel({
             )}
           </div>
 
-          {/* Margin Assessment */}
-          {onSaveAssessment && (
-            <MarginCalculator
-              opportunityId={opportunity.id}
-              existingAssessment={assessmentForCalc}
-              opportunityValue={oppValue}
-              opportunityValueSource={oppSource}
-              onSave={onSaveAssessment}
-            />
+          {/* Comparable Past Awards (USASpending.gov) */}
+          {pastAwards.length > 0 && (
+            <div className="bg-white rounded-lg border border-stone-200 overflow-hidden">
+              <div className="px-5 py-3 border-b border-stone-100">
+                <h3 className="text-sm font-semibold text-stone-800">Comparable Past Awards</h3>
+                <p className="text-[11px] text-stone-500 mt-0.5">
+                  Source: USASpending.gov · NAICS {opportunity.naicsCode || 'comparables'} · used to estimate contract value
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-stone-50 text-stone-500 uppercase tracking-wide text-[10px]">
+                    <tr>
+                      <th className="text-left px-4 py-2 font-medium">Awardee (incumbent)</th>
+                      <th className="text-left px-4 py-2 font-medium">Agency</th>
+                      <th className="text-right px-4 py-2 font-medium">Amount</th>
+                      <th className="text-left px-4 py-2 font-medium">Period</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {pastAwards.slice(0, 10).map((c, i) => {
+                      const start = c.period_of_performance_start_date
+                        ? format(new Date(c.period_of_performance_start_date), 'MMM yyyy')
+                        : null
+                      const end = c.period_of_performance_current_end_date
+                        ? format(new Date(c.period_of_performance_current_end_date), 'MMM yyyy')
+                        : null
+                      return (
+                        <tr key={c.award_id || i} className="hover:bg-stone-50">
+                          <td className="px-4 py-2 text-stone-800 font-medium">
+                            {c.recipient_name || '—'}
+                          </td>
+                          <td className="px-4 py-2 text-stone-600">
+                            {c.awarding_agency_name || '—'}
+                          </td>
+                          <td className="px-4 py-2 text-right text-stone-900 font-semibold tabular-nums">
+                            ${(c.award_amount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          </td>
+                          <td className="px-4 py-2 text-stone-500">
+                            {start && end ? `${start} – ${end}` : start || end || '—'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
 
         </div>

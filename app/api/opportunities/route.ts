@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { getNaicsBenchmarks } from '@/lib/naics-benchmark'
 
 export async function GET(req: Request) {
   try {
@@ -31,13 +32,13 @@ export async function GET(req: Request) {
 
     const engaged = searchParams.get('engaged') === 'true'
 
-    // Legacy params
+    // Default cutoff: only show opportunities with ≥14 days until closing.
+    // Override with deadlineDays (window filter) or showExpiring=true.
     const minDaysUntilClose = parseInt(searchParams.get('minDays') || '14')
     const showExpiring = searchParams.get('showExpiring') === 'true'
 
     const where: any = {}
 
-    // Deadline filter — deadlineDays takes priority over showExpiring/minDays
     if (deadlineDays) {
       const now = new Date()
       const maxDate = new Date()
@@ -62,7 +63,12 @@ export async function GET(req: Request) {
     }
 
     if (naicsCode) {
-      where.naicsCode = naicsCode
+      const codes = naicsCode.split(',').map((c) => c.trim()).filter(Boolean)
+      if (codes.length === 1) {
+        where.naicsCode = codes[0]
+      } else if (codes.length > 1) {
+        where.naicsCode = { in: codes }
+      }
     }
 
     if (agency) {
@@ -175,9 +181,36 @@ export async function GET(req: Request) {
       },
     })
 
+    // Enrich with NAICS-level USASpending benchmarks for any opportunity that
+    // lacks a saved estimatedValue. SAM.gov rarely includes value on active
+    // solicitations, so this is the primary signal for the card UI.
+    const needsBenchmark = opportunities.filter(
+      (o) => !o.assessment?.estimatedValue || o.assessment.estimatedValue <= 0
+    )
+    const benchmarkCodes = needsBenchmark
+      .map((o) => o.naicsCode)
+      .filter((c): c is string => !!c)
+    const benchmarks = benchmarkCodes.length > 0
+      ? await getNaicsBenchmarks(benchmarkCodes)
+      : new Map()
+
+    const enriched = opportunities.map((o) => {
+      if (!o.naicsCode) return o
+      const b = benchmarks.get(o.naicsCode)
+      if (!b) return o
+      return {
+        ...o,
+        comparable: {
+          value: b.medianValue,
+          source: b.source,
+          totalContracts: b.totalContracts,
+        },
+      }
+    })
+
     return NextResponse.json({
       success: true,
-      opportunities,
+      opportunities: enriched,
       pagination: {
         page,
         limit,

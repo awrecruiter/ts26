@@ -4,6 +4,10 @@ import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import OpportunityCard from '@/components/opportunities/OpportunityCard'
+import ChipInput from '@/components/shared/ChipInput'
+
+const NAICS_PATTERN = /^\d{2,6}$/
+const validateNaics = (v: string) => (NAICS_PATTERN.test(v.trim()) ? v.trim() : null)
 
 const SORT_OPTIONS = [
   { label: 'Deadline (soonest)', value: 'deadline_asc' },
@@ -56,10 +60,14 @@ function OpportunitiesContent() {
   const [filtersOpen, setFiltersOpen] = useState(true)
   const [fetching, setFetching] = useState(false)
   const [fetchResult, setFetchResult] = useState<string | null>(null)
+  const [searchingSam, setSearchingSam] = useState(false)
+  const [samSearchResult, setSamSearchResult] = useState<string | null>(null)
 
   // Basic filters
   const [search, setSearch] = useState(searchParams.get('search') || '')
-  const [naicsFilter, setNaicsFilter] = useState(searchParams.get('naics') || '')
+  const [naicsCodes, setNaicsCodes] = useState<string[]>(
+    (searchParams.get('naics') || '').split(',').map((s) => s.trim()).filter(Boolean)
+  )
   const [agencyFilter, setAgencyFilter] = useState(searchParams.get('agency') || '')
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'ACTIVE')
   const [sort, setSort] = useState(searchParams.get('sort') || 'deadline_asc')
@@ -83,7 +91,7 @@ function OpportunitiesContent() {
   const buildParams = () => {
     const params = new URLSearchParams()
     if (search) params.set('search', search)
-    if (naicsFilter) params.set('naics', naicsFilter)
+    if (naicsCodes.length > 0) params.set('naics', naicsCodes.join(','))
     if (agencyFilter) params.set('agency', agencyFilter)
     if (statusFilter) params.set('status', statusFilter)
     if (sort && sort !== 'deadline_asc') params.set('sort', sort)
@@ -94,6 +102,38 @@ function OpportunitiesContent() {
     if (minMargin) params.set('minMargin', minMargin)
     if (maxMargin) params.set('maxMargin', maxMargin)
     return params
+  }
+
+  const handleLiveSamSearch = async () => {
+    const query = searchParams.get('search') || ''
+    const naics = searchParams.get('naics') || ''
+    if (!query && !naics) return
+    setSearchingSam(true)
+    setSamSearchResult(null)
+    try {
+      const res = await fetch('/api/opportunities/search-sam', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, naics }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        if (data.saved > 0) {
+          setSamSearchResult(`Found ${data.saved} on SAM.gov — added to your library`)
+          fetchOpportunities()
+        } else if (data.found > 0) {
+          setSamSearchResult(`Found ${data.found} on SAM.gov, but all were expired or closing within 14 days`)
+        } else {
+          setSamSearchResult('No matches on SAM.gov either')
+        }
+      } else {
+        setSamSearchResult(data.error || 'SAM.gov search failed')
+      }
+    } catch {
+      setSamSearchResult('Network error — please try again')
+    } finally {
+      setSearchingSam(false)
+    }
   }
 
   const handleFetchFromSAM = async () => {
@@ -162,7 +202,7 @@ function OpportunitiesContent() {
 
   const clearAllFilters = () => {
     setSearch('')
-    setNaicsFilter('')
+    setNaicsCodes([])
     setAgencyFilter('')
     setStatusFilter('ACTIVE')
     setSort('deadline_asc')
@@ -184,7 +224,16 @@ function OpportunitiesContent() {
   // Active filter badges
   const activeFilters: { label: string; clear: () => void }[] = []
   if (search) activeFilters.push({ label: `"${search}"`, clear: () => { setSearch(''); applyFiltersWithOverride({ search: '' }) } })
-  if (naicsFilter) activeFilters.push({ label: `NAICS: ${naicsFilter}`, clear: () => { setNaicsFilter(''); applyFiltersWithOverride({ naics: '' }) } })
+  naicsCodes.forEach((code) => {
+    activeFilters.push({
+      label: `NAICS: ${code}`,
+      clear: () => {
+        const next = naicsCodes.filter((c) => c !== code)
+        setNaicsCodes(next)
+        applyFiltersWithOverride({ naics: next.join(',') })
+      },
+    })
+  })
   if (agencyFilter) activeFilters.push({ label: `Agency: ${agencyFilter}`, clear: () => { setAgencyFilter(''); applyFiltersWithOverride({ agency: '' }) } })
   if (deadlineDays) activeFilters.push({ label: `≤ ${deadlineDays} days`, clear: () => { setDeadlineDays(''); applyFiltersWithOverride({ deadlineDays: '' }) } })
   if (hasSOW === 'yes') activeFilters.push({ label: 'Has SOW', clear: () => { setHasSOW(''); applyFiltersWithOverride({ hasSOW: '' }) } })
@@ -345,14 +394,12 @@ function OpportunitiesContent() {
                 {/* Row 1: Basic filters */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-stone-600 mb-1">NAICS Code</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., 334519"
-                      value={naicsFilter}
-                      onChange={(e) => setNaicsFilter(e.target.value)}
-
-                      className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-stone-400 outline-none bg-white"
+                    <label className="block text-xs font-medium text-stone-600 mb-1">NAICS Codes</label>
+                    <ChipInput
+                      values={naicsCodes}
+                      onChange={setNaicsCodes}
+                      placeholder="e.g., 334519 (Enter to add)"
+                      validate={validateNaics}
                     />
                   </div>
                   <div>
@@ -498,15 +545,36 @@ function OpportunitiesContent() {
           </div>
         ) : opportunities.length === 0 ? (
           <div className="text-center py-16">
-            <p className="text-stone-500 text-lg">No opportunities found</p>
-            <p className="text-stone-400 mt-2 text-sm">Try adjusting your filters or search query</p>
-            {activeFilters.length > 0 && (
-              <button
-                onClick={clearAllFilters}
-                className="mt-4 px-4 py-2 text-sm font-medium text-stone-600 border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors"
-              >
-                Clear all filters
-              </button>
+            <p className="text-stone-500 text-lg">No opportunities found in your library</p>
+            <p className="text-stone-400 mt-2 text-sm">Try adjusting your filters or search SAM.gov directly</p>
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+              {(searchParams.get('search') || searchParams.get('naics')) && (
+                <button
+                  onClick={handleLiveSamSearch}
+                  disabled={searchingSam}
+                  className="px-4 py-2 text-sm font-medium text-white bg-stone-800 rounded-lg hover:bg-stone-700 disabled:opacity-50 transition-colors inline-flex items-center gap-2"
+                >
+                  {searchingSam ? (
+                    <>
+                      <span className="inline-block animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></span>
+                      Searching SAM.gov...
+                    </>
+                  ) : (
+                    <>Search SAM.gov live for &ldquo;{searchParams.get('search') || `NAICS ${searchParams.get('naics')}`}&rdquo;</>
+                  )}
+                </button>
+              )}
+              {activeFilters.length > 0 && (
+                <button
+                  onClick={clearAllFilters}
+                  className="px-4 py-2 text-sm font-medium text-stone-600 border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors"
+                >
+                  Clear all filters
+                </button>
+              )}
+            </div>
+            {samSearchResult && (
+              <p className="mt-4 text-sm text-stone-600">{samSearchResult}</p>
             )}
           </div>
         ) : (

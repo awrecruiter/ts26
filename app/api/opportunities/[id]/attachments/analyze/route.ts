@@ -123,6 +123,20 @@ export async function POST(
     return NextResponse.json({ analyzed: results.length, skipped })
   } catch (error) {
     console.error('Attachment analyze error:', error)
-    return NextResponse.json({ error: 'Failed to analyze attachments' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : 'Failed to analyze attachments'
+    const status = (error as { status?: number })?.status
+    if (status === 429 || /quota|rate limit|insufficient_quota/i.test(msg)) {
+      return NextResponse.json(
+        { error: 'OpenAI quota exceeded — content-based attachment names need GPT-4o. Add credits at platform.openai.com/billing and retry.' },
+        { status: 503 }
+      )
+    }
+    if (status === 401 || /invalid_api_key|incorrect api key/i.test(msg)) {
+      return NextResponse.json(
+        { error: 'OPENAI_API_KEY is invalid — check the key in .env.local / Vercel.' },
+        { status: 503 }
+      )
+    }
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
