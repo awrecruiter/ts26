@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { getNaicsBenchmarks } from '@/lib/naics-benchmark'
+import { getNaicsBenchmarks, benchmarkKey } from '@/lib/naics-benchmark'
 
 export async function GET(req: Request) {
   try {
@@ -187,16 +187,16 @@ export async function GET(req: Request) {
     const needsBenchmark = opportunities.filter(
       (o) => !o.assessment?.estimatedValue || o.assessment.estimatedValue <= 0
     )
-    const benchmarkCodes = needsBenchmark
-      .map((o) => o.naicsCode)
-      .filter((c): c is string => !!c)
-    const benchmarks = benchmarkCodes.length > 0
-      ? await getNaicsBenchmarks(benchmarkCodes)
+    const benchmarkPairs = needsBenchmark
+      .filter((o) => o.naicsCode)
+      .map((o) => ({ naicsCode: o.naicsCode!, agency: o.agency }))
+    const benchmarks = benchmarkPairs.length > 0
+      ? await getNaicsBenchmarks(benchmarkPairs)
       : new Map()
 
     const enriched = opportunities.map((o) => {
       if (!o.naicsCode) return o
-      const b = benchmarks.get(o.naicsCode)
+      const b = benchmarks.get(benchmarkKey(o.naicsCode, o.agency))
       if (!b) return o
       return {
         ...o,

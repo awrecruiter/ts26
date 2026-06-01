@@ -356,13 +356,14 @@ interface SOWContent {
     agency: string
     naicsCode?: string | null
     setAside?: string | null
-    responseDeadline: string
-    postedDate?: string | null
+    /** Internal quote-to-prime deadline (NOT the federal response deadline). */
+    quoteDeadline: string
     placeOfPerformance: string
-    pointOfContact?: string | null
     type?: string | null
     classificationCode?: string | null
     department?: string | null
+    /** Name of the prime contractor — shown as "Quote due to {primeCompany}". */
+    primeCompany?: string | null
   }
   subcontractor?: {
     name: string
@@ -440,43 +441,42 @@ export function SOWPDF({
           <Text style={styles.pageHeaderSolNum}>{opportunity.solicitationNumber}</Text>
         </View>
 
-        {/* Solicitation Details + Agency */}
+        {/* What We Need + Who's Asking */}
         <View style={styles.infoRow}>
-          {/* Solicitation Details */}
+          {/* What we need — sub-facing facts */}
           <View style={styles.infoBlock}>
             <View style={styles.infoBlockHeader}>
-              <Text style={styles.infoBlockHeaderText}>Solicitation Details</Text>
+              <Text style={styles.infoBlockHeaderText}>What We Need</Text>
             </View>
             <View style={styles.infoBlockBody}>
-              <InfoLine label="Solicitation #" value={opportunity.solicitationNumber} />
-              <InfoLine label="Response due" value={opportunity.responseDeadline} />
-              <InfoLine label="Product" value={opportunity.title} />
-              <InfoLine label="NAICS" value={opportunity.naicsCode} />
-              <InfoLine label="Location" value={opportunity.placeOfPerformance} />
-              <InfoLine label="Posted" value={opportunity.postedDate} />
-              {opportunity.setAside && <InfoLine label="Set-aside" value={opportunity.setAside} />}
-              {opportunity.type && <InfoLine label="Type" value={opportunity.type} />}
+              <InfoLine label="Item" value={opportunity.title} />
+              <InfoLine label="Ship / perform at" value={opportunity.placeOfPerformance} />
+              <InfoLine label="NAICS reference" value={opportunity.naicsCode} />
+              <InfoLine label="Quote due" value={opportunity.quoteDeadline} />
+              <InfoLine label="Quote due to" value={preparerCompany} />
+              <InfoLine label="Reference" value={opportunity.solicitationNumber} />
             </View>
           </View>
 
-          {/* Issuing Agency */}
+          {/* Prime + sub identification */}
           <View style={styles.infoBlock}>
             <View style={styles.infoBlockHeader}>
-              <Text style={styles.infoBlockHeaderText}>Issuing Agency</Text>
+              <Text style={styles.infoBlockHeaderText}>Prime Contractor</Text>
             </View>
             <View style={styles.infoBlockBody}>
-              <Text style={styles.agencyName}>{agencyName}</Text>
+              <Text style={styles.agencyName}>{preparerCompany}</Text>
+              {preparerName && (
+                <Text style={styles.agencyDetail}>
+                  {preparerName}{preparerTitle ? `, ${preparerTitle}` : ''}
+                </Text>
+              )}
+              <Text style={[styles.agencyDetail, { marginTop: 6, color: C.muted, fontSize: 7, letterSpacing: 0.5 }]}>
+                END CUSTOMER
+              </Text>
+              <Text style={styles.agencyDetail}>{agencyName}</Text>
               {deptHierarchy ? (
                 <Text style={styles.agencyDetail}>{deptHierarchy}</Text>
               ) : null}
-              {opportunity.pointOfContact && (
-                <>
-                  <Text style={[styles.agencyDetail, { marginTop: 6, color: C.muted, fontSize: 7, letterSpacing: 0.5 }]}>
-                    POINT OF CONTACT
-                  </Text>
-                  <Text style={styles.agencyDetail}>{opportunity.pointOfContact}</Text>
-                </>
-              )}
               {subcontractor && (
                 <>
                   <Text style={[styles.agencyDetail, { marginTop: 8, color: C.muted, fontSize: 7, letterSpacing: 0.5 }]}>
@@ -526,35 +526,33 @@ export function SOWPDF({
           )}
         </View>
 
-        {/* Section 3: Period of Performance */}
+        {/* Section 3: Quote Submission — when/how the sub returns their quote to the prime */}
         <View style={styles.section} wrap={false}>
-          <SectionHeader num={3} title="PERIOD OF PERFORMANCE" />
+          <SectionHeader num={3} title="QUOTE SUBMISSION" />
           <View style={styles.sectionDivider} />
-          {/* Milestone table — sourced from actual section bullets */}
           <View style={styles.table}>
             <View style={styles.tableHeaderRow}>
-              <Text style={styles.tableCellHeader}>Milestone / Requirement</Text>
-              <Text style={styles.tableCellHeaderNarrow}>Date / Timing</Text>
+              <Text style={styles.tableCellHeader}>What we need from you</Text>
+              <Text style={styles.tableCellHeaderNarrow}>Due</Text>
             </View>
             <View style={styles.tableRow}>
-              <Text style={styles.tableCell}>Response due</Text>
-              <Text style={styles.tableCellNarrow}>{opportunity.responseDeadline}</Text>
+              <Text style={[styles.tableCell, { fontFamily: 'Helvetica-Bold' }]}>
+                Quote returned to {preparerCompany}
+              </Text>
+              <Text style={[styles.tableCellNarrow, { fontFamily: 'Helvetica-Bold' }]}>
+                {opportunity.quoteDeadline || 'See email'}
+              </Text>
             </View>
-            {opportunity.postedDate && (
-              <View style={styles.tableRowAlt}>
-                <Text style={styles.tableCell}>Solicitation posted</Text>
-                <Text style={styles.tableCellNarrow}>{opportunity.postedDate}</Text>
-              </View>
-            )}
-            {/* All period-of-performance bullets from the AI/rule-based section */}
-            {periodBullets.map((b, i) => (
-              <View key={i} style={(i + (opportunity.postedDate ? 2 : 1)) % 2 === 0 ? styles.tableRowAlt : styles.tableRow}>
-                <Text style={styles.tableCell}>{b}</Text>
-                <Text style={styles.tableCellNarrow}>Per solicitation</Text>
-              </View>
-            ))}
+            {/* Additional quote-submission bullets from the AI/rule-based section */}
+            {periodBullets
+              .filter(b => !/quote due|quote returned/i.test(b)) // dedupe against the header row
+              .map((b, i) => (
+                <View key={i} style={i % 2 === 0 ? styles.tableRowAlt : styles.tableRow}>
+                  <Text style={styles.tableCell}>{b}</Text>
+                  <Text style={styles.tableCellNarrow}>By quote deadline</Text>
+                </View>
+              ))}
           </View>
-          {/* Period details prose if bullets are sparse */}
           {periodBullets.length === 0 && periodSection?.details && (
             <Text style={[styles.bodyText, { marginTop: 6 }]}>{periodSection.details}</Text>
           )}
@@ -591,9 +589,9 @@ export function SOWPDF({
           )}
         </View>
 
-        {/* Section 5: Compliance Reference */}
+        {/* Section 5: Compliance Pass-Through — technical/regulatory items the sub must meet */}
         <View style={styles.section} wrap={false}>
-          <SectionHeader num={5} title="COMPLIANCE REFERENCE" />
+          <SectionHeader num={5} title="COMPLIANCE PASS-THROUGH" />
           <View style={styles.sectionDivider} />
           {complianceBullets.length > 0 ? (
             <View style={styles.table}>

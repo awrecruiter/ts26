@@ -68,10 +68,15 @@ export async function GET(
     const solNum = sow.opportunity?.solicitationNumber || id
     const fileName = `SOW_${solNum}.pdf`
 
+    // ?inline=true → render in browser (used by the in-panel Preview).
+    // Default → download attachment.
+    const url = new URL(req.url)
+    const inline = url.searchParams.get('inline') === 'true'
+
     return new Response(new Uint8Array(pdfBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${fileName}"`,
+        'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${fileName}"`,
         'Content-Length': pdfBuffer.byteLength.toString(),
       },
     })

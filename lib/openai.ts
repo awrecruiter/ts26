@@ -24,16 +24,15 @@ interface SOWGenerationInput {
   agency: string
   naicsCode?: string | null
   setAside?: string | null
-  responseDeadline: string
-  postedDate?: string | null
+  quoteDeadline: string // Internal deadline for the sub to send quote to the prime (NOT the federal response date)
   placeOfPerformance: string
-  pointOfContact?: string | null
   description?: string | null
   parsedScope?: string[]
   parsedDeliverables?: string[]
   parsedCompliance?: string[]
   parsedPeriodOfPerformance?: string[]
   subcontractorName?: string | null
+  primeCompany?: string | null
 }
 
 /**
@@ -47,17 +46,17 @@ export async function generateSOWSections(input: SOWGenerationInput): Promise<SO
     agency,
     naicsCode,
     setAside,
-    responseDeadline,
-    postedDate,
+    quoteDeadline,
     placeOfPerformance,
-    pointOfContact,
     description,
     parsedScope,
     parsedDeliverables,
     parsedCompliance,
     parsedPeriodOfPerformance,
     subcontractorName,
+    primeCompany,
   } = input
+  const primeName = primeCompany || 'the prime contractor'
 
   const hasParsed = !!(
     (parsedScope && parsedScope.length > 0) ||
@@ -94,16 +93,14 @@ export async function generateSOWSections(input: SOWGenerationInput): Promise<SO
   }
 
   const contextBlock = [
-    `Solicitation Number: ${solicitationNumber}`,
-    `Title: ${title}`,
-    `Issuing Agency: ${agency}`,
+    `Prime contractor: ${primeName}`,
+    `Solicitation reference: ${solicitationNumber} — "${title}"`,
+    `End customer: ${agency}`,
     naicsCode ? `NAICS Code: ${naicsCode}` : null,
-    setAside ? `Set-Aside: ${setAside}` : null,
-    `Response Deadline: ${responseDeadline}`,
-    postedDate ? `Posted: ${postedDate}` : null,
-    `Place of Performance: ${placeOfPerformance}`,
-    pointOfContact ? `Point of Contact: ${pointOfContact}` : null,
-    subcontractorName ? `Subcontractor: ${subcontractorName}` : null,
+    setAside ? `Set-Aside (informational only): ${setAside}` : null,
+    `Quote-to-prime deadline: ${quoteDeadline}`,
+    `Place of performance / delivery: ${placeOfPerformance}`,
+    subcontractorName ? `Subcontractor being addressed: ${subcontractorName}` : null,
   ]
     .filter(Boolean)
     .join('\n')
@@ -118,9 +115,16 @@ export async function generateSOWSections(input: SOWGenerationInput): Promise<SO
     ? `\n\nSOLICITATION DESCRIPTION:\n${description.slice(0, 3000)}`
     : ''
 
-  const prompt = `You are writing a Statement of Work (SOW) for a prime contractor to send to a subcontractor. Write in plain, direct language a small business owner can act on — no jargon, no padding, no boilerplate.
+  const prompt = `You are writing a Statement of Work (SOW) FROM a prime contractor TO a potential subcontractor. The subcontractor will scan this in under 90 seconds to decide: "Can I supply this, and is it worth quoting?" Then they will send a quote back to the prime by the quote-to-prime deadline below.
 
-AGENCY CONTEXT:
+CRITICAL AUDIENCE RULES — non-negotiable:
+- The audience is a SUBCONTRACTOR quoting parts/services to the PRIME. They are NOT bidding on the federal contract.
+- DO NOT mention SAM.gov registration, the federal response deadline, SF-1449 forms, or any procedural step the subcontractor takes with the government. The prime handles all federal procedural steps.
+- DO NOT instruct the subcontractor to "submit a quote to the agency" or "complete the solicitation form" — they submit a quote to the PRIME.
+- DO NOT pad bullets with restatements of the title. The title is already at the top of the document.
+- The ONE deadline that matters in this document is the quote-to-prime deadline: ${quoteDeadline}. Treat this as THE deadline.
+
+AGENCY/END-CUSTOMER CONTEXT (use sparingly — only to help the sub understand the end use):
 ${agencyToneGuidance}
 
 OPPORTUNITY DETAILS:
@@ -129,19 +133,26 @@ ${contextBlock}${parsedBlock}
 DELIVERABLES GUIDANCE:
 ${deliverablesGuidance}
 
-Generate exactly 6 SOW sections in JSON. Each section must have:
-- "title": short heading (e.g. "1.0 Background")
-- "summary": one plain sentence — what this section covers (max 100 chars)
-- "bullets": 3–5 specific, actionable bullet points drawn directly from this solicitation's data. Apply agency-appropriate terminology per the AGENCY CONTEXT above.
-- "details": 1–2 short paragraphs of plain prose. Every sentence must be specific to this solicitation. Omit anything unknown — never invent filler. Apply agency-appropriate tone from the AGENCY CONTEXT above.
+HARD RULES:
+- NEVER repeat the solicitation description verbatim in multiple sections.
+- NEVER pad with generic filler like "All work products specified in the solicitation" or "Refer to the solicitation".
+- If a section's data is unknown, write one short sentence saying so — do not invent or rephrase the description.
+- Bullets must be concrete and distinct. Each bullet states ONE thing the sub can act on.
+- "details" prose is 1 short paragraph max, ≤4 sentences. Every sentence carries new information.
 
-Sections:
-1. 1.0 Background — what this contract is, who issued it (include the specific agency name), why it exists, and its role in the agency's mission
-2. 2.0 Scope of Work — precisely what the subcontractor must do, referencing specific requirements from the solicitation
-3. 3.0 Place of Performance — where work happens, including any remote/on-site split and travel requirements if stated
-4. 4.0 Period of Performance — start/end dates, key milestones, and the response deadline of ${responseDeadline}
-5. 5.0 Deliverables — concrete outputs following the DELIVERABLES GUIDANCE above; be specific to this solicitation
-6. 6.0 Compliance — only the specific regulatory and certification requirements that apply to this agency and NAICS code; do not list generic FAR clauses unless they appear in the solicitation data
+Generate exactly 6 SOW sections in JSON. Each section must have:
+- "title": short heading
+- "summary": one plain sentence — what this section covers (max 100 chars)
+- "bullets": 3–5 specific, distinct bullet points the sub can use to decide fit
+- "details": ≤4 sentences of new information not already in bullets
+
+Sections (write each FOR a subcontractor evaluating fit):
+1. 1.0 What We Need — describe the product or service the prime needs the sub to supply. Be concrete: part / spec / quantity / function / end-use. This is the "can I supply this?" section.
+2. 2.0 Scope of Work — the specific tasks or supply items the subcontractor performs for the prime. Specs, quantities, performance standards, acceptance criteria.
+3. 3.0 Place of Performance / Delivery — where the sub ships to (FOB destination) or performs (site/remote). Mention travel only if stated.
+4. 4.0 Quote Submission — when and how the sub returns their quote TO THE PRIME. Anchor on the quote-to-prime deadline (${quoteDeadline}). Include what the prime needs in the quote (firm fixed price, lead time, exceptions, point of contact). DO NOT mention the federal response deadline or any federal forms.
+5. 5.0 Deliverables — concrete outputs the sub provides per DELIVERABLES GUIDANCE. Each bullet is one item with format/quantity/frequency. Generic phrases like "all work products specified" are forbidden.
+6. 6.0 Compliance Pass-Through — specific technical / regulatory items from the solicitation that the sub must meet to be usable in the prime's bid: technical standards (MIL-SPEC/ISO/CMMC), required certifications, security/clearance requirements, country-of-origin rules (e.g. Buy American, TAA), named FAR/DFARS clauses that flow down. FORBIDDEN: "All applicable FAR clauses", "SAM.gov registration", "Compliance with all terms and conditions", anything procedural the prime handles. If the solicitation truly states no specific pass-through compliance, write one short sentence saying so.
 
 Return ONLY a valid JSON array of 6 objects. No markdown, no explanation.`
 
@@ -399,26 +410,35 @@ export async function analyzeAttachments(
     )
     .join('\n\n')
 
-  const prompt = `You are analyzing federal government solicitation attachments. For each attachment, suggest a human-readable name and detect if it is a standard government form.
+  const prompt = `You are renaming federal government solicitation attachments so a small business owner can scan a list and instantly know what each document is.
 
 ATTACHMENTS:
 ${attachmentList}
 
 For each attachment, return a JSON object with:
-- "id": the attachment ID (exact match, do not change)
-- "suggestedName": A clear, human-readable filename in Title Case that someone could understand at a glance (e.g. "Statement of Work.pdf", "SF-1449 Solicitation Form.pdf", "Wage Determination WD-2024-0001.pdf", "Technical Requirements Section L.pdf"). Keep the original file extension. Return null ONLY if the original name is already a full plain-English title with spaces (e.g. "Performance Work Statement.pdf"). ALWAYS suggest a better name for contract numbers, codes, or vague names like "Attachment_A.pdf", "document1.pdf", "W912BV24R0003_0001.pdf", "J0002.pdf".
-- "confidence": "HIGH" (confident based on document content), "MEDIUM" (reasonable guess from filename or partial content), or "LOW" (limited information)
-- "isForm": true if this is a standard government form (SF-1449, SF-33, SF-26, SF-30, DD-1155, DD-254, OF-347, wage determination, etc.), false otherwise
-- "formType": the form identifier if isForm is true (e.g. "SF-1449"), null otherwise
+- "id": the attachment ID (exact match)
+- "suggestedName": Title-Case filename describing WHAT THIS DOCUMENT IS, derived from the CONTENT EXCERPT and/or the original filename. Keep the original extension.
+- "confidence": "HIGH" if confident from content, "MEDIUM" if reasonable from filename + partial content, "LOW" if uncertain
+- "isForm": true if standard government form (SF-*, DD-*, OF-*, wage determination), false otherwise
+- "formType": form ID (e.g. "SF-1449") when isForm is true, null otherwise
 
-Rules:
-- Do NOT change file extensions
-- Contract numbers, UUIDs, codes (e.g. "W912BV24R0003_0001.pdf", "J0002.pdf") are NOT descriptive — always suggest a better name
-- Vague names like "Attachment_A", "Exhibit_1", "Section_L_M" should get clearer names based on content
-- For forms, always include the form number in the suggestedName
-- Return a JSON object with key "results" containing an array of ${attachments.length} objects
+CRITICAL — anti-hallucination rules:
+- If the original filename is generic (e.g. "Attachment 1", "Document.pdf", "File_3") AND there is NO content excerpt → return suggestedName: null. DO NOT invent a name.
+- Only suggest a specific document type when the content excerpt or filename actually supports it.
+- When filename is a code/UUID but you have NO content excerpt → return suggestedName: null.
+- When original filename is already plain-English ("Performance Work Statement.pdf") → return suggestedName: null.
 
-Return ONLY valid JSON. No markdown, no extra text.`
+DIFFERENTIATION — when multiple attachments share the same document type:
+- Many federal docs start with the same boilerplate (SF-30 amendment header, SF-1449 form fields). Look PAST that into the actual subject — amendment number, modification description, attachment letter, section/exhibit identifier, version, date.
+- Each suggestedName must be DISTINCT from the others. If 3 docs are all amendments, name them by their amendment number / subject — e.g. "Amendment 0002 - Q&A Responses.docx", "Amendment 0003 - Wage Rate Update.docx", "Amendment 0004 - Final Q&A.docx".
+- If you can't find a distinguishing detail, fall back to the original filename (return suggestedName: null) rather than producing duplicate names.
+
+Format rules:
+- Keep the original file extension exactly.
+- For known forms, include the form number (e.g. "SF-1449 Solicitation Form.pdf").
+- Return JSON with key "results" containing exactly ${attachments.length} objects.
+
+Return ONLY valid JSON. No markdown, no explanation.`
 
   try {
     const response = await getOpenAI().chat.completions.create({

@@ -4,9 +4,29 @@ import { prisma } from '@/lib/db'
 import { generateSOWFileName } from '@/lib/sow-utils'
 import { extractAttachmentsFromRawData } from '@/lib/samgov'
 import { parseAllAttachments, mergeStructuredContent } from '@/lib/attachment-parser'
-import { format } from 'date-fns'
+import { format, addDays, differenceInCalendarDays } from 'date-fns'
 import type { StructuredContent } from '@/lib/attachment-parser'
 import { generateSOWSections } from '@/lib/openai'
+
+/**
+ * Compute the deadline by which a subcontractor must return their quote
+ * to the prime. This is NOT the federal response deadline — it's an internal
+ * deadline that gives the prime time to compare quotes and assemble the bid.
+ *
+ *   ≥ 21 days to federal deadline → quote due 7 days before federal deadline
+ *   8–20 days                     → quote due 3 days before federal deadline
+ *   ≤ 7 days                      → quote due 2 days from today (floor)
+ *   no federal deadline known     → quote due 7 days from today
+ */
+function computeQuoteDeadline(responseDeadline: Date | null): Date {
+  const today = new Date()
+  if (!responseDeadline) return addDays(today, 7)
+  const days = differenceInCalendarDays(responseDeadline, today)
+  if (days >= 21) return addDays(responseDeadline, -7)
+  if (days >= 8) return addDays(responseDeadline, -3)
+  // Tight federal window: floor at today+2 so the sub gets at least a couple days
+  return addDays(today, 2)
+}
 
 /**
  * Generate structured SOW content from real opportunity data.
@@ -15,15 +35,15 @@ import { generateSOWSections } from '@/lib/openai'
 async function generateSOWContent(
   opportunity: any,
   subcontractor: any,
-  selectedAttachments?: string[]
+  selectedAttachments?: string[],
+  primeCompany?: string
 ) {
   const raw = opportunity.rawData || {}
-  const deadline = opportunity.responseDeadline
-    ? format(new Date(opportunity.responseDeadline), 'MMMM d, yyyy')
-    : 'Per solicitation requirements'
-  const postedDate = opportunity.postedDate
-    ? format(new Date(opportunity.postedDate), 'MMMM d, yyyy')
-    : null
+  const responseDeadlineDate = opportunity.responseDeadline ? new Date(opportunity.responseDeadline) : null
+  // Internal deadline by which sub must return quote to the prime.
+  // Federal deadline is intentionally NOT surfaced to the subcontractor.
+  const quoteDeadlineDate = computeQuoteDeadline(responseDeadlineDate)
+  const quoteDeadline = format(quoteDeadlineDate, 'MMMM d, yyyy')
 
   // Extract set-aside info
   const setAside = raw.typeOfSetAsideDescription || raw.typeOfSetAside || null
@@ -33,12 +53,6 @@ async function generateSOWContent(
   const popText = pop
     ? [pop.city?.name, pop.state?.name || pop.state?.code, pop.country?.name].filter(Boolean).join(', ')
     : opportunity.state || 'Per solicitation'
-
-  // Extract point of contact
-  const poc = Array.isArray(raw.pointOfContact) ? raw.pointOfContact[0] : raw.pointOfContact
-  const pocText = poc
-    ? `${poc.fullName || ''}${poc.email ? ` (${poc.email})` : ''}${poc.phone ? `, ${poc.phone}` : ''}`
-    : null
 
   // Get attachments list
   const allAttachments = extractAttachmentsFromRawData(raw)
@@ -79,24 +93,23 @@ async function generateSOWContent(
       agency: opportunity.agency || raw.fullParentPathName || 'Federal Government',
       naicsCode: opportunity.naicsCode || raw.naicsCode || null,
       setAside,
-      responseDeadline: deadline,
-      postedDate,
+      quoteDeadline,
       placeOfPerformance: popText,
-      pointOfContact: pocText,
       description: opportunity.description || null,
       parsedScope: structured?.scope,
       parsedDeliverables: structured?.deliverables,
       parsedCompliance: structured?.compliance,
       parsedPeriodOfPerformance: structured?.periodOfPerformance,
       subcontractorName: subcontractor?.name || null,
+      primeCompany: primeCompany || null,
     })
   } catch (aiError) {
     console.warn('[SOW] OpenAI generation failed, falling back to rule-based sections:', aiError)
     aiSections = [
-      buildBackgroundSection(opportunity, hasParsedContent, structured),
+      buildBackgroundSection(opportunity),
       buildScopeSection(opportunity, hasParsedContent, structured),
       buildPlaceOfPerformanceSection(popText),
-      buildPeriodOfPerformanceSection(hasParsedContent, structured, deadline, postedDate),
+      buildQuoteSubmissionSection(quoteDeadline, primeCompany),
       buildDeliverablesSection(opportunity, hasParsedContent, structured),
       buildComplianceSection(opportunity, raw, hasParsedContent, structured),
     ]
@@ -115,6 +128,7 @@ async function generateSOWContent(
     ...(farClauses.length > 0
       ? [buildFARSection(farClauses, hasParsedContent && structured!.evaluation.length > 0, hasParsedContent && structured!.qualifications.length > 0)]
       : []),
+    buildResponseRequirementsSection(aiSections.length + 1, quoteDeadline, primeCompany),
   ]
 
   const content = {
@@ -127,10 +141,11 @@ async function generateSOWContent(
       type: raw.type || raw.baseType || null,
       setAside,
       classificationCode: raw.classificationCode || null,
-      responseDeadline: deadline,
-      postedDate,
+      // Internal quote-to-prime deadline (not the federal response deadline).
+      // Surfaced to the sub as "Quote due" in the SOW header.
+      quoteDeadline,
       placeOfPerformance: popText,
-      pointOfContact: pocText,
+      primeCompany: primeCompany || null,
     },
     scope: {
       overview: hasParsedContent && structured!.scope.length > 0
@@ -155,20 +170,17 @@ async function generateSOWContent(
 
 // === Section Builders (return structured format: summary + bullets + details) ===
 
-function buildBackgroundSection(opportunity: any, hasParsed: boolean, structured: StructuredContent | null) {
-  const desc = opportunity.description || 'Refer to the solicitation documents for the complete project background.'
+function buildBackgroundSection(opportunity: any) {
+  const desc = opportunity.description || 'Background details to be added.'
   return {
-    title: '1.0 BACKGROUND & PURPOSE',
-    summary: `SOW for solicitation ${opportunity.solicitationNumber}, issued by ${opportunity.agency || 'the contracting agency'}.`,
+    title: '1.0 WHAT WE NEED',
+    summary: `What the prime needs the sub to supply for "${opportunity.title}".`,
     bullets: [
-      `Solicitation: ${opportunity.solicitationNumber} — "${opportunity.title}"`,
-      `Issuing Agency: ${opportunity.agency || 'Federal Government'}`,
-      ...(opportunity.naicsCode ? [`NAICS Code: ${opportunity.naicsCode}`] : []),
-      ...(opportunity.responseDeadline
-        ? [`Response Deadline: ${format(new Date(opportunity.responseDeadline), 'MMMM d, yyyy')}`]
-        : []),
+      `Item / service: ${opportunity.title}`,
+      `End customer: ${opportunity.agency || 'Federal Government'}`,
+      ...(opportunity.naicsCode ? [`NAICS reference: ${opportunity.naicsCode}`] : []),
     ],
-    details: `This Scope of Work (SOW) is issued in support of the federal solicitation ${opportunity.solicitationNumber}, titled "${opportunity.title}", issued by ${opportunity.agency || 'the contracting agency'}.\n\n${desc}`,
+    details: desc,
   }
 }
 
@@ -217,26 +229,19 @@ function buildPlaceOfPerformanceSection(popText: string) {
   }
 }
 
-function buildPeriodOfPerformanceSection(
-  hasParsed: boolean,
-  structured: StructuredContent | null,
-  deadline: string,
-  postedDate: string | null
-) {
-  const bullets = []
-  if (hasParsed && structured!.periodOfPerformance.length > 0) {
-    bullets.push(...structured!.periodOfPerformance.map(p => p.length > 200 ? p.substring(0, 200) + '...' : p))
-  }
-  bullets.push(`Response deadline: ${deadline}`)
-  if (postedDate) bullets.push(`Solicitation posted: ${postedDate}`)
-
+function buildQuoteSubmissionSection(quoteDeadline: string, primeCompany?: string) {
+  const prime = primeCompany || 'the prime contractor'
   return {
-    title: '4.0 PERIOD OF PERFORMANCE',
-    summary: `Deadline: ${deadline}`,
-    bullets,
-    details: hasParsed && structured!.periodOfPerformance.length > 0
-      ? `${structured!.periodOfPerformance.join('\n\n')}\n\nResponse deadline: ${deadline}${postedDate ? `\nSolicitation posted: ${postedDate}` : ''}`
-      : `The period of performance shall align with the solicitation requirements.\n\nResponse deadline: ${deadline}${postedDate ? `\nSolicitation posted: ${postedDate}` : ''}`,
+    title: '4.0 QUOTE SUBMISSION',
+    summary: `Return your quote to ${prime} by ${quoteDeadline}.`,
+    bullets: [
+      `Quote due to ${prime}: ${quoteDeadline}`,
+      `Submit by email to your prime point of contact`,
+      `Include firm fixed-price total (materials, labor, shipping, taxes, fees)`,
+      `State lead time / delivery schedule from receipt of order`,
+      `Flag any exceptions, assumptions, or clarifying questions`,
+    ],
+    details: `Send your quote to ${prime} by ${quoteDeadline} so we have time to compare quotes and finalize our bid. This deadline is internal to ${prime} — you do not submit anything to the end customer.`,
   }
 }
 
@@ -289,26 +294,56 @@ function buildComplianceSection(
     bullets.push(`Set-Aside: ${raw.typeOfSetAsideDescription || raw.typeOfSetAside}`)
   }
   if (opportunity.naicsCode) {
-    bullets.push(`NAICS Code: ${opportunity.naicsCode}`)
+    const sizeStandard = getNaicsSizeStandard(opportunity.naicsCode)
+    bullets.push(
+      sizeStandard
+        ? `NAICS ${opportunity.naicsCode} — size standard ${sizeStandard}`
+        : `NAICS Code: ${opportunity.naicsCode}`
+    )
   }
   if (raw.classificationCode) {
-    bullets.push(`Classification Code: ${raw.classificationCode}`)
+    bullets.push(`Product/Service Classification (PSC): ${raw.classificationCode}`)
   }
-  bullets.push('All applicable Federal Acquisition Regulation (FAR) clauses')
-  bullets.push('Compliance with all terms and conditions in the solicitation')
 
+  // Pull specific compliance items from the parsed solicitation, deduped.
   if (hasParsed && structured!.compliance.length > 0) {
-    bullets.push(...structured!.compliance.map(c => c.length > 200 ? c.substring(0, 200) + '...' : c))
+    const seen = new Set(bullets.map((b) => b.toLowerCase()))
+    for (const c of structured!.compliance) {
+      const trimmed = c.length > 200 ? c.substring(0, 200) + '...' : c
+      const key = trimmed.toLowerCase()
+      if (!seen.has(key)) {
+        bullets.push(trimmed)
+        seen.add(key)
+      }
+    }
+  }
+
+  // No generic "all applicable FAR clauses" filler — that's not a requirement,
+  // it's a non-statement. If nothing specific was found, say so plainly.
+  if (bullets.length === 0) {
+    bullets.push('No specific compliance items extracted from the solicitation. Review the solicitation documents directly before responding.')
   }
 
   return {
     title: '6.0 COMPLIANCE REQUIREMENTS',
-    summary: 'Regulatory and compliance requirements for this solicitation.',
+    summary: 'Specific regulatory items that apply to this solicitation.',
     bullets,
-    details: hasParsed && structured!.compliance.length > 0
-      ? `${bullets.slice(0, -structured!.compliance.length).map(i => `- ${i}`).join('\n')}\n\nAdditional compliance requirements from solicitation documents:\n\n${structured!.compliance.join('\n\n')}`
-      : bullets.map(i => `- ${i}`).join('\n'),
+    details: bullets.map(i => `- ${i}`).join('\n'),
   }
+}
+
+// Minimal NAICS size standard lookup for common contracting codes — used only
+// to enrich the compliance bullet when the NAICS is recognized.
+function getNaicsSizeStandard(naics: string): string | null {
+  const sizes: Record<string, string> = {
+    '541330': '$25.5M', '541511': '$34M', '541512': '$34M', '541519': '$34M',
+    '541611': '$25.5M', '541614': '$22M', '541618': '$24.5M', '541690': '$22M',
+    '541713': '1,000 employees', '541714': '1,000 employees', '541715': '1,000 employees',
+    '561210': '$47M', '561612': '$25M', '561621': '$22M',
+    '236220': '$45M', '237310': '$45M', '238910': '$19M',
+    '334111': '1,250 employees', '334118': '1,250 employees', '334413': '1,250 employees',
+  }
+  return sizes[naics] || null
 }
 
 // buildAttachmentsSection intentionally removed — solicitation attachments
@@ -343,6 +378,26 @@ function buildFARSection(farClauses: string[], hasEvaluation: boolean, hasQualif
     summary: `${farClauses.length} FAR clause(s) referenced in this solicitation.`,
     bullets: farClauses,
     details: `Federal Acquisition Regulation clauses referenced:\n\n${farClauses.map(c => `- ${c}`).join('\n')}`,
+  }
+}
+
+/**
+ * Always-appended section: tells the subcontractor exactly what to send back to the prime.
+ * Includes a capability statement request so the prime can evaluate fit before forwarding.
+ */
+function buildResponseRequirementsSection(sectionNumber: number, quoteDeadline: string, primeCompany?: string) {
+  const prime = primeCompany || 'the prime'
+  return {
+    title: `${sectionNumber}.0 WHAT TO SEND BACK`,
+    summary: `What ${prime} needs from you, and by when.`,
+    bullets: [
+      `Capability Statement — 1–2 page summary of relevant past performance, core competencies, certifications, key personnel`,
+      `Firm fixed-price quote — all-inclusive (materials, labor, shipping, taxes, fees)`,
+      `Lead time and delivery schedule from receipt of order`,
+      `Any exceptions, assumptions, or clarifying questions about the requirement`,
+      `Your point of contact (name, title, email, direct phone)`,
+    ],
+    details: `Email everything above to ${prime} by ${quoteDeadline}. We use your capability statement to confirm fit before we work your quote into our bid — include past performance on similar work and any certifications relevant to this scope.`,
   }
 }
 
@@ -478,8 +533,15 @@ export async function POST(req: Request) {
       }
     }
 
+    // Prime company name — prefer authenticated user's organization, fall back to user name.
+    // This is what the sub sees as "Quote due to ___".
+    const primeCompany =
+      (session.user as { organization?: string; name?: string }).organization ||
+      session.user.name ||
+      undefined
+
     // Generate structured SOW content (OpenAI for copy, rule-based for data sections)
-    const content = await generateSOWContent(opportunity, subcontractor, selectedAttachments)
+    const content = await generateSOWContent(opportunity, subcontractor, selectedAttachments, primeCompany)
 
     const fileName = generateSOWFileName(opportunity.solicitationNumber, 1)
 

@@ -34,8 +34,9 @@ interface SOWPanelProps {
         solicitationNumber?: string
         agency?: string
         naicsCode?: string
-        responseDeadline?: string
+        quoteDeadline?: string
         placeOfPerformance?: string
+        primeCompany?: string
       }
       scope?: { overview?: string }
       sections?: SOWSection[]
@@ -270,10 +271,39 @@ export default function SOWPanel({
               }`}>
                 {sow.status.replace(/_/g, ' ').toLowerCase()}
               </span>
+              {onGenerate && (
+                <button
+                  onClick={() => {
+                    if (confirm('Regenerate this SOW from the latest opportunity data? Your current edits will be replaced.')) {
+                      onGenerate()
+                    }
+                  }}
+                  disabled={isGenerating}
+                  className="px-3 py-1 text-xs font-medium text-stone-700 bg-white border border-stone-300 rounded hover:bg-stone-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  title="Rebuild the SOW from the current opportunity data and prompt"
+                >
+                  {isGenerating ? (
+                    <>
+                      <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Regenerating…
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Regenerate
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
 
-          {/* ── DOCUMENT — always visible, always editable ── */}
+          {/* ── DOCUMENT — always visible, always editable. Click any section text to edit. ── */}
           <div className="bg-stone-50 rounded-lg">
             {/* Auto-save indicator */}
             <div className="flex items-center justify-end h-6 mb-2 px-1">
@@ -293,7 +323,6 @@ export default function SOWPanel({
               )}
             </div>
 
-            {/* Document page card */}
             <div className="bg-white shadow-md rounded-lg overflow-hidden">
               {/* Document header */}
               <div className="px-6 sm:px-10 pt-8 sm:pt-10 pb-6 border-b border-stone-200 text-center">
@@ -344,12 +373,6 @@ export default function SOWPanel({
                     </div>
 
                     <div className="border-b border-stone-100 mb-4" />
-
-                    {section.summary && (
-                      <p className="text-xs text-stone-400 italic mb-3 leading-relaxed">
-                        {section.summary}
-                      </p>
-                    )}
 
                     {section.bullets && section.bullets.length > 0 && (
                       <ul className="mb-3 space-y-1">

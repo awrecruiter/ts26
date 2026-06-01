@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { getOpportunityAttachments } from '@/lib/samgov'
 import { analyzeAttachments } from '@/lib/openai'
+import { parseAllAttachments, mergeStructuredContent } from '@/lib/attachment-parser'
 
 /**
  * POST /api/opportunities/[id]/attachments/analyze
@@ -39,7 +40,8 @@ export async function POST(
           select: { attachmentId: true, originalName: true, currentName: true },
         },
         attachmentFormData: {
-          select: { attachmentId: true },
+          // Treat null suggestedName as "needs retry" — previous attempt failed.
+          select: { attachmentId: true, aiSuggestedName: true },
         },
       },
     })
@@ -58,8 +60,14 @@ export async function POST(
       return NextResponse.json({ analyzed: 0, skipped: 0 })
     }
 
-    // Build sets for fast lookup
-    const alreadyAnalyzed = new Set(opportunity.attachmentFormData.map((f) => f.attachmentId))
+    // Build sets for fast lookup — only treat as "analyzed" when the prior
+    // attempt actually produced a name. Null suggestedName means the prior
+    // analysis failed (OpenAI down, etc.) and should be retried.
+    const alreadyAnalyzed = new Set(
+      opportunity.attachmentFormData
+        .filter((f) => !!f.aiSuggestedName)
+        .map((f) => f.attachmentId)
+    )
     const manualRenames = new Set(
       opportunity.attachmentOverrides
         .filter((o) => o.currentName !== o.originalName)
@@ -67,13 +75,50 @@ export async function POST(
     )
 
     // Extract parsed text per attachment — keyed by filename (parsedAttachments stores by name, not id)
-    const parsedData = opportunity.parsedAttachments as any
-    const parsedTexts: Record<string, string> = {}
-    if (parsedData?.parsed && Array.isArray(parsedData.parsed)) {
-      for (const file of parsedData.parsed) {
-        if (file.name && (file.fullText || file.preview)) {
-          parsedTexts[file.name] = (file.fullText || file.preview) as string
+    let parsedData = opportunity.parsedAttachments as any
+    let parsedTexts: Record<string, string> = {}
+    const collectParsedTexts = () => {
+      const out: Record<string, string> = {}
+      if (parsedData?.parsed && Array.isArray(parsedData.parsed)) {
+        for (const file of parsedData.parsed) {
+          if (file.name && (file.fullText || file.preview)) {
+            out[file.name] = (file.fullText || file.preview) as string
+          }
         }
+      }
+      return out
+    }
+    parsedTexts = collectParsedTexts()
+
+    // If no parsed content exists, parse now so the AI has document text to
+    // name from. Without this, the AI either invents names (bad) or returns
+    // null for everything (also bad).
+    if (Object.keys(parsedTexts).length === 0) {
+      try {
+        const parsed = await parseAllAttachments(rawAttachments)
+        const structured = mergeStructuredContent(parsed)
+        const parseResult = {
+          parsed: parsed.map((p) => ({
+            name: p.name,
+            textLength: p.text.length,
+            pageCount: p.pageCount,
+            preview: p.text.substring(0, 500),
+            fullText: p.text,
+            error: p.error,
+          })),
+          structured,
+          totalAttachments: rawAttachments.length,
+          parsedCount: parsed.filter((p) => p.text.length > 0).length,
+          parsedAt: new Date().toISOString(),
+        }
+        await prisma.opportunity.update({
+          where: { id },
+          data: { parsedAttachments: JSON.parse(JSON.stringify(parseResult)) },
+        })
+        parsedData = parseResult
+        parsedTexts = collectParsedTexts()
+      } catch (parseErr) {
+        console.warn('[analyze] Attachment parsing failed, continuing with filename-only:', parseErr)
       }
     }
 
@@ -88,11 +133,12 @@ export async function POST(
       return NextResponse.json({ analyzed: 0, skipped })
     }
 
-    // Call GPT-4o — pass up to 1200 chars of document text for better naming context
+    // Call GPT-4o — pass up to 3000 chars so the AI sees past common
+    // boilerplate headers (SF-30, SF-1449) into the actual subject matter.
     const analysisInputs = toAnalyze.map((att) => ({
       id: att.id,
       originalName: att.name,
-      textContent: parsedTexts[att.name]?.slice(0, 1200),
+      textContent: parsedTexts[att.name]?.slice(0, 3000),
     }))
 
     const results = await analyzeAttachments(analysisInputs)

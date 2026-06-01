@@ -49,6 +49,104 @@ function extractFilenameFromUrl(url: string): string | null {
 }
 
 /**
+ * SAM.gov resource URLs don't expose the original filename — they 303-redirect
+ * to S3 with a Content-Disposition header carrying the real name. This follows
+ * the redirect (HEAD request) and pulls the filename out of that header.
+ *
+ * Caches in-process to avoid repeating the round-trip for the same URL.
+ */
+const filenameCache = new Map<string, string | null>()
+
+export async function resolveSamFilename(url: string): Promise<string | null> {
+  if (filenameCache.has(url)) return filenameCache.get(url)!
+  if (!url.startsWith('http')) {
+    filenameCache.set(url, null)
+    return null
+  }
+  // Append API key to SAM.gov resource URLs so the auth check passes
+  let targetUrl = url
+  if (url.includes('sam.gov/api') && SAM_API_KEY) {
+    const u = new URL(url)
+    if (!u.searchParams.has('api_key')) u.searchParams.set('api_key', SAM_API_KEY)
+    targetUrl = u.toString()
+  }
+  try {
+    // HEAD won't follow redirects with the filename — we need the GET response
+    // headers from the final S3 URL. fetch follows redirects by default and
+    // exposes the final response's headers.
+    const res = await fetch(targetUrl, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: AbortSignal.timeout(10000),
+      headers: { Range: 'bytes=0-0' }, // ask for 1 byte so we get headers cheaply
+    })
+    const cd = res.headers.get('content-disposition') || ''
+    // RFC 5987 filename*= takes precedence, then plain filename=
+    let name: string | null = null
+    const star = cd.match(/filename\*=(?:UTF-8'')?([^;]+)/i)
+    if (star) {
+      try { name = decodeURIComponent(star[1].replace(/^"|"$/g, '')) } catch {}
+    }
+    if (!name) {
+      const plain = cd.match(/filename="?([^";]+)"?/i)
+      if (plain) name = plain[1]
+    }
+    if (name) {
+      // SAM.gov often returns percent-encoded names with + for spaces
+      // (form-encoding). Normalize both.
+      try {
+        name = decodeURIComponent(name.replace(/\+/g, ' '))
+      } catch {
+        // If decoding throws (invalid escape), just convert + → space and keep
+        // the rest as-is.
+        name = name.replace(/\+/g, ' ')
+      }
+    }
+    filenameCache.set(url, name)
+    return name
+  } catch {
+    filenameCache.set(url, null)
+    return null
+  }
+}
+
+/**
+ * Batch-resolve real filenames for attachments whose names look generic
+ * (e.g. "Attachment 1"). Updates the SamAttachment[] in place, then dedupes
+ * by resolved name (SAM.gov occasionally returns the same file twice via
+ * different keys — once in resourceLinks, again in pointOfContact).
+ */
+export async function resolveSamAttachmentFilenames(
+  attachments: SamAttachment[]
+): Promise<SamAttachment[]> {
+  const needsResolution = attachments.filter((a) => /^Attachment\s*\d+$/i.test(a.name) || /^Resource\s*\d+$/i.test(a.name) || !a.name.includes('.'))
+  await Promise.all(
+    needsResolution.map(async (a) => {
+      const real = await resolveSamFilename(a.url)
+      if (real) {
+        a.name = real
+        // Infer type from the now-real extension
+        const ext = real.split('.').pop()?.toLowerCase()
+        if (ext) a.type = ext
+      }
+    })
+  )
+
+  // Dedupe by lowercased name (preserve first occurrence).
+  const seen = new Set<string>()
+  const deduped: SamAttachment[] = []
+  for (const att of attachments) {
+    const key = att.name.toLowerCase().trim()
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(att)
+  }
+  attachments.length = 0
+  attachments.push(...deduped)
+  return attachments
+}
+
+/**
  * Extract attachments from stored raw SAM.gov data.
  * Handles both the v2 API format (plain URL strings in resourceLinks)
  * and older object-based formats.
@@ -247,6 +345,9 @@ export async function getOpportunityAttachments(
   if (rawData) {
     const attachments = extractAttachmentsFromRawData(rawData)
     if (attachments.length > 0) {
+      // Resolve placeholder names like "Attachment 1" to real filenames
+      // pulled from SAM.gov's Content-Disposition header.
+      await resolveSamAttachmentFilenames(attachments)
       return attachments
     }
   }
@@ -254,6 +355,7 @@ export async function getOpportunityAttachments(
   // If no attachments found in raw data, try fetching fresh from SAM.gov
   const freshData = await fetchOpportunityFromSam(solicitationNumber)
   if (freshData) {
+    await resolveSamAttachmentFilenames(freshData.attachments)
     return freshData.attachments
   }
 

@@ -44,6 +44,7 @@ interface SubcontractorPanelProps {
   onSubcontractorsUpdated?: () => void
   parsedRequirements?: { qualifications: string[], compliance: string[], scope: string[] }
   opportunityInfo?: { naicsCode?: string, state?: string, setAside?: string }
+  keyDeliverables?: Array<{ item: string; frequency?: string }>
 }
 
 function buildDefaultChecklist(
@@ -99,6 +100,7 @@ export default function SubcontractorPanel({
   onSubcontractorsUpdated,
   parsedRequirements,
   opportunityInfo,
+  keyDeliverables = [],
 }: SubcontractorPanelProps) {
   const [filter, setFilter] = useState<'all' | 'quoted' | 'pending'>('all')
   const [isSearching, setIsSearching] = useState(false)
@@ -114,6 +116,16 @@ export default function SubcontractorPanel({
   const [optimisticCalls, setOptimisticCalls] = useState<Record<string, boolean>>({})
   const [samWarning, setSamWarning] = useState<string | null>(null)
   const [checklistState, setChecklistState] = useState<Record<string, ChecklistItem[]>>({})
+  const [deliverableChecks, setDeliverableChecks] = useState<Record<string, Set<number>>>({})
+
+  const toggleDeliverable = (subId: string, idx: number) => {
+    setDeliverableChecks((prev) => {
+      const next = new Set(prev[subId] || [])
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return { ...prev, [subId]: next }
+    })
+  }
   const [newChecklistItem, setNewChecklistItem] = useState<Record<string, string>>({})
 
   const isCallCompleted = (sub: Subcontractor) => {
@@ -121,8 +133,10 @@ export default function SubcontractorPanel({
   }
 
   const filtered = subcontractors.filter((sub) => {
+    // Pending = call complete but no quote yet (awaiting vendor email response)
+    if (filter === 'pending') return isCallCompleted(sub) && sub.quotedAmount == null
+    // Quoted = vendor responded with a quote
     if (filter === 'quoted') return sub.quotedAmount != null
-    if (filter === 'pending') return sub.quotedAmount == null
     return true
   })
 
@@ -464,7 +478,7 @@ export default function SubcontractorPanel({
 
         {/* Filter tabs */}
         <div className="flex gap-1 bg-stone-100 p-1 rounded-lg mb-4 w-fit">
-          {(['all', 'quoted', 'pending'] as const).map((f) => (
+          {(['all', 'pending', 'quoted'] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
@@ -762,6 +776,47 @@ export default function SubcontractorPanel({
                           </button>
                         </div>
 
+                        {/* Key Deliverables — check off as vendor confirms during the call */}
+                        {keyDeliverables.length > 0 && (
+                          <div className="mt-4 pt-3 border-t border-stone-200">
+                            <p className="text-xs font-medium text-stone-500 mb-2">
+                              Can deliver
+                              <span className="ml-2 text-stone-400 font-normal">
+                                ({(deliverableChecks[sub.id]?.size || 0)}/{keyDeliverables.length})
+                              </span>
+                            </p>
+                            <div className="space-y-1.5">
+                              {keyDeliverables.map((d, i) => {
+                                const checked = deliverableChecks[sub.id]?.has(i) ?? false
+                                return (
+                                  <div key={i} className="flex items-start gap-2">
+                                    <button
+                                      onClick={() => toggleDeliverable(sub.id, i)}
+                                      className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center mt-0.5 transition-colors ${
+                                        checked
+                                          ? 'bg-stone-600 border-stone-600'
+                                          : 'border-stone-300 hover:border-stone-400'
+                                      }`}
+                                    >
+                                      {checked && (
+                                        <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                      )}
+                                    </button>
+                                    <span className={`text-xs flex-1 ${checked ? 'text-stone-400 line-through' : 'text-stone-700'}`}>
+                                      {d.item}
+                                      {d.frequency && (
+                                        <span className="ml-2 text-stone-400">({d.frequency})</span>
+                                      )}
+                                    </span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+
                         {/* Mark Call Complete button - below checklist */}
                         <button
                           onClick={() => handleToggleCall(sub)}
@@ -838,8 +893,8 @@ export default function SubcontractorPanel({
               </div>
               <p className="text-sm text-stone-500 mb-2">
                 {filter === 'all' ? 'No vendors found yet' :
-                 filter === 'quoted' ? 'No quotes received yet' :
-                 'All vendors have quoted'}
+                 filter === 'pending' ? 'No vendors awaiting a quote — mark a call complete to move a vendor here' :
+                 'No quotes received yet — quotes appear here once vendors reply by email'}
               </p>
               <button
                 onClick={handleAutoDiscover}

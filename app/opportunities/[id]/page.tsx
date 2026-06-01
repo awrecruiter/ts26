@@ -401,6 +401,7 @@ export default function OpportunityWorkspacePage() {
           placeOfPerformance={placeOfPerformanceData}
           parsedRequirements={opportunity.parsedAttachments?.structured}
           opportunityInfo={{ naicsCode: opportunity.naicsCode, state: opportunity.state, setAside: opportunity.setAside }}
+          keyDeliverables={opportunity.opportunityBrief?.keyDeliverables || []}
           onRequestQuote={(sub) => {
             setSelectedSubcontractor(sub)
             setEmailTemplateType('quote_request')

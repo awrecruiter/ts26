@@ -118,6 +118,9 @@ export default function OpportunitySummaryPanel({
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
 
+  // Attachment filter — which subset of the list to display
+  const [attachmentFilter, setAttachmentFilter] = useState<'all' | 'forms' | 'documents' | 'edited'>('all')
+
   // Form fill modal
   const [fillingAttachment, setFillingAttachment] = useState<RichAttachment | null>(null)
 
@@ -174,7 +177,10 @@ export default function OpportunitySummaryPanel({
   // Auto-analyze attachments when they load (if any lack formData)
   useEffect(() => {
     if (!attachments.length || isAnalyzing) return
-    const needsAnalysis = attachments.some((att) => att.formData === null || att.formData === undefined)
+    // Retry when formData is missing OR when a prior attempt failed (null suggested name).
+    const needsAnalysis = attachments.some(
+      (att) => !att.formData || !att.formData.aiSuggestedName
+    )
     if (!needsAnalysis) return
 
     const runAnalysis = async () => {
@@ -449,29 +455,43 @@ export default function OpportunitySummaryPanel({
                 Loading attachments...
               </div>
             ) : attachments.length > 0 ? (
-              <div className="space-y-2">
-                {attachments.map((att) => (
-                  <AttachmentRow
-                    key={att.id}
-                    attachment={att}
-                    opportunityId={opportunity.id}
-                    isEditing={editingId === att.id}
-                    editingValue={editingValue}
-                    editError={editingId === att.id ? editError : null}
-                    saving={saving}
-                    onView={() => setViewingAttachment(att)}
-                    onStartEdit={() => startEditing(att)}
-                    onEditChange={(val) => {
-                      setEditingValue(val)
-                      setEditError(null)
-                    }}
-                    onSave={() => saveRename(att)}
-                    onCancel={cancelEditing}
-                    onUseSuggestion={() => applySuggestedName(att)}
-                    onFillForm={() => setFillingAttachment(att)}
-                  />
-                ))}
-              </div>
+              (() => {
+                const visible = attachments.filter((att) => {
+                  if (attachmentFilter === 'forms') return att.formData?.isForm === true
+                  if (attachmentFilter === 'documents') return !att.formData?.isForm
+                  if (attachmentFilter === 'edited') return att.isEdited === true
+                  return true
+                })
+                return visible.length > 0 ? (
+                  <div className="space-y-2">
+                    {visible.map((att) => (
+                      <AttachmentRow
+                        key={att.id}
+                        attachment={att}
+                        opportunityId={opportunity.id}
+                        isEditing={editingId === att.id}
+                        editingValue={editingValue}
+                        editError={editingId === att.id ? editError : null}
+                        saving={saving}
+                        onView={() => setViewingAttachment(att)}
+                        onStartEdit={() => startEditing(att)}
+                        onEditChange={(val) => {
+                          setEditingValue(val)
+                          setEditError(null)
+                        }}
+                        onSave={() => saveRename(att)}
+                        onCancel={cancelEditing}
+                        onUseSuggestion={() => applySuggestedName(att)}
+                        onFillForm={() => setFillingAttachment(att)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-4 text-center text-sm text-stone-400">
+                    No attachments match this filter
+                  </div>
+                )
+              })()
             ) : (
               <div className="py-4 text-center">
                 <p className="text-sm text-stone-500 mb-3">No attachments found in database</p>
@@ -491,21 +511,33 @@ export default function OpportunitySummaryPanel({
               </div>
             )}
 
-            {/* Parsed content indicator */}
-            {attachments.length > 0 && hasParsedContent && parsedSummary && (
+            {/* Filter buttons + parsed-count indicator */}
+            {attachments.length > 0 && (
               <div className="mt-3 pt-3 border-t border-stone-100">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <svg className="h-3.5 w-3.5 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span className="text-xs text-stone-500">
-                    {parsedSummary.parsedCount} of {parsedSummary.totalAttachments} parsed
-                  </span>
-                  {parsedSummary.sections.map((section) => (
-                    <span key={section} className="px-1.5 py-0.5 text-[10px] bg-stone-100 text-stone-500 rounded">
-                      {section}
-                    </span>
+                  {([
+                    { key: 'all', label: 'All', count: attachments.length },
+                    { key: 'forms', label: 'Forms', count: attachments.filter((a) => a.formData?.isForm).length },
+                    { key: 'documents', label: 'Documents', count: attachments.filter((a) => !a.formData?.isForm).length },
+                    { key: 'edited', label: 'Edited', count: attachments.filter((a) => a.isEdited).length },
+                  ] as const).map((f) => (
+                    <button
+                      key={f.key}
+                      onClick={() => setAttachmentFilter(f.key)}
+                      className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors ${
+                        attachmentFilter === f.key
+                          ? 'bg-stone-800 text-white'
+                          : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
+                      }`}
+                    >
+                      {f.label} {f.count > 0 && <span className="opacity-60">({f.count})</span>}
+                    </button>
                   ))}
+                  {hasParsedContent && parsedSummary && (
+                    <span className="text-[10px] text-stone-400 ml-auto">
+                      {parsedSummary.parsedCount}/{parsedSummary.totalAttachments} parsed
+                    </span>
+                  )}
                 </div>
               </div>
             )}
@@ -784,12 +816,20 @@ function AttachmentRow({
   }
 
   return (
-    <div className="rounded-lg border border-stone-100 bg-stone-50 overflow-hidden">
+    <div className="rounded-lg border border-stone-100 bg-stone-50 overflow-hidden hover:border-stone-300 hover:bg-stone-100/50 transition-colors">
       <div className="flex items-center gap-2 p-3">
-        {/* File icon */}
-        <svg className="h-5 w-5 text-stone-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-        </svg>
+        {/* File icon — clickable to view */}
+        <button
+          type="button"
+          onClick={onView}
+          disabled={isEditing}
+          className="text-stone-400 hover:text-stone-700 flex-shrink-0 disabled:cursor-default"
+          title="View attachment"
+        >
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+          </svg>
+        </button>
 
         {/* Name area */}
         <div className="flex-1 min-w-0">
@@ -814,9 +854,14 @@ function AttachmentRow({
             </div>
           ) : (
             <div className="flex items-center gap-2 flex-wrap">
-              <p className="text-sm text-stone-700 truncate font-medium">
+              <button
+                type="button"
+                onClick={onView}
+                className="text-sm text-stone-700 truncate font-medium text-left hover:text-stone-900 hover:underline underline-offset-2"
+                title="View attachment"
+              >
                 {attachment.currentName}
-              </p>
+              </button>
               {/* FORM badge */}
               {attachment.formData?.isForm && (
                 <span
