@@ -35,9 +35,18 @@ export async function GET(
       return NextResponse.json({ error: 'Attachment not found' }, { status: 404 })
     }
 
+    // SAM.gov resource URLs require the API key on the redirect-initiating
+    // request, or the redirect chain breaks and we get an HTML auth page.
+    let fetchUrl = attachment.url
+    if (fetchUrl.includes('sam.gov/api') && process.env.SAM_GOV_API_KEY) {
+      const u = new URL(fetchUrl)
+      if (!u.searchParams.has('api_key')) u.searchParams.set('api_key', process.env.SAM_GOV_API_KEY)
+      fetchUrl = u.toString()
+    }
+
     // Fetch the file server-side, following redirects
     try {
-      const response = await fetch(attachment.url, {
+      const response = await fetch(fetchUrl, {
         redirect: 'follow',
         headers: {
           'User-Agent': 'USHER/1.0',
@@ -46,13 +55,38 @@ export async function GET(
       })
 
       if (!response.ok) {
-        // Redirect to original URL as fallback
         return NextResponse.redirect(attachment.url)
       }
 
-      // Infer MIME type from file extension when S3 returns generic octet-stream
+      // The real filename only shows up in S3's Content-Disposition after
+      // the redirect — SAM.gov gives us "Attachment 1" with no extension,
+      // which makes the browser treat the response as opaque binary.
+      const upstreamDisposition = response.headers.get('content-disposition') || ''
+      let resolvedFilename: string | null = null
+      const star = upstreamDisposition.match(/filename\*=(?:UTF-8'')?([^;]+)/i)
+      if (star) {
+        try { resolvedFilename = decodeURIComponent(star[1].replace(/^"|"$/g, '')) } catch {}
+      }
+      if (!resolvedFilename) {
+        const plain = upstreamDisposition.match(/filename="?([^";]+)"?/i)
+        if (plain) {
+          try {
+            resolvedFilename = decodeURIComponent(plain[1].replace(/\+/g, ' '))
+          } catch {
+            resolvedFilename = plain[1].replace(/\+/g, ' ')
+          }
+        }
+      }
+      // Prefer the upstream filename when it has an extension; otherwise keep
+      // the stored attachment name (which may be a user-edited rename).
+      const filename = (resolvedFilename && resolvedFilename.includes('.'))
+        ? resolvedFilename
+        : attachment.name
+
+      // Infer MIME type from the resolved extension when S3 returns the
+      // generic octet-stream that triggers browser downloads.
       const remoteType = response.headers.get('content-type') || 'application/octet-stream'
-      const ext = attachment.name.split('.').pop()?.toLowerCase().split('?')[0] ?? ''
+      const ext = filename.split('.').pop()?.toLowerCase().split('?')[0] ?? ''
       const MIME_MAP: Record<string, string> = {
         pdf:  'application/pdf',
         docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -65,6 +99,8 @@ export async function GET(
         jpg:  'image/jpeg',
         jpeg: 'image/jpeg',
         gif:  'image/gif',
+        webp: 'image/webp',
+        svg:  'image/svg+xml',
       }
       const contentType = (remoteType === 'application/octet-stream' && MIME_MAP[ext])
         ? MIME_MAP[ext]
@@ -72,11 +108,8 @@ export async function GET(
 
       const data = await response.arrayBuffer()
 
-      // Sanitize filename for Content-Disposition header
-      const safeFilename = attachment.name.replace(/[^\w.\-\s]/g, '_')
+      const safeFilename = filename.replace(/[^\w.\-\s]/g, '_')
 
-      // Use 'attachment' only when the caller explicitly requests a download.
-      // Default to 'inline' so browsers render PDFs and images inside the viewer iframe.
       const disposition = forceDownload
         ? `attachment; filename="${safeFilename}"`
         : `inline; filename="${safeFilename}"`
