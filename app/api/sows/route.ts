@@ -122,7 +122,27 @@ async function generateSOWContent(
         primeCompany: primeCompany || null,
       })
     } catch (aiError) {
-      console.warn('[SOW] OpenAI generation failed, falling back to rule-based sections:', aiError)
+      const msg = aiError instanceof Error ? aiError.message : String(aiError)
+      console.warn('[SOW] OpenAI generation failed, falling back to rule-based sections:', msg)
+      // Persist a system log so we can diagnose silent fallbacks. The visible
+      // symptom is "rule-based output dumps raw parsed-PDF text as bullets";
+      // without this log it's impossible to tell from a SOW alone whether the
+      // AI ran successfully or threw.
+      try {
+        await prisma.systemLog.create({
+          data: {
+            level: 'WARNING',
+            message: 'SOW OpenAI generation failed — used rule-based fallback',
+            context: {
+              opportunityId: opportunity.id,
+              solicitationNumber: opportunity.solicitationNumber,
+              error: msg,
+              hasParsedContent,
+              descLength,
+            },
+          },
+        })
+      } catch {}
       aiSections = [
         buildBackgroundSection(opportunity),
         buildScopeSection(opportunity, hasParsedContent, structured),
@@ -134,21 +154,22 @@ async function generateSOWContent(
     }
   }
 
-  // Append data-driven sections after AI sections.
-  // Solicitation attachments are NOT included as a SOW section — they travel
-  // alongside the SOW as a separate bundle in the email panel.
+  // Append data-driven sections — only when they'd carry genuine, condensed
+  // value for the sub. Previously these were generated from raw parsed-PDF
+  // text and bloated the SOW from 6 useful sections to 10 noisy ones.
+  //
+  // Evaluation, Qualifications, and FAR Quick Reference are PRIME-bid concerns,
+  // not sub-quote concerns. A sub does not care how the federal government
+  // will evaluate the prime's proposal. Drop them from the sub-facing SOW.
+  // FAR clauses still flow down to the sub through Compliance Pass-Through.
   const dataSections = [
-    ...(hasParsedContent && structured!.evaluation.length > 0
-      ? [buildEvaluationSection(structured!)]
-      : []),
-    ...(hasParsedContent && structured!.qualifications.length > 0
-      ? [buildQualificationsSection(structured!, hasParsedContent && structured!.evaluation.length > 0)]
-      : []),
-    ...(farClauses.length > 0
-      ? [buildFARSection(farClauses, hasParsedContent && structured!.evaluation.length > 0, hasParsedContent && structured!.qualifications.length > 0)]
-      : []),
     buildResponseRequirementsSection(aiSections.length + 1, quoteDeadline, primeCompany),
   ]
+  // Silence unused-fn warnings; kept for future internal-use SOW variants.
+  void buildEvaluationSection
+  void buildQualificationsSection
+  void buildFARSection
+  void farClauses
 
   const content = {
     opportunity: {
@@ -207,22 +228,62 @@ function buildBackgroundSection(opportunity: any) {
 // inventing plausible-sounding filler that the user can't tell is wrong.
 const NEEDS_DETAIL = (what: string) => `[NEEDS DETAIL: ${what}]`
 
+/**
+ * Condense a raw parsed-PDF text fragment into a single short bullet.
+ * The parser yields paragraph fragments straight from PDFs — long, often
+ * mid-sentence, sometimes containing newlines and page-break artifacts.
+ * Without this, scope/deliverables bullets look like raw OCR dumps.
+ */
+function condenseToBullet(raw: string, maxChars = 100): string | null {
+  if (!raw) return null
+  // Strip newlines + collapse whitespace
+  const cleaned = raw.replace(/\s+/g, ' ').trim()
+  if (cleaned.length < 10) return null
+  // Skip obvious page artifacts: "UNCLASSIFIED", page numbers, section markers
+  if (/^(UNCLASSIFIED|CLASSIFIED|DRAFT|DoDI|Table \d|Figure \d|Appendix [A-Z]|^\(\d+\)|^[a-z]\)|Block \d|Column \(\d+\))/i.test(cleaned)) return null
+  // Take just the first sentence; if too long, truncate at word boundary
+  const firstSentence = cleaned.split(/(?<=[.!?])\s+/)[0]
+  const candidate = firstSentence.length > maxChars
+    ? firstSentence.slice(0, maxChars).replace(/\s+\S*$/, '') + '…'
+    : firstSentence
+  if (candidate.length < 10) return null
+  return candidate
+}
+
+function condenseScopeItems(items: string[], max = 4): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of items) {
+    const c = condenseToBullet(item)
+    if (!c) continue
+    const key = c.toLowerCase().slice(0, 40)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(c)
+    if (out.length >= max) break
+  }
+  return out
+}
+
 function buildScopeSection(opportunity: any, hasParsed: boolean, structured: StructuredContent | null) {
   if (hasParsed && structured!.scope.length > 0) {
-    return {
-      title: '2.0 SCOPE OF SERVICES',
-      summary: 'Requirements extracted from solicitation documents.',
-      bullets: structured!.scope.map(s => s.length > 200 ? s.substring(0, 200) + '...' : s),
+    const bullets = condenseScopeItems(structured!.scope, 4)
+    if (bullets.length > 0) {
+      return {
+        title: '2.0 SCOPE OF SERVICES',
+        summary: 'Requirements from the solicitation.',
+        bullets,
+      }
     }
   }
 
   const desc = opportunity.description || ''
   if (desc.length > 100) {
-    const bullets = extractBulletsFromText(desc)
+    const bullets = extractBulletsFromText(desc).slice(0, 4)
     if (bullets.length > 0) {
       return {
         title: '2.0 SCOPE OF SERVICES',
-        summary: 'Services derived from the opportunity description.',
+        summary: 'Derived from the opportunity description.',
         bullets,
       }
     }
@@ -232,7 +293,7 @@ function buildScopeSection(opportunity: any, hasParsed: boolean, structured: Str
     title: '2.0 SCOPE OF SERVICES',
     summary: 'Needs detail from the solicitation.',
     bullets: [
-      NEEDS_DETAIL('specific tasks or supply items the sub will perform — parse the solicitation attachments or add manually'),
+      NEEDS_DETAIL('what the sub will perform — parse the solicitation or add manually'),
     ],
   }
 }
@@ -266,10 +327,13 @@ function buildQuoteSubmissionSection(quoteDeadline: string, primeCompany?: strin
 
 function buildDeliverablesSection(opportunity: any, hasParsed: boolean, structured: StructuredContent | null) {
   if (hasParsed && structured!.deliverables.length > 0) {
-    return {
-      title: '5.0 DELIVERABLES',
-      summary: `${structured!.deliverables.length} deliverable(s) identified from solicitation.`,
-      bullets: structured!.deliverables.map(d => d.length > 200 ? d.substring(0, 200) + '...' : d),
+    const bullets = condenseScopeItems(structured!.deliverables, 4)
+    if (bullets.length > 0) {
+      return {
+        title: '5.0 DELIVERABLES',
+        summary: 'Deliverables from the solicitation.',
+        bullets,
+      }
     }
   }
 
