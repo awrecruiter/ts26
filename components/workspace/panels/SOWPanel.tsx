@@ -379,8 +379,11 @@ export default function SOWPanel({
 
               {/* Sections — always editable inline */}
               <div className="divide-y divide-stone-100">
-                {sections.map((section, idx) => (
-                  <div key={idx} className="px-4 sm:px-10 py-5 sm:py-6">
+                {sections.map((section, idx) => {
+                  const needsAttention = section.bullets?.some((b) => b.includes('[NEEDS DETAIL'))
+                    || (section.details || '').includes('[NEEDS DETAIL')
+                  return (
+                  <div key={idx} className={`px-4 sm:px-10 py-5 sm:py-6 ${needsAttention ? 'bg-amber-50/40 border-l-2 border-amber-300' : ''}`}>
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-6 h-6 bg-stone-900 text-white text-xs font-bold rounded flex items-center justify-center flex-shrink-0">
                         {idx + 1}
@@ -393,6 +396,14 @@ export default function SOWPanel({
                         placeholder="Section title"
                         className="flex-1 text-sm font-semibold text-stone-800 bg-transparent border-none outline-none focus:ring-1 focus:ring-stone-200 rounded px-1 -mx-1"
                       />
+                      {needsAttention && (
+                        <span
+                          className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 border border-amber-200 rounded flex-shrink-0"
+                          title="This section has [NEEDS DETAIL] placeholders. Fill them in or parse the solicitation attachments."
+                        >
+                          Needs detail
+                        </span>
+                      )}
                       <button
                         onClick={() => handleRemoveSection(idx)}
                         className="text-stone-300 hover:text-stone-500 transition-colors flex-shrink-0"
@@ -465,7 +476,8 @@ export default function SOWPanel({
                       />
                     )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
 
               {/* Add section */}

@@ -71,25 +71,27 @@ export async function generateSOWSections(input: SOWGenerationInput): Promise<SO
   const isVA = /\b(VA\b|VETERANS AFFAIRS|VETERANS HEALTH|VHA|VBA)\b/i.test(agencyUpper)
   const isHealthAgency = /\b(HHS|NIH|CDC|FDA|CMS|HRSA|SAMHSA|AHRQ)\b/i.test(agencyUpper)
 
-  // Agency-specific tone and deliverable guidance
+  // Agency tone is for VOICE only — formality, terminology preferences. It does
+  // NOT authorize inventing standards, clearances, or clauses. Every specific
+  // citation must still be grounded in the source content above.
   let agencyToneGuidance: string
   let deliverablesGuidance: string
 
   if (isDoD) {
-    agencyToneGuidance = `This is a Department of Defense (DoD) contract. Use DoD acquisition language where appropriate: reference MIL-SPEC/MIL-STD standards if relevant, use terms like "Government-Furnished Equipment (GFE)", "Contracting Officer Representative (COR)", "Quality Assurance Surveillance Plan (QASP)", and "Contract Data Requirements List (CDRL)". Tone should be formal, precise, and compliance-focused.`
-    deliverablesGuidance = `Structure deliverables as Contract Data Requirements List (CDRL) items where applicable. Each deliverable should specify: the data item title, frequency (e.g., monthly, upon completion), submission format (electronic/hard copy), and recipient (COR or Contracting Officer). Use DoD-standard CDRL terminology where it applies.`
+    agencyToneGuidance = `This is a Department of Defense (DoD) contract. Voice: formal, precise, compliance-conscious. You MAY use the acronyms COR, CDRL, QASP, GFE, GFP if they fit the section. You may NOT cite specific MIL-STD/MIL-SPEC numbers, DFARS clauses, security clearance levels, or CMMC levels unless they appear in the source content above.`
+    deliverablesGuidance = `When deliverables are listed in the source, format each one with name + frequency + submission format if those are available. If frequency/format are not in the source, omit them rather than inventing.`
   } else if (isDHS) {
-    agencyToneGuidance = `This is a Department of Homeland Security (DHS) contract. Reference DHS Acquisition Regulation (HSAR) requirements where applicable. Use terms like "Contracting Officer's Representative (COR)" and DHS security/clearance requirements if present. Tone should be security-conscious and operationally focused.`
-    deliverablesGuidance = `Use milestone-based deliverables with specific due dates or offsets from period of performance start. Each deliverable should specify the name, format, submission method, and acceptance criteria. Reference any required DHS reporting templates or systems if mentioned in the solicitation.`
+    agencyToneGuidance = `This is a Department of Homeland Security (DHS) contract. Voice: security-conscious, operational. You may use COR; you may NOT cite specific HSAR clauses or clearance levels unless they appear in the source content above.`
+    deliverablesGuidance = `When deliverables are listed in the source, format each one with name + due date + submission method if those are available. Omit fields not in source.`
   } else if (isVA) {
-    agencyToneGuidance = `This is a Department of Veterans Affairs (VA) contract. Reference VA Acquisition Regulation (VAAR) requirements where applicable. Use terms like "COR (Contracting Officer's Representative)" and note HIPAA compliance for any work involving Veteran data or healthcare. Tone should be Veteran-centered and compliance-focused.`
-    deliverablesGuidance = `Use milestone-based deliverables. Highlight any deliverables involving Veteran data, PHI (Protected Health Information), or VA system access. Specify submission to COR with VA-required formats. Note HIPAA compliance requirements for any data deliverables.`
+    agencyToneGuidance = `This is a Department of Veterans Affairs (VA) contract. Voice: Veteran-centered, compliance-focused. You may use COR. You may NOT cite HIPAA/PHI/VAAR specifics unless the source mentions Veteran data or healthcare work.`
+    deliverablesGuidance = `When deliverables are listed in the source, name them concretely. Omit submission specifics not in source.`
   } else if (isHealthAgency) {
-    agencyToneGuidance = `This is a civilian health agency (HHS/NIH/CDC/FDA) contract. Reference Federal Acquisition Regulation (FAR) Part 12 or 15 as applicable. Use terms like "COR", "deliverables", and "milestone schedule" with relevant health or scientific terminology where warranted. Tone should be technically precise.`
-    deliverablesGuidance = `Use milestone-based deliverables tied to the research or program schedule. Each deliverable should specify: name, format, submission date or frequency, and COR acceptance. Reference any required federal health data standards (HL7, FHIR, etc.) only if mentioned in the solicitation.`
+    agencyToneGuidance = `This is a civilian health agency (HHS/NIH/CDC/FDA) contract. Voice: technically precise. You may use COR. You may NOT cite specific health data standards (HL7, FHIR, HIPAA) unless they appear in the source content above.`
+    deliverablesGuidance = `When deliverables are listed in the source, name them concretely with format/frequency only if stated. No invented timelines.`
   } else {
-    agencyToneGuidance = `This is a civilian federal agency contract. Reference Federal Acquisition Regulation (FAR) requirements as applicable. Use terms like "Contracting Officer's Representative (COR)", "Performance Work Statement (PWS)", and "Quality Assurance Surveillance Plan (QASP)" where relevant. Tone should be professional, clear, and action-oriented for a small business subcontractor.`
-    deliverablesGuidance = `Use milestone-based deliverables with specific due dates or offsets from period of performance start. Each deliverable should specify the name, format, submission method, and acceptance criteria. Avoid DoD-specific acronyms like CDRLs — use plain milestone language instead.`
+    agencyToneGuidance = `This is a civilian federal agency contract. Voice: professional, action-oriented for a small business subcontractor. You may use COR/PWS/QASP if they fit. You may NOT cite specific FAR clauses unless they appear in the source content above.`
+    deliverablesGuidance = `When deliverables are listed in the source, name them concretely with format/frequency only if stated. No invented timelines.`
   }
 
   const contextBlock = [
@@ -117,14 +119,41 @@ export async function generateSOWSections(input: SOWGenerationInput): Promise<SO
 
   const prompt = `You are writing a Statement of Work (SOW) FROM a prime contractor TO a potential subcontractor. The subcontractor will scan this in under 90 seconds to decide: "Can I supply this, and is it worth quoting?" Then they will send a quote back to the prime by the quote-to-prime deadline below.
 
-CRITICAL AUDIENCE RULES — non-negotiable:
+EVIDENCE RULE — non-negotiable, this is the most important rule:
+Every specific FACT you write (a standard number, a clause number, a clearance level, a certification, a date, a dollar amount, a quantity, a technical spec, a system name, a software language, a hardware part, a security requirement, a country-of-origin rule) MUST appear in OPPORTUNITY DETAILS or PARSED SOLICITATION CONTENT below. If a fact is not in the source, you have exactly two options:
+  (a) Omit it entirely.
+  (b) Write the literal placeholder: [NEEDS DETAIL: <short description of what would belong here>]
+A placeholder is ALWAYS better than an invented plausible fact. The user will see "[NEEDS DETAIL: ...]" and know to fill it in or parse more attachments. They CANNOT detect a hallucinated fact and will send a wrong SOW to a real subcontractor.
+
+FORBIDDEN INVENTED CONTENT — never write these unless they appear verbatim in the source:
+- MIL-STD-498 (deprecated 1998 standard, almost never in real modern solicitations)
+- Specific MIL-STD / MIL-SPEC numbers
+- ISO 9001 or other ISO numbers (only if the source explicitly cites them)
+- Buy American Act (only for manufactured-goods contracts, not for software/services)
+- Trade Agreements Act / TAA (only if source cites it)
+- Specific CMMC levels (CMMC L1/L2/L3 — only the level explicitly stated in source)
+- TS/SCI/SECRET/CONFIDENTIAL clearance levels (only the level stated in source)
+- Specific FAR or DFARS clause numbers
+- HIPAA, FedRAMP, FISMA, NIST 800-171, NIST 800-53 (only if cited in source)
+
+FORBIDDEN GENERIC FILLER — never use these phrases even if they "sound right":
+- "All applicable FAR clauses"
+- "Refer to the solicitation"
+- "Per the solicitation requirements"
+- "All work products specified in the solicitation"
+- "Compliance with all terms and conditions"
+- "Standard industry practices"
+- "Industry best practices"
+- "As required by the government"
+If you find yourself writing a bullet generic enough to apply to ANY federal contract, replace it with a [NEEDS DETAIL: ...] placeholder.
+
+CRITICAL AUDIENCE RULES:
 - The audience is a SUBCONTRACTOR quoting parts/services to the PRIME. They are NOT bidding on the federal contract.
 - DO NOT mention SAM.gov registration, the federal response deadline, SF-1449 forms, or any procedural step the subcontractor takes with the government. The prime handles all federal procedural steps.
-- DO NOT instruct the subcontractor to "submit a quote to the agency" or "complete the solicitation form" — they submit a quote to the PRIME.
-- DO NOT pad bullets with restatements of the title. The title is already at the top of the document.
-- The ONE deadline that matters in this document is the quote-to-prime deadline: ${quoteDeadline}. Treat this as THE deadline.
+- DO NOT instruct the subcontractor to "submit a quote to the agency" — they submit to the PRIME.
+- The ONE deadline in this document is the quote-to-prime deadline: ${quoteDeadline}. Treat this as THE deadline.
 
-AGENCY/END-CUSTOMER CONTEXT (use sparingly — only to help the sub understand the end use):
+AGENCY TONE (voice/formality only — does NOT authorize inventing facts):
 ${agencyToneGuidance}
 
 OPPORTUNITY DETAILS:
@@ -133,26 +162,25 @@ ${contextBlock}${parsedBlock}
 DELIVERABLES GUIDANCE:
 ${deliverablesGuidance}
 
-HARD RULES:
-- NEVER repeat the solicitation description verbatim in multiple sections.
-- NEVER pad with generic filler like "All work products specified in the solicitation" or "Refer to the solicitation".
-- If a section's data is unknown, write one short sentence saying so — do not invent or rephrase the description.
-- Bullets must be concrete and distinct. Each bullet states ONE thing the sub can act on.
-- "details" prose is 1 short paragraph max, ≤4 sentences. Every sentence carries new information.
+PER-SECTION EVIDENCE BUDGET:
+For each section below, count the source evidence available to you.
+- 3+ concrete facts available → write 3–5 bullets, each tied to a specific fact
+- 1–2 facts available → write only those bullets PLUS one [NEEDS DETAIL: ...] placeholder
+- 0 facts available → write a single bullet: "[NEEDS DETAIL: <one-sentence description of what belongs here>]"
 
-Generate exactly 6 SOW sections in JSON. Each section must have:
+Output: exactly 6 SOW sections as JSON. Each section has:
 - "title": short heading
-- "summary": one plain sentence — what this section covers (max 100 chars)
-- "bullets": 3–5 specific, distinct bullet points the sub can use to decide fit
-- "details": ≤4 sentences of new information not already in bullets
+- "summary": one plain sentence (max 100 chars). If section is empty, summary = "Needs detail from the solicitation."
+- "bullets": 1–5 bullets per the evidence budget above
+- "details": ≤4 sentences of NEW prose (not bullets restated). Empty string if no source prose exists.
 
-Sections (write each FOR a subcontractor evaluating fit):
-1. 1.0 What We Need — describe the product or service the prime needs the sub to supply. Be concrete: part / spec / quantity / function / end-use. This is the "can I supply this?" section.
-2. 2.0 Scope of Work — the specific tasks or supply items the subcontractor performs for the prime. Specs, quantities, performance standards, acceptance criteria.
-3. 3.0 Place of Performance / Delivery — where the sub ships to (FOB destination) or performs (site/remote). Mention travel only if stated.
-4. 4.0 Quote Submission — when and how the sub returns their quote TO THE PRIME. Anchor on the quote-to-prime deadline (${quoteDeadline}). Include what the prime needs in the quote (firm fixed price, lead time, exceptions, point of contact). DO NOT mention the federal response deadline or any federal forms.
-5. 5.0 Deliverables — concrete outputs the sub provides per DELIVERABLES GUIDANCE. Each bullet is one item with format/quantity/frequency. Generic phrases like "all work products specified" are forbidden.
-6. 6.0 Compliance Pass-Through — specific technical / regulatory items from the solicitation that the sub must meet to be usable in the prime's bid: technical standards (MIL-SPEC/ISO/CMMC), required certifications, security/clearance requirements, country-of-origin rules (e.g. Buy American, TAA), named FAR/DFARS clauses that flow down. FORBIDDEN: "All applicable FAR clauses", "SAM.gov registration", "Compliance with all terms and conditions", anything procedural the prime handles. If the solicitation truly states no specific pass-through compliance, write one short sentence saying so.
+Sections:
+1. 1.0 What We Need — the product or service the prime needs the sub to supply. Concrete: part / spec / quantity / function / end-use. This is the "can I supply this?" section.
+2. 2.0 Scope of Work — specific tasks or supply items the sub performs. Specs, quantities, performance standards, acceptance criteria from the source.
+3. 3.0 Place of Performance / Delivery — where the sub ships to (FOB destination) or performs (site/remote). Mention travel only if the source states it.
+4. 4.0 Quote Submission — when and how the sub returns their quote TO THE PRIME. Anchor on the quote-to-prime deadline (${quoteDeadline}). Include firm fixed price, lead time, exceptions, point of contact. DO NOT mention the federal response deadline. This section can use the standard request bullets — it's the only section where invariant content is OK.
+5. 5.0 Deliverables — concrete outputs the sub provides. Each bullet is one specific item from the source. Generic phrases forbidden — use [NEEDS DETAIL: ...] instead.
+6. 6.0 Compliance Pass-Through — specific technical/regulatory items from the source that flow down to the sub: technical standards, certifications, security/clearance, country-of-origin rules, named FAR/DFARS clauses. If the source has none, output a single bullet: "[NEEDS DETAIL: compliance pass-through items not extracted — parse the solicitation attachments or add manually]".
 
 Return ONLY a valid JSON array of 6 objects. No markdown, no explanation.`
 

@@ -84,27 +84,17 @@ async function generateSOWContent(
   // Extract FAR clause references from description + parsed content
   const farClauses = extractFARClauses(opportunity.description, structured)
 
-  // Generate main sections (1–6) using OpenAI, with fallback to rule-based builders
+  // Pre-flight evidence gate: if we have NO parsed solicitation content and
+  // only a thin description (< 500 chars, typical SAM.gov v2 stub), skip the
+  // OpenAI call entirely. The AI would just hallucinate plausible-sounding
+  // bullets (MIL-STD-498, ISO 9001, etc) to fill space. Instead, build a stub
+  // SOW with explicit [NEEDS DETAIL: ...] markers so the user sees the gaps
+  // and either parses the attachments or fills them in manually.
+  const descLength = (opportunity.description || '').trim().length
+  const tooThinForAI = !hasParsedContent && descLength < 500
   let aiSections
-  try {
-    aiSections = await generateSOWSections({
-      title: opportunity.title,
-      solicitationNumber: opportunity.solicitationNumber,
-      agency: opportunity.agency || raw.fullParentPathName || 'Federal Government',
-      naicsCode: opportunity.naicsCode || raw.naicsCode || null,
-      setAside,
-      quoteDeadline,
-      placeOfPerformance: popText,
-      description: opportunity.description || null,
-      parsedScope: structured?.scope,
-      parsedDeliverables: structured?.deliverables,
-      parsedCompliance: structured?.compliance,
-      parsedPeriodOfPerformance: structured?.periodOfPerformance,
-      subcontractorName: subcontractor?.name || null,
-      primeCompany: primeCompany || null,
-    })
-  } catch (aiError) {
-    console.warn('[SOW] OpenAI generation failed, falling back to rule-based sections:', aiError)
+  if (tooThinForAI) {
+    console.warn('[SOW] Input too thin for AI generation (no parsed content, description < 500 chars). Using rule-based stub with [NEEDS DETAIL] markers.')
     aiSections = [
       buildBackgroundSection(opportunity),
       buildScopeSection(opportunity, hasParsedContent, structured),
@@ -113,6 +103,35 @@ async function generateSOWContent(
       buildDeliverablesSection(opportunity, hasParsedContent, structured),
       buildComplianceSection(opportunity, raw, hasParsedContent, structured),
     ]
+  } else {
+    try {
+      aiSections = await generateSOWSections({
+        title: opportunity.title,
+        solicitationNumber: opportunity.solicitationNumber,
+        agency: opportunity.agency || raw.fullParentPathName || 'Federal Government',
+        naicsCode: opportunity.naicsCode || raw.naicsCode || null,
+        setAside,
+        quoteDeadline,
+        placeOfPerformance: popText,
+        description: opportunity.description || null,
+        parsedScope: structured?.scope,
+        parsedDeliverables: structured?.deliverables,
+        parsedCompliance: structured?.compliance,
+        parsedPeriodOfPerformance: structured?.periodOfPerformance,
+        subcontractorName: subcontractor?.name || null,
+        primeCompany: primeCompany || null,
+      })
+    } catch (aiError) {
+      console.warn('[SOW] OpenAI generation failed, falling back to rule-based sections:', aiError)
+      aiSections = [
+        buildBackgroundSection(opportunity),
+        buildScopeSection(opportunity, hasParsedContent, structured),
+        buildPlaceOfPerformanceSection(popText),
+        buildQuoteSubmissionSection(quoteDeadline, primeCompany),
+        buildDeliverablesSection(opportunity, hasParsedContent, structured),
+        buildComplianceSection(opportunity, raw, hasParsedContent, structured),
+      ]
+    }
   }
 
   // Append data-driven sections after AI sections.
@@ -184,48 +203,48 @@ function buildBackgroundSection(opportunity: any) {
   }
 }
 
+// Placeholder we surface to the user when source data is missing. Better than
+// inventing plausible-sounding filler that the user can't tell is wrong.
+const NEEDS_DETAIL = (what: string) => `[NEEDS DETAIL: ${what}]`
+
 function buildScopeSection(opportunity: any, hasParsed: boolean, structured: StructuredContent | null) {
   if (hasParsed && structured!.scope.length > 0) {
     return {
       title: '2.0 SCOPE OF SERVICES',
       summary: 'Requirements extracted from solicitation documents.',
       bullets: structured!.scope.map(s => s.length > 200 ? s.substring(0, 200) + '...' : s),
-      details: `Per the solicitation documents:\n\n${structured!.scope.join('\n\n')}`,
     }
   }
 
   const desc = opportunity.description || ''
   if (desc.length > 100) {
-    // Extract bullet points from description
     const bullets = extractBulletsFromText(desc)
-    return {
-      title: '2.0 SCOPE OF SERVICES',
-      summary: 'Services required per the solicitation.',
-      bullets: bullets.length > 0 ? bullets : ['Per the solicitation, the required services include the items described in the full text below'],
-      details: `Per the solicitation, the required services include:\n\n${desc}`,
+    if (bullets.length > 0) {
+      return {
+        title: '2.0 SCOPE OF SERVICES',
+        summary: 'Services derived from the opportunity description.',
+        bullets,
+      }
     }
   }
 
   return {
     title: '2.0 SCOPE OF SERVICES',
-    summary: 'Contractor shall provide all labor, materials, equipment, and supervision.',
+    summary: 'Needs detail from the solicitation.',
     bullets: [
-      'Provide all labor, materials, equipment, and supervision per solicitation',
-      'Refer to solicitation attachments for detailed scope of work',
+      NEEDS_DETAIL('specific tasks or supply items the sub will perform — parse the solicitation attachments or add manually'),
     ],
-    details: `The contractor shall provide all labor, materials, equipment, and supervision necessary to perform the services described in solicitation ${opportunity.solicitationNumber}.\n\n${desc || 'Refer to solicitation attachments for the detailed scope of work.'}`,
   }
 }
 
 function buildPlaceOfPerformanceSection(popText: string) {
+  const isVague = !popText || popText === 'Per solicitation' || popText.trim() === ''
   return {
     title: '3.0 PLACE OF PERFORMANCE',
-    summary: `Work location: ${popText}`,
-    bullets: [
-      `Primary location: ${popText}`,
-      'All work locations must comply with solicitation requirements',
-    ],
-    details: `Work shall be performed at: ${popText}\n\nAll work locations must comply with the requirements specified in the solicitation.`,
+    summary: isVague ? 'Needs detail from the solicitation.' : `Work location: ${popText}`,
+    bullets: isVague
+      ? [NEEDS_DETAIL('delivery address or work site — parse the solicitation or add manually')]
+      : [`Primary location: ${popText}`],
   }
 }
 
@@ -251,10 +270,11 @@ function buildDeliverablesSection(opportunity: any, hasParsed: boolean, structur
       title: '5.0 DELIVERABLES',
       summary: `${structured!.deliverables.length} deliverable(s) identified from solicitation.`,
       bullets: structured!.deliverables.map(d => d.length > 200 ? d.substring(0, 200) + '...' : d),
-      details: `Per the solicitation, required deliverables include:\n\n${structured!.deliverables.join('\n\n')}`,
     }
   }
 
+  // Keyword scan of the description gives us grounded hints (the verb actually
+  // appeared in the opportunity text). Anything beyond that is invention.
   const desc = (opportunity.description || '').toLowerCase()
   const deliverables: string[] = []
 
@@ -269,14 +289,18 @@ function buildDeliverablesSection(opportunity: any, hasParsed: boolean, structur
   if (desc.includes('test') || desc.includes('inspect')) deliverables.push('Test/inspection reports and certifications')
 
   if (deliverables.length === 0) {
-    deliverables.push('All work products specified in the solicitation')
-    deliverables.push('Documentation of completed services')
+    return {
+      title: '5.0 DELIVERABLES',
+      summary: 'Needs detail from the solicitation.',
+      bullets: [
+        NEEDS_DETAIL('specific deliverables, formats, and frequencies — parse the solicitation attachments or add manually'),
+      ],
+    }
   }
-  deliverables.push('Compliance with all solicitation requirements and federal regulations')
 
   return {
     title: '5.0 DELIVERABLES',
-    summary: `${deliverables.length} key deliverables identified.`,
+    summary: `${deliverables.length} deliverable(s) inferred from the opportunity description.`,
     bullets: deliverables,
   }
 }
@@ -317,15 +341,15 @@ function buildComplianceSection(
     }
   }
 
-  // No generic "all applicable FAR clauses" filler — that's not a requirement,
-  // it's a non-statement. If nothing specific was found, say so plainly.
   if (bullets.length === 0) {
-    bullets.push('No specific compliance items extracted from the solicitation. Review the solicitation documents directly before responding.')
+    bullets.push(NEEDS_DETAIL('compliance pass-through items — parse the solicitation attachments or add manually'))
   }
 
   return {
     title: '6.0 COMPLIANCE REQUIREMENTS',
-    summary: 'Specific regulatory items that apply to this solicitation.',
+    summary: bullets.length === 1 && bullets[0].startsWith('[NEEDS DETAIL')
+      ? 'Needs detail from the solicitation.'
+      : 'Specific regulatory items that apply to this solicitation.',
     bullets,
   }
 }
