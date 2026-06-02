@@ -162,17 +162,22 @@ ${contextBlock}${parsedBlock}
 DELIVERABLES GUIDANCE:
 ${deliverablesGuidance}
 
+DENSITY RULES — the SOW must be scannable in 30 seconds:
+- Each bullet ≤ 100 characters (~15 words). Telegram-style: short, concrete, action-oriented. If a fact takes more than 15 words, split it or drop the modifier.
+- 2–4 bullets per section, 3 typical. NEVER 5. Empty white space is desirable — a sub reading on phone needs breathing room.
+- Quality over quantity: one specific fact beats three generic ones.
+- "details" prose: leave EMPTY ("") for most sections. Only fill when there's a critical caveat or numeric/contextual detail that genuinely doesn't fit a bullet. Default to empty. Most sections do not need a details paragraph.
+
 PER-SECTION EVIDENCE BUDGET:
-For each section below, count the source evidence available to you.
-- 3+ concrete facts available → write 3–5 bullets, each tied to a specific fact
-- 1–2 facts available → write only those bullets PLUS one [NEEDS DETAIL: ...] placeholder
-- 0 facts available → write a single bullet: "[NEEDS DETAIL: <one-sentence description of what belongs here>]"
+- 3+ concrete facts → 3–4 short bullets, each tied to one fact
+- 1–2 facts → those bullets only (no [NEEDS DETAIL] padding)
+- 0 facts → one bullet: "[NEEDS DETAIL: <what belongs here>]"
 
 Output: exactly 6 SOW sections as JSON. Each section has:
 - "title": short heading
-- "summary": one plain sentence (max 100 chars). If section is empty, summary = "Needs detail from the solicitation."
-- "bullets": 1–5 bullets per the evidence budget above
-- "details": ≤4 sentences of NEW prose (not bullets restated). Empty string if no source prose exists.
+- "summary": one plain sentence (max 80 chars). Empty section → "Needs detail from the solicitation."
+- "bullets": 1–4 short bullets per rules above
+- "details": "" (empty string) by default. Only non-empty when a critical caveat genuinely doesn't fit a bullet — never restating bullets as prose.
 
 Sections:
 1. 1.0 What We Need — the product or service the prime needs the sub to supply. Concrete: part / spec / quantity / function / end-use. This is the "can I supply this?" section.
