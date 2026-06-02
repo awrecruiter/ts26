@@ -392,28 +392,31 @@ function buildComplianceSection(
     bullets.push(`Product/Service Classification (PSC): ${raw.classificationCode}`)
   }
 
-  // Pull specific compliance items from the parsed solicitation, deduped.
+  // Compliance is the worst-hit by raw parser output — agency docs contain
+  // hundreds of compliance-shaped sentences. Apply the same condensation as
+  // scope/deliverables: strip artifacts, first-sentence, ≤100 chars, cap at 3.
+  // Combined with the rule-based set-aside / NAICS / PSC, total stays ≤6.
   if (hasParsed && structured!.compliance.length > 0) {
-    const seen = new Set(bullets.map((b) => b.toLowerCase()))
-    for (const c of structured!.compliance) {
-      const trimmed = c.length > 200 ? c.substring(0, 200) + '...' : c
-      const key = trimmed.toLowerCase()
-      if (!seen.has(key)) {
-        bullets.push(trimmed)
-        seen.add(key)
-      }
+    const seen = new Set(bullets.map((b) => b.toLowerCase().slice(0, 40)))
+    const condensed = condenseScopeItems(structured!.compliance, 6)
+    for (const c of condensed) {
+      const key = c.toLowerCase().slice(0, 40)
+      if (seen.has(key)) continue
+      seen.add(key)
+      bullets.push(c)
+      if (bullets.length >= 6) break
     }
   }
 
   if (bullets.length === 0) {
-    bullets.push(NEEDS_DETAIL('compliance pass-through items — parse the solicitation attachments or add manually'))
+    bullets.push(NEEDS_DETAIL('compliance pass-through items — parse the solicitation or add manually'))
   }
 
   return {
     title: '6.0 COMPLIANCE REQUIREMENTS',
     summary: bullets.length === 1 && bullets[0].startsWith('[NEEDS DETAIL')
       ? 'Needs detail from the solicitation.'
-      : 'Specific regulatory items that apply to this solicitation.',
+      : 'Regulatory items that flow down to the sub.',
     bullets,
   }
 }

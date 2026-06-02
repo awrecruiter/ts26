@@ -107,12 +107,19 @@ export async function generateSOWSections(input: SOWGenerationInput): Promise<SO
     .filter(Boolean)
     .join('\n')
 
+  // Condense each parsed item to ~250 chars so we don't blow the context with
+  // raw multi-paragraph PDF extractions. Without this, parsed content alone
+  // can be 5,000+ chars per category, crowding out the actual instructions.
+  const trim = (s: string, max = 250) => {
+    const cleaned = s.replace(/\s+/g, ' ').trim()
+    return cleaned.length > max ? cleaned.slice(0, max) + '…' : cleaned
+  }
   const parsedBlock = hasParsed
-    ? `\n\nPARSED SOLICITATION CONTENT:\n` +
-      (parsedScope?.length ? `Scope:\n${parsedScope.slice(0, 5).join('\n')}\n` : '') +
-      (parsedDeliverables?.length ? `Deliverables:\n${parsedDeliverables.slice(0, 5).join('\n')}\n` : '') +
-      (parsedCompliance?.length ? `Compliance:\n${parsedCompliance.slice(0, 5).join('\n')}\n` : '') +
-      (parsedPeriodOfPerformance?.length ? `Period of Performance:\n${parsedPeriodOfPerformance.slice(0, 3).join('\n')}\n` : '')
+    ? `\n\nPARSED SOLICITATION CONTENT (excerpts from attachments):\n` +
+      (parsedScope?.length ? `Scope:\n${parsedScope.slice(0, 5).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (parsedDeliverables?.length ? `Deliverables:\n${parsedDeliverables.slice(0, 5).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (parsedCompliance?.length ? `Compliance:\n${parsedCompliance.slice(0, 5).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (parsedPeriodOfPerformance?.length ? `Period of Performance:\n${parsedPeriodOfPerformance.slice(0, 3).map(s => `- ${trim(s)}`).join('\n')}\n` : '')
     : description
     ? `\n\nSOLICITATION DESCRIPTION:\n${description.slice(0, 3000)}`
     : ''
