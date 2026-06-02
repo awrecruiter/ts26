@@ -278,7 +278,6 @@ function buildDeliverablesSection(opportunity: any, hasParsed: boolean, structur
     title: '5.0 DELIVERABLES',
     summary: `${deliverables.length} key deliverables identified.`,
     bullets: deliverables,
-    details: `Key deliverables include:\n\n${deliverables.map(d => `- ${d}`).join('\n')}\n\nRefer to the solicitation documents for the complete deliverables list.`,
   }
 }
 
@@ -328,7 +327,6 @@ function buildComplianceSection(
     title: '6.0 COMPLIANCE REQUIREMENTS',
     summary: 'Specific regulatory items that apply to this solicitation.',
     bullets,
-    details: bullets.map(i => `- ${i}`).join('\n'),
   }
 }
 
@@ -355,7 +353,6 @@ function buildEvaluationSection(structured: StructuredContent) {
     title: '7.0 EVALUATION CRITERIA',
     summary: 'How proposals will be evaluated.',
     bullets: structured.evaluation.map(e => e.length > 200 ? e.substring(0, 200) + '...' : e),
-    details: structured.evaluation.join('\n\n'),
   }
 }
 
@@ -365,7 +362,6 @@ function buildQualificationsSection(structured: StructuredContent, hasEvaluation
     title: `${num}.0 QUALIFICATIONS & PERSONNEL`,
     summary: 'Required qualifications and personnel requirements.',
     bullets: structured.qualifications.map(q => q.length > 200 ? q.substring(0, 200) + '...' : q),
-    details: structured.qualifications.join('\n\n'),
   }
 }
 
@@ -377,7 +373,6 @@ function buildFARSection(farClauses: string[], hasEvaluation: boolean, hasQualif
     title: `${num}.0 FAR QUICK REFERENCE`,
     summary: `${farClauses.length} FAR clause(s) referenced in this solicitation.`,
     bullets: farClauses,
-    details: `Federal Acquisition Regulation clauses referenced:\n\n${farClauses.map(c => `- ${c}`).join('\n')}`,
   }
 }
 

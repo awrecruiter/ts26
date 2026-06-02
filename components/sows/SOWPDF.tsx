@@ -483,7 +483,10 @@ export function SOWPDF({
                     PREPARED FOR
                   </Text>
                   <Text style={[styles.agencyDetail, { fontFamily: 'Helvetica-Bold', color: C.black }]}>
-                    {subcontractor.name}
+                    {/* Google Places frequently returns business names with marketing taglines
+                        attached after a pipe or em-dash ("Acme Corp | Best widgets in Texas").
+                        Trim to the business name only. */}
+                    {subcontractor.name.split(/\s*[|—–]\s*/)[0].trim()}
                   </Text>
                   {subcontractor.address && <Text style={styles.agencyDetail}>{subcontractor.address}</Text>}
                   {subcontractor.phone && <Text style={styles.agencyDetail}>{subcontractor.phone}</Text>}
@@ -526,64 +529,54 @@ export function SOWPDF({
           )}
         </View>
 
-        {/* Section 3: Quote Submission — when/how the sub returns their quote to the prime */}
+        {/* Section 3: Quote Submission — a single dated commitment line, then a
+            content checklist. The previous design paired every checklist row
+            with "By quote deadline" in the Due column, which was visual noise
+            (the deadline was already stated above). */}
         <View style={styles.section} wrap={false}>
           <SectionHeader num={3} title="QUOTE SUBMISSION" />
           <View style={styles.sectionDivider} />
-          <View style={styles.table}>
-            <View style={styles.tableHeaderRow}>
-              <Text style={styles.tableCellHeader}>What we need from you</Text>
-              <Text style={styles.tableCellHeaderNarrow}>Due</Text>
-            </View>
-            <View style={styles.tableRow}>
-              <Text style={[styles.tableCell, { fontFamily: 'Helvetica-Bold' }]}>
-                Quote returned to {preparerCompany}
-              </Text>
-              <Text style={[styles.tableCellNarrow, { fontFamily: 'Helvetica-Bold' }]}>
-                {opportunity.quoteDeadline || 'See email'}
-              </Text>
-            </View>
-            {/* Additional quote-submission bullets from the AI/rule-based section */}
-            {periodBullets
-              .filter(b => !/quote due|quote returned/i.test(b)) // dedupe against the header row
-              .map((b, i) => (
-                <View key={i} style={i % 2 === 0 ? styles.tableRowAlt : styles.tableRow}>
-                  <Text style={styles.tableCell}>{b}</Text>
-                  <Text style={styles.tableCellNarrow}>By quote deadline</Text>
-                </View>
-              ))}
+          <View style={styles.infoLine}>
+            <Text style={styles.infoLineLabel}>Quote due to {preparerCompany} by</Text>
+            <Text style={[styles.infoLineValue, { fontFamily: 'Helvetica-Bold' }]}>
+              {opportunity.quoteDeadline || 'See email'}
+            </Text>
           </View>
-          {periodBullets.length === 0 && periodSection?.details && (
-            <Text style={[styles.bodyText, { marginTop: 6 }]}>{periodSection.details}</Text>
-          )}
+          {/* Content checklist — what the prime needs IN the quote. Filter out
+              bullets that just restate the deadline (already shown above). */}
+          {(() => {
+            const checklist = periodBullets.filter(
+              (b) => !/quote due|quote returned|submit quote by/i.test(b)
+            )
+            if (checklist.length === 0 && periodSection?.details) {
+              return <Text style={[styles.bodyText, { marginTop: 6 }]}>{periodSection.details}</Text>
+            }
+            return (
+              <View style={{ marginTop: 4 }}>
+                <Text style={[styles.bodyText, { marginBottom: 4, color: C.muted, fontSize: 7.5, letterSpacing: 0.4 }]}>
+                  INCLUDE IN YOUR QUOTE
+                </Text>
+                {checklist.slice(0, 6).map((b, i) => (
+                  <Bullet key={i} text={b} />
+                ))}
+              </View>
+            )
+          })()}
         </View>
 
-        {/* Section 4: Deliverables */}
+        {/* Section 4: Deliverables — bullet list. The previous design paired
+            every row with "Per solicitation" in a Due column, which carried
+            no information (no deliverable had a real date). */}
         <View style={styles.section} wrap={false}>
           <SectionHeader num={4} title="DELIVERABLES" />
           <View style={styles.sectionDivider} />
-          <View style={styles.table}>
-            <View style={styles.tableHeaderRow}>
-              <Text style={styles.tableCellHeader}>Deliverable</Text>
-              <Text style={styles.tableCellHeaderNarrow}>Due</Text>
-            </View>
-            {/* Deliverables from the structured section bullets */}
-            {deliverablesBullets.length > 0 ? (
-              deliverablesBullets.slice(0, 6).map((b, i) => (
-                <View key={i} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
-                  <Text style={styles.tableCell}>{b}</Text>
-                  <Text style={styles.tableCellNarrow}>Per solicitation</Text>
-                </View>
-              ))
-            ) : (
-              /* Fallback: opportunity title as primary deliverable */
-              <View style={styles.tableRow}>
-                <Text style={styles.tableCell}>{opportunity.title}</Text>
-                <Text style={styles.tableCellNarrow}>Per contract schedule</Text>
-              </View>
-            )}
-          </View>
-          {/* Deliverables details if no bullets */}
+          {deliverablesBullets.length > 0 ? (
+            deliverablesBullets.slice(0, 8).map((b, i) => (
+              <Bullet key={i} text={b} />
+            ))
+          ) : (
+            <Bullet text={opportunity.title} />
+          )}
           {deliverablesBullets.length === 0 && deliverablesSection?.details && (
             <Text style={[styles.bodyText, { marginTop: 6 }]}>{deliverablesSection.details}</Text>
           )}
@@ -594,23 +587,35 @@ export function SOWPDF({
           <SectionHeader num={5} title="COMPLIANCE PASS-THROUGH" />
           <View style={styles.sectionDivider} />
           {complianceBullets.length > 0 ? (
-            <View style={styles.table}>
-              <View style={styles.tableHeaderRow}>
-                <Text style={[styles.tableCellHeader, { width: 130, flex: undefined }]}>Regulation / Requirement</Text>
-                <Text style={styles.tableCellHeader}>Details</Text>
+            /* Render as two-column ONLY when every bullet has a "Label: detail"
+                split. Otherwise fall back to a bullet list — previously the
+                template duplicated the full bullet text into both columns when
+                no colon was present, producing identical left/right cells. */
+            complianceBullets.every((b) => b.includes(':')) ? (
+              <View style={styles.table}>
+                <View style={styles.tableHeaderRow}>
+                  <Text style={[styles.tableCellHeader, { width: 130, flex: undefined }]}>Requirement</Text>
+                  <Text style={styles.tableCellHeader}>Details</Text>
+                </View>
+                {complianceBullets.slice(0, 6).map((b, i) => {
+                  const parts = b.split(':')
+                  const reg = parts[0].trim()
+                  const desc = parts.slice(1).join(':').trim()
+                  return (
+                    <View key={i} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
+                      <Text style={[styles.tableCell, { width: 130, flex: undefined, fontFamily: 'Helvetica-Bold', fontSize: 7.5 }]}>{reg}</Text>
+                      <Text style={styles.tableCell}>{desc}</Text>
+                    </View>
+                  )
+                })}
               </View>
-              {complianceBullets.slice(0, 6).map((b, i) => {
-                const parts = b.split(':')
-                const reg = parts[0]?.trim()
-                const desc = parts.slice(1).join(':').trim() || b
-                return (
-                  <View key={i} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
-                    <Text style={[styles.tableCell, { width: 130, flex: undefined, fontFamily: 'Helvetica-Bold', fontSize: 7.5 }]}>{reg}</Text>
-                    <Text style={styles.tableCell}>{desc}</Text>
-                  </View>
-                )
-              })}
-            </View>
+            ) : (
+              <View>
+                {complianceBullets.slice(0, 8).map((b, i) => (
+                  <Bullet key={i} text={b} />
+                ))}
+              </View>
+            )
           ) : (
             /* No compliance data — show details prose if present, otherwise note */
             complianceSection?.details ? (

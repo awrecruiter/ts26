@@ -59,10 +59,27 @@ export async function GET(
       })
     }
 
+    // Resolve preparer identity — without this the PDF renders the literal
+    // string "[Your Company Name]" in every prime-name slot. Prefer the
+    // user's organization (if set), then their display name. Falls back to
+    // the placeholder default in SOWPDF only when nothing is available.
+    const sessionUser = session.user as { organization?: string; name?: string; email?: string }
+    const preparerCompany =
+      sessionUser.organization ||
+      sessionUser.name ||
+      sessionUser.email?.split('@')[0] ||
+      undefined
+
     // Render PDF from structured content
     const content = sow.content as any
+    const element = React.createElement(SOWPDF, {
+      content,
+      sowFileName: sow.fileName ?? undefined,
+      preparerCompany,
+      preparerName: sessionUser.name ?? undefined,
+      status: sow.status,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const element = React.createElement(SOWPDF, { content, sowFileName: sow.fileName ?? undefined }) as any
+    }) as any
     const pdfBuffer = await renderToBuffer(element)
 
     const solNum = sow.opportunity?.solicitationNumber || id

@@ -197,8 +197,40 @@ export default function SOWPanel({
 
   const handleSectionContentChange = (index: number, value: string) => {
     const updated = [...sections]
-    updated[index] = { ...updated[index], content: value }
+    updated[index] = { ...updated[index], content: value, details: value }
     setSections(updated)
+  }
+
+  const handleBulletChange = (sectionIdx: number, bulletIdx: number, value: string) => {
+    const updated = [...sections]
+    const bullets = [...(updated[sectionIdx].bullets || [])]
+    bullets[bulletIdx] = value
+    updated[sectionIdx] = { ...updated[sectionIdx], bullets }
+    setSections(updated)
+  }
+
+  const handleAddBullet = (sectionIdx: number) => {
+    const updated = [...sections]
+    const bullets = [...(updated[sectionIdx].bullets || []), '']
+    updated[sectionIdx] = { ...updated[sectionIdx], bullets }
+    setSections(updated)
+  }
+
+  const handleRemoveBullet = (sectionIdx: number, bulletIdx: number) => {
+    const updated = [...sections]
+    const bullets = (updated[sectionIdx].bullets || []).filter((_, i) => i !== bulletIdx)
+    updated[sectionIdx] = { ...updated[sectionIdx], bullets }
+    setSections(updated)
+    handleBlurSave(updated)
+  }
+
+  // True when section.details is just bullets-joined-as-text (older rule-based
+  // builders set details to "- bullet1\n- bullet2…" which would render as a
+  // duplicate of the bullet list above).
+  const isDetailsJustBullets = (section: SOWSection): boolean => {
+    if (!section.details || !section.bullets || section.bullets.length === 0) return false
+    const joined = section.bullets.map((b) => `- ${b}`).join('\n').trim()
+    return section.details.trim() === joined
   }
 
   const handleAddSection = () => {
@@ -375,29 +407,63 @@ export default function SOWPanel({
                     <div className="border-b border-stone-100 mb-4" />
 
                     {section.bullets && section.bullets.length > 0 && (
-                      <ul className="mb-3 space-y-1">
+                      <ul className="mb-3 space-y-1.5">
                         {section.bullets.map((bullet, bi) => (
-                          <li key={bi} className="flex items-start gap-2 text-xs text-stone-500">
-                            <span className="mt-1 h-1 w-1 rounded-full bg-stone-300 flex-shrink-0" />
-                            <span>{bullet}</span>
+                          <li key={bi} className="flex items-start gap-2 group">
+                            <span className="mt-2 h-1 w-1 rounded-full bg-stone-400 flex-shrink-0" />
+                            <input
+                              type="text"
+                              value={bullet}
+                              onChange={(e) => handleBulletChange(idx, bi, e.target.value)}
+                              onBlur={() => handleBlurSave(sections)}
+                              placeholder="Bullet point…"
+                              className="flex-1 text-sm text-stone-700 bg-transparent border-none outline-none focus:ring-1 focus:ring-stone-200 rounded px-1 -mx-1"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveBullet(idx, bi)}
+                              className="text-stone-200 hover:text-stone-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                              title="Remove bullet"
+                            >
+                              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
                           </li>
                         ))}
+                        <li>
+                          <button
+                            type="button"
+                            onClick={() => handleAddBullet(idx)}
+                            className="ml-3 text-xs text-stone-400 hover:text-stone-600 flex items-center gap-1 transition-colors"
+                          >
+                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                            Add bullet
+                          </button>
+                        </li>
                       </ul>
                     )}
 
-                    <textarea
-                      ref={(el) => { if (el) autoResize(el) }}
-                      value={section.details || section.content}
-                      onChange={(e) => {
-                        handleSectionContentChange(idx, e.target.value)
-                        autoResize(e.target)
-                      }}
-                      onBlur={() => handleBlurSave(sections)}
-                      onInput={(e) => autoResize(e.currentTarget)}
-                      placeholder="Section body text…"
-                      rows={3}
-                      className="w-full text-sm text-stone-700 leading-relaxed bg-transparent border-none outline-none resize-none focus:ring-1 focus:ring-stone-200 rounded px-1 -mx-1"
-                    />
+                    {/* Details prose — only when section has detail content distinct from bullets.
+                        Without this guard, sections whose details were "bullets-joined-as-text"
+                        rendered the same content twice (bullet list above + textarea below). */}
+                    {(!section.bullets || section.bullets.length === 0 || !isDetailsJustBullets(section)) && (
+                      <textarea
+                        ref={(el) => { if (el) autoResize(el) }}
+                        value={isDetailsJustBullets(section) ? '' : (section.details || section.content || '')}
+                        onChange={(e) => {
+                          handleSectionContentChange(idx, e.target.value)
+                          autoResize(e.target)
+                        }}
+                        onBlur={() => handleBlurSave(sections)}
+                        onInput={(e) => autoResize(e.currentTarget)}
+                        placeholder={section.bullets && section.bullets.length > 0 ? 'Additional notes (optional)…' : 'Section body text…'}
+                        rows={2}
+                        className="w-full text-sm text-stone-700 leading-relaxed bg-transparent border-none outline-none resize-none focus:ring-1 focus:ring-stone-200 rounded px-1 -mx-1"
+                      />
+                    )}
                   </div>
                 ))}
               </div>

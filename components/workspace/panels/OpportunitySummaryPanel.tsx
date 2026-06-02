@@ -463,7 +463,9 @@ export default function OpportunitySummaryPanel({
                   return true
                 })
                 return visible.length > 0 ? (
-                  <div className="space-y-2">
+                  /* Cap visible height at ~5 rows so long attachment lists
+                     don't push the rest of the summary panel off-screen. */
+                  <div className="max-h-[26rem] overflow-y-auto pr-1 space-y-2 -mr-1">
                     {visible.map((att) => (
                       <AttachmentRow
                         key={att.id}
