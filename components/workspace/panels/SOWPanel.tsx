@@ -7,7 +7,10 @@ interface SOWSection {
   title: string
   content: string
   summary?: string
+  /** Narrative paragraph synthesizing the section. Renders above the bullets. */
+  overview?: string
   bullets?: string[]
+  /** Legacy prose field; superseded by `overview`. */
   details?: string
 }
 
@@ -122,8 +125,10 @@ export default function SOWPanel({
 
   const convertStructuredSections = (rawSections: SOWSection[]): SOWSection[] => {
     return rawSections.map((s) => {
+      // Prefer the new `overview` narrative field over the legacy `details`.
+      const overview = s.overview || s.details || ''
       if (s.content && typeof s.content === 'string') {
-        return { title: s.title, content: s.content, summary: s.summary, bullets: s.bullets, details: s.details }
+        return { title: s.title, content: s.content, summary: s.summary, overview, bullets: s.bullets, details: s.details }
       }
       const parts: string[] = []
       if (s.summary) parts.push(s.summary)
@@ -131,14 +136,15 @@ export default function SOWPanel({
         parts.push('')
         parts.push(...s.bullets.map((b: string) => `- ${b}`))
       }
-      if (s.details) {
+      if (overview) {
         parts.push('')
-        parts.push(s.details)
+        parts.push(overview)
       }
       return {
         title: s.title,
-        content: parts.join('\n').trim() || s.details || s.summary || '',
+        content: parts.join('\n').trim() || overview || s.summary || '',
         summary: s.summary,
+        overview,
         bullets: s.bullets,
         details: s.details,
       }
@@ -198,6 +204,12 @@ export default function SOWPanel({
   const handleSectionContentChange = (index: number, value: string) => {
     const updated = [...sections]
     updated[index] = { ...updated[index], content: value, details: value }
+    setSections(updated)
+  }
+
+  const handleOverviewChange = (index: number, value: string) => {
+    const updated = [...sections]
+    updated[index] = { ...updated[index], overview: value }
     setSections(updated)
   }
 
@@ -417,6 +429,23 @@ export default function SOWPanel({
 
                     <div className="border-b border-stone-100 mb-4" />
 
+                    {/* Narrative overview — renders ABOVE bullets. This is the
+                        synthesis paragraph the AI is asked to write: what this
+                        section means for the sub, the lay of the land. */}
+                    <textarea
+                      ref={(el) => { if (el) autoResize(el) }}
+                      value={section.overview || ''}
+                      onChange={(e) => {
+                        handleOverviewChange(idx, e.target.value)
+                        autoResize(e.target)
+                      }}
+                      onBlur={() => handleBlurSave(sections)}
+                      onInput={(e) => autoResize(e.currentTarget)}
+                      placeholder="Narrative overview — 2-4 sentences synthesizing what this section means for the sub…"
+                      rows={2}
+                      className="w-full text-sm text-stone-700 leading-relaxed bg-transparent border-none outline-none resize-none focus:ring-1 focus:ring-stone-200 rounded px-1 -mx-1 mb-3"
+                    />
+
                     {section.bullets && section.bullets.length > 0 && (
                       <ul className="mb-3 space-y-1.5">
                         {section.bullets.map((bullet, bi) => (
@@ -457,24 +486,12 @@ export default function SOWPanel({
                       </ul>
                     )}
 
-                    {/* Details prose — only when section has detail content distinct from bullets.
-                        Without this guard, sections whose details were "bullets-joined-as-text"
-                        rendered the same content twice (bullet list above + textarea below). */}
-                    {(!section.bullets || section.bullets.length === 0 || !isDetailsJustBullets(section)) && (
-                      <textarea
-                        ref={(el) => { if (el) autoResize(el) }}
-                        value={isDetailsJustBullets(section) ? '' : (section.details || section.content || '')}
-                        onChange={(e) => {
-                          handleSectionContentChange(idx, e.target.value)
-                          autoResize(e.target)
-                        }}
-                        onBlur={() => handleBlurSave(sections)}
-                        onInput={(e) => autoResize(e.currentTarget)}
-                        placeholder={section.bullets && section.bullets.length > 0 ? 'Additional notes (optional)…' : 'Section body text…'}
-                        rows={2}
-                        className="w-full text-sm text-stone-700 leading-relaxed bg-transparent border-none outline-none resize-none focus:ring-1 focus:ring-stone-200 rounded px-1 -mx-1"
-                      />
-                    )}
+                    {/* The legacy "details" textarea was removed when the section gained
+                        an editable `overview` narrative at the top. Showing both
+                        produced duplicate-content sections (overview + details often
+                        contained the same prose) — exactly the "two blocks" problem
+                        the user flagged. The single overview field is now the
+                        canonical prose; bullets are the canonical facts. */}
                   </div>
                   )
                 })}

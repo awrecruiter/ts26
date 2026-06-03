@@ -476,14 +476,14 @@ function buildResponseRequirementsSection(sectionNumber: number, quoteDeadline: 
   return {
     title: `${sectionNumber}.0 WHAT TO SEND BACK`,
     summary: `What ${prime} needs from you, and by when.`,
+    overview: `Email everything below to ${prime} by ${quoteDeadline}. ${prime} uses your capability statement to confirm fit before working your quote into the federal bid — include past performance on similar work and any certifications relevant to this scope. Quotes returned after the deadline may not make it into the prime's submission.`,
     bullets: [
-      `Capability Statement — 1–2 page summary of relevant past performance, core competencies, certifications, key personnel`,
+      `Capability statement — 1–2 pages, past performance + competencies + certifications + key personnel`,
       `Firm fixed-price quote — all-inclusive (materials, labor, shipping, taxes, fees)`,
       `Lead time and delivery schedule from receipt of order`,
-      `Any exceptions, assumptions, or clarifying questions about the requirement`,
+      `Any exceptions, assumptions, or clarifying questions`,
       `Your point of contact (name, title, email, direct phone)`,
     ],
-    details: `Email everything above to ${prime} by ${quoteDeadline}. We use your capability statement to confirm fit before we work your quote into our bid — include past performance on similar work and any certifications relevant to this scope.`,
   }
 }
 

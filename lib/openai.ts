@@ -14,8 +14,14 @@ function getOpenAI(): OpenAI {
 export interface SOWSection {
   title: string
   summary: string
+  /** Narrative paragraph (2–4 sentences) that synthesizes what this section
+   *  means for the sub. Renders ABOVE bullets in the PDF and editor. */
+  overview?: string
   bullets: string[]
-  details: string
+  /** Legacy field kept for back-compat with older stored SOWs. New AI output
+   *  uses `overview` instead. The renderers fall back to details when
+   *  overview is missing. */
+  details?: string
 }
 
 interface SOWGenerationInput {
@@ -107,60 +113,61 @@ export async function generateSOWSections(input: SOWGenerationInput): Promise<SO
     .filter(Boolean)
     .join('\n')
 
-  // Condense each parsed item to ~250 chars so we don't blow the context with
-  // raw multi-paragraph PDF extractions. Without this, parsed content alone
-  // can be 5,000+ chars per category, crowding out the actual instructions.
-  const trim = (s: string, max = 250) => {
+  // Give the AI enough source material to synthesize from. Previously trimmed
+  // to 250 chars × 5 items per category — too thin to write a narrative
+  // about. Now: 400 chars × 8 items, so the AI has ~13K chars of parsed
+  // content to ground itself in. Plenty of room in GPT-4o's context.
+  const trim = (s: string, max = 400) => {
     const cleaned = s.replace(/\s+/g, ' ').trim()
     return cleaned.length > max ? cleaned.slice(0, max) + '…' : cleaned
   }
   const parsedBlock = hasParsed
-    ? `\n\nPARSED SOLICITATION CONTENT (excerpts from attachments):\n` +
-      (parsedScope?.length ? `Scope:\n${parsedScope.slice(0, 5).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
-      (parsedDeliverables?.length ? `Deliverables:\n${parsedDeliverables.slice(0, 5).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
-      (parsedCompliance?.length ? `Compliance:\n${parsedCompliance.slice(0, 5).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
-      (parsedPeriodOfPerformance?.length ? `Period of Performance:\n${parsedPeriodOfPerformance.slice(0, 3).map(s => `- ${trim(s)}`).join('\n')}\n` : '')
+    ? `\n\nPARSED SOLICITATION CONTENT (excerpts from attachments — use to synthesize a narrative):\n` +
+      (parsedScope?.length ? `Scope excerpts:\n${parsedScope.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (parsedDeliverables?.length ? `Deliverable excerpts:\n${parsedDeliverables.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (parsedCompliance?.length ? `Compliance excerpts:\n${parsedCompliance.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (parsedPeriodOfPerformance?.length ? `Period of performance excerpts:\n${parsedPeriodOfPerformance.slice(0, 4).map(s => `- ${trim(s)}`).join('\n')}\n` : '')
     : description
     ? `\n\nSOLICITATION DESCRIPTION:\n${description.slice(0, 3000)}`
     : ''
 
-  const prompt = `You are writing a Statement of Work (SOW) FROM a prime contractor TO a potential subcontractor. The subcontractor will scan this in under 90 seconds to decide: "Can I supply this, and is it worth quoting?" Then they will send a quote back to the prime by the quote-to-prime deadline below.
+  const prompt = `You are writing a Statement of Work (SOW) FROM a prime contractor TO a potential subcontractor. The goal: both parties walk away with confidence — the sub understands what they'd be supplying and whether they qualify; the prime gets a useful quote back.
 
-EVIDENCE RULE — non-negotiable, this is the most important rule:
-Every specific FACT you write (a standard number, a clause number, a clearance level, a certification, a date, a dollar amount, a quantity, a technical spec, a system name, a software language, a hardware part, a security requirement, a country-of-origin rule) MUST appear in OPPORTUNITY DETAILS or PARSED SOLICITATION CONTENT below. If a fact is not in the source, you have exactly two options:
-  (a) Omit it entirely.
-  (b) Write the literal placeholder: [NEEDS DETAIL: <short description of what would belong here>]
-A placeholder is ALWAYS better than an invented plausible fact. The user will see "[NEEDS DETAIL: ...]" and know to fill it in or parse more attachments. They CANNOT detect a hallucinated fact and will send a wrong SOW to a real subcontractor.
+Your job is to SYNTHESIZE the parsed solicitation excerpts below into a coherent narrative the sub can act on. Read the excerpts, infer the program's purpose, who the end customer is, what kind of work is needed, and what would qualify a sub for it. Then write each section so it tells part of that story.
 
-FORBIDDEN INVENTED CONTENT — never write these unless they appear verbatim in the source:
-- MIL-STD-498 (deprecated 1998 standard, almost never in real modern solicitations)
-- Specific MIL-STD / MIL-SPEC numbers
-- ISO 9001 or other ISO numbers (only if the source explicitly cites them)
-- Buy American Act (only for manufactured-goods contracts, not for software/services)
-- Trade Agreements Act / TAA (only if source cites it)
-- Specific CMMC levels (CMMC L1/L2/L3 — only the level explicitly stated in source)
-- TS/SCI/SECRET/CONFIDENTIAL clearance levels (only the level stated in source)
-- Specific FAR or DFARS clause numbers
-- HIPAA, FedRAMP, FISMA, NIST 800-171, NIST 800-53 (only if cited in source)
+THE NARRATIVE STANDARD:
+A well-written section has TWO parts:
+1. A short "overview" paragraph (2–4 plain-English sentences) that synthesizes WHAT this section means for the sub — context, why this matters, the lay of the land
+2. A short list of "bullets" (2–4 items, ≤100 chars each) with the concrete, specific facts pulled from the source
 
-FORBIDDEN GENERIC FILLER — never use these phrases even if they "sound right":
-- "All applicable FAR clauses"
-- "Refer to the solicitation"
-- "Per the solicitation requirements"
-- "All work products specified in the solicitation"
-- "Compliance with all terms and conditions"
-- "Standard industry practices"
-- "Industry best practices"
-- "As required by the government"
-If you find yourself writing a bullet generic enough to apply to ANY federal contract, replace it with a [NEEDS DETAIL: ...] placeholder.
+The overview is the synthesis. The bullets are the receipts.
 
-CRITICAL AUDIENCE RULES:
-- The audience is a SUBCONTRACTOR quoting parts/services to the PRIME. They are NOT bidding on the federal contract.
-- DO NOT mention SAM.gov registration, the federal response deadline, SF-1449 forms, or any procedural step the subcontractor takes with the government. The prime handles all federal procedural steps.
-- DO NOT instruct the subcontractor to "submit a quote to the agency" — they submit to the PRIME.
-- The ONE deadline in this document is the quote-to-prime deadline: ${quoteDeadline}. Treat this as THE deadline.
+EXAMPLE — for a section about scope:
+✅ GOOD overview: "NGA is contracting for ongoing sustainment of FS3i — a software platform that supports geospatial intelligence operations. The prime needs subs who can handle modernization work in a classified DoD environment, including cloud migration support and software updates against existing baselines."
+❌ BAD overview: "Section 2.0 covers the scope of work."
+❌ BAD overview: "" (empty)
+✅ GOOD bullets: ["Modernize and sustain WebDVOF cloud architecture", "Develop against existing NGA software baselines", "Support transition from on-prem to AWS GovCloud"]
+❌ BAD bullets: ["the work scope on contract.", "work completed.", "subcontractor effort."]
 
-AGENCY TONE (voice/formality only — does NOT authorize inventing facts):
+GROUNDING (still important — don't invent):
+- Synthesize from what's in the parsed excerpts. Infer reasonable connections (if excerpts mention "AWS GovCloud" + "NGA" + "FS3i", you can write "cloud migration in a classified NGA environment").
+- Do NOT invent specific standards, clause numbers, dollar amounts, or clearance levels that aren't in the excerpts.
+- If you can see a pattern but lack a specific fact (e.g. excerpts mention security but no clearance level), write the pattern without the missing fact: "Work occurs in a classified environment — confirm clearance requirements with the prime."
+- When source is genuinely too thin for a real bullet, use one bullet: "[NEEDS DETAIL: <what's missing>]" rather than a fabricated specific.
+
+WHAT TO AVOID:
+- Mid-sentence fragments yanked from PDFs ("the work scope on contract.")
+- Glossary-list dumps ("SRB Service Registry Board SPID Security Plan...")
+- Restatements of obvious facts ("The Government typically must manage...")
+- Generic filler ("All applicable FAR clauses", "Per the solicitation")
+- Invented standards (MIL-STD-498, ISO 9001 for software, Buy American for services)
+
+AUDIENCE:
+- The sub is quoting parts/services TO THE PRIME, not bidding on the federal contract.
+- Don't mention SAM.gov registration, federal response deadlines, SF-1449 forms, or anything procedural between the prime and the government.
+- The ONE deadline that matters: quote-to-prime deadline ${quoteDeadline}.
+
+AGENCY TONE (voice only, doesn't authorize inventing facts):
 ${agencyToneGuidance}
 
 OPPORTUNITY DETAILS:
@@ -169,32 +176,34 @@ ${contextBlock}${parsedBlock}
 DELIVERABLES GUIDANCE:
 ${deliverablesGuidance}
 
-DENSITY RULES — the SOW must be scannable in 30 seconds:
-- Each bullet ≤ 100 characters (~15 words). Telegram-style: short, concrete, action-oriented. If a fact takes more than 15 words, split it or drop the modifier.
-- 2–4 bullets per section, 3 typical. NEVER 5. Empty white space is desirable — a sub reading on phone needs breathing room.
-- Quality over quantity: one specific fact beats three generic ones.
-- "details" prose: leave EMPTY ("") for most sections. Only fill when there's a critical caveat or numeric/contextual detail that genuinely doesn't fit a bullet. Default to empty. Most sections do not need a details paragraph.
+OUTPUT FORMAT — exactly this JSON shape:
+{
+  "sections": [
+    {
+      "title": "1.0 Program Overview",
+      "summary": "one-line headline, ≤80 chars",
+      "overview": "narrative paragraph, 2–4 sentences, synthesizing what this section means for the sub",
+      "bullets": ["concrete fact 1", "concrete fact 2", "concrete fact 3"]
+    },
+    ... 5 more sections
+  ]
+}
 
-PER-SECTION EVIDENCE BUDGET:
-- 3+ concrete facts → 3–4 short bullets, each tied to one fact
-- 1–2 facts → those bullets only (no [NEEDS DETAIL] padding)
-- 0 facts → one bullet: "[NEEDS DETAIL: <what belongs here>]"
+Generate exactly 6 sections in this order:
 
-Output: exactly 6 SOW sections as JSON. Each section has:
-- "title": short heading
-- "summary": one plain sentence (max 80 chars). Empty section → "Needs detail from the solicitation."
-- "bullets": 1–4 short bullets per rules above
-- "details": "" (empty string) by default. Only non-empty when a critical caveat genuinely doesn't fit a bullet — never restating bullets as prose.
+1. **1.0 Program Overview** — Narrative: what is this contract, who is the customer, what's their mission, why does it exist. Bullets: program/system name, end customer, contract type if known, base period if known, scale indicators (multi-year, AWS migration, etc.).
 
-Sections:
-1. 1.0 What We Need — the product or service the prime needs the sub to supply. Concrete: part / spec / quantity / function / end-use. This is the "can I supply this?" section.
-2. 2.0 Scope of Work — specific tasks or supply items the sub performs. Specs, quantities, performance standards, acceptance criteria from the source.
-3. 3.0 Place of Performance / Delivery — where the sub ships to (FOB destination) or performs (site/remote). Mention travel only if the source states it.
-4. 4.0 Quote Submission — when and how the sub returns their quote TO THE PRIME. Anchor on the quote-to-prime deadline (${quoteDeadline}). Include firm fixed price, lead time, exceptions, point of contact. DO NOT mention the federal response deadline. This section can use the standard request bullets — it's the only section where invariant content is OK.
-5. 5.0 Deliverables — concrete outputs the sub provides. Each bullet is one specific item from the source. Generic phrases forbidden — use [NEEDS DETAIL: ...] instead.
-6. 6.0 Compliance Pass-Through — specific technical/regulatory items from the source that flow down to the sub: technical standards, certifications, security/clearance, country-of-origin rules, named FAR/DFARS clauses. If the source has none, output a single bullet: "[NEEDS DETAIL: compliance pass-through items not extracted — parse the solicitation attachments or add manually]".
+2. **2.0 What We Need From You** — Narrative: what the prime needs the sub to supply, in plain language. Bullets: concrete supply items / services / specs the sub would provide.
 
-Return ONLY a valid JSON array of 6 objects. No markdown, no explanation.`
+3. **3.0 Place of Performance & Travel** — Narrative: where work happens (on-site/remote/hybrid), security context, any travel expectations. Bullets: specific locations from source, on-site requirements, travel cadence if stated.
+
+4. **4.0 Critical Requirements** — Narrative: the gate-keeper requirements that determine if a sub even qualifies. Bullets: security clearance level (if stated), required certifications (CMMC level, ISO, etc., only if in source), required past performance domain, key technical standards.
+
+5. **5.0 Deliverables** — Narrative: what the sub produces and how it integrates with the prime's deliverables to the government. Bullets: specific deliverable items with format/frequency if stated.
+
+6. **6.0 Quote Submission** — Narrative: what the prime needs back from the sub, by when, and why. Bullets: standard quote-content checklist (firm fixed price, lead time, exceptions, capability statement, POC).
+
+Return ONLY valid JSON in the shape above. No markdown, no explanation.`
 
   const response = await getOpenAI().chat.completions.create({
     model: 'gpt-4o',
@@ -208,15 +217,40 @@ Return ONLY a valid JSON array of 6 objects. No markdown, no explanation.`
 
   try {
     const parsed = JSON.parse(raw)
-    // Handle both { sections: [...] } and bare [...]
-    const sections: SOWSection[] = Array.isArray(parsed) ? parsed : (parsed.sections || [])
-
-    if (!sections.length) {
-      throw new Error('OpenAI returned empty sections')
+    // Accept three shapes the model has been observed to produce:
+    //   1. { sections: [s1, s2, ...] }  (the requested shape)
+    //   2. [s1, s2, ...]                (bare array)
+    //   3. { title, summary, bullets } (a single section — model collapses when
+    //      it thinks there's not enough source. We treat this as an AI failure
+    //      since we asked for 6 sections.)
+    let sections: SOWSection[]
+    if (Array.isArray(parsed)) {
+      sections = parsed
+    } else if (Array.isArray(parsed.sections)) {
+      sections = parsed.sections
+    } else if (parsed.title && Array.isArray(parsed.bullets)) {
+      // Single-section response — AI gave up. Treat as failure so caller
+      // falls back to rule-based builders, which at least produce 6 sections.
+      throw new Error(`AI collapsed to single section (likely thin-input refusal): ${parsed.title}`)
+    } else {
+      throw new Error(`Unexpected JSON shape: ${raw.slice(0, 150)}`)
     }
 
-    return sections
-  } catch {
+    if (!sections.length) {
+      throw new Error('OpenAI returned empty sections array')
+    }
+
+    // Normalize: ensure each section has overview (prefer new field, fall
+    // back to legacy details). Stored SOWs may go through this path again.
+    return sections.map((s) => ({
+      ...s,
+      overview: s.overview || s.details || '',
+      bullets: Array.isArray(s.bullets) ? s.bullets : [],
+    }))
+  } catch (parseErr) {
+    if (parseErr instanceof Error && parseErr.message.startsWith('AI collapsed')) {
+      throw parseErr
+    }
     throw new Error(`Failed to parse OpenAI SOW response: ${raw.slice(0, 200)}`)
   }
 }

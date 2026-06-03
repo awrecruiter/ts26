@@ -345,8 +345,13 @@ function Bullet({ text }: { text: string }) {
 interface SOWSection {
   title: string
   summary: string
+  /** Narrative paragraph that synthesizes what the section means for the sub.
+   *  Renders above bullets when present. */
+  overview?: string
   bullets: string[]
-  details: string
+  /** Legacy field; older SOWs used this for prose. Renderers fall back to
+   *  details when overview is missing. */
+  details?: string
 }
 
 interface SOWContent {
@@ -403,21 +408,6 @@ export function SOWPDF({
     month: 'long',
     day: 'numeric',
   })
-
-  // Find sections by title keyword — covers both AI-generated and rule-based titles
-  const deliverablesSection = sections.find(s => s.title.toLowerCase().includes('deliverable'))
-  const complianceSection = sections.find(s => s.title.toLowerCase().includes('compliance'))
-  const scopeSection = sections.find(s => s.title.toLowerCase().includes('scope') || s.title.includes('2.0'))
-  const periodSection = sections.find(s => s.title.toLowerCase().includes('period') || s.title.includes('4.0'))
-  const placeSection = sections.find(s => s.title.toLowerCase().includes('place') || s.title.includes('3.0'))
-  const backgroundSection = sections.find(s => s.title.toLowerCase().includes('background') || s.title.includes('1.0'))
-
-  // Safe bullet accessors
-  const periodBullets = (periodSection?.bullets || []).filter(Boolean)
-  const placeBullets = (placeSection?.bullets || []).filter(Boolean)
-  const deliverablesBullets = (deliverablesSection?.bullets || []).filter(Boolean)
-  const scopeBullets = (scopeSection?.bullets || []).filter(Boolean)
-  const complianceBullets = (complianceSection?.bullets || []).filter(Boolean)
 
   // Agency decomposed
   const agencyParts = opportunity.agency ? opportunity.agency.split('.').filter(Boolean) : []
@@ -497,134 +487,33 @@ export function SOWPDF({
           </View>
         </View>
 
-        {/* Section 1: Scope of Work */}
-        <View style={styles.section}>
-          <SectionHeader num={1} title="SCOPE OF WORK" />
-          <View style={styles.sectionDivider} />
-          {(scopeBullets.length > 0 ? scopeBullets : (backgroundSection?.bullets || [])).slice(0, 5).map((b, i) => (
-            <Bullet key={i} text={b} />
-          ))}
-          {backgroundSection?.summary && scopeBullets.length === 0 && (
-            <Text style={styles.bodyText}>
-              Background: {backgroundSection.summary}
-            </Text>
-          )}
-        </View>
-
-        {/* Section 2: Place of Performance */}
-        <View style={styles.section} wrap={false}>
-          <SectionHeader num={2} title="PLACE OF PERFORMANCE" />
-          <View style={styles.sectionDivider} />
-          <View style={styles.infoLine}>
-            <Text style={styles.infoLineLabel}>Location</Text>
-            <Text style={styles.infoLineValue}>{opportunity.placeOfPerformance}</Text>
-          </View>
-          {/* Render structured place-of-performance bullets from the generated section */}
-          {placeBullets.slice(0, 4).map((b, i) => (
-            <Bullet key={i} text={b} />
-          ))}
-          {/* If no place bullets, show the details prose */}
-          {placeBullets.length === 0 && placeSection?.details && (
-            <Text style={styles.bodyText}>{placeSection.details}</Text>
-          )}
-        </View>
-
-        {/* Section 3: Quote Submission — a single dated commitment line, then a
-            content checklist. The previous design paired every checklist row
-            with "By quote deadline" in the Due column, which was visual noise
-            (the deadline was already stated above). */}
-        <View style={styles.section} wrap={false}>
-          <SectionHeader num={3} title="QUOTE SUBMISSION" />
-          <View style={styles.sectionDivider} />
-          <View style={styles.infoLine}>
-            <Text style={styles.infoLineLabel}>Quote due to {preparerCompany} by</Text>
-            <Text style={[styles.infoLineValue, { fontFamily: 'Helvetica-Bold' }]}>
-              {opportunity.quoteDeadline || 'See email'}
-            </Text>
-          </View>
-          {/* Content checklist — what the prime needs IN the quote. Filter out
-              bullets that just restate the deadline (already shown above). */}
-          {(() => {
-            const checklist = periodBullets.filter(
-              (b) => !/quote due|quote returned|submit quote by/i.test(b)
-            )
-            if (checklist.length === 0 && periodSection?.details) {
-              return <Text style={[styles.bodyText, { marginTop: 6 }]}>{periodSection.details}</Text>
-            }
-            return (
-              <View style={{ marginTop: 4 }}>
-                <Text style={[styles.bodyText, { marginBottom: 4, color: C.muted, fontSize: 7.5, letterSpacing: 0.4 }]}>
-                  INCLUDE IN YOUR QUOTE
+        {/* Body sections — rendered dynamically from content.sections so we
+            adapt to whatever section structure the generator emits. Each
+            section shows: section number + title, optional overview narrative
+            paragraph (the synthesis), then the bullets (the receipts). */}
+        {sections.map((section, idx) => {
+          const overview = section.overview || section.details || ''
+          const bullets = (section.bullets || []).filter(Boolean)
+          // Strip "1.0 " / "1. " prefix from titles since we render the number separately
+          const cleanTitle = section.title.replace(/^\d+(\.\d+)?[.\s]*/, '').toUpperCase()
+          return (
+            <View key={idx} style={styles.section} wrap={false}>
+              <SectionHeader num={idx + 1} title={cleanTitle} />
+              <View style={styles.sectionDivider} />
+              {overview && (
+                <Text style={[styles.bodyText, { marginBottom: 6 }]}>{overview}</Text>
+              )}
+              {bullets.slice(0, 6).map((b, i) => (
+                <Bullet key={i} text={b} />
+              ))}
+              {!overview && bullets.length === 0 && (
+                <Text style={[styles.bodyText, { color: C.muted, fontStyle: 'italic' }]}>
+                  Needs detail from the solicitation.
                 </Text>
-                {checklist.slice(0, 6).map((b, i) => (
-                  <Bullet key={i} text={b} />
-                ))}
-              </View>
-            )
-          })()}
-        </View>
-
-        {/* Section 4: Deliverables — bullet list. The previous design paired
-            every row with "Per solicitation" in a Due column, which carried
-            no information (no deliverable had a real date). */}
-        <View style={styles.section} wrap={false}>
-          <SectionHeader num={4} title="DELIVERABLES" />
-          <View style={styles.sectionDivider} />
-          {deliverablesBullets.length > 0 ? (
-            deliverablesBullets.slice(0, 8).map((b, i) => (
-              <Bullet key={i} text={b} />
-            ))
-          ) : (
-            <Bullet text={opportunity.title} />
-          )}
-          {deliverablesBullets.length === 0 && deliverablesSection?.details && (
-            <Text style={[styles.bodyText, { marginTop: 6 }]}>{deliverablesSection.details}</Text>
-          )}
-        </View>
-
-        {/* Section 5: Compliance Pass-Through — technical/regulatory items the sub must meet */}
-        <View style={styles.section} wrap={false}>
-          <SectionHeader num={5} title="COMPLIANCE PASS-THROUGH" />
-          <View style={styles.sectionDivider} />
-          {complianceBullets.length > 0 ? (
-            /* Render as two-column ONLY when every bullet has a "Label: detail"
-                split. Otherwise fall back to a bullet list — previously the
-                template duplicated the full bullet text into both columns when
-                no colon was present, producing identical left/right cells. */
-            complianceBullets.every((b) => b.includes(':')) ? (
-              <View style={styles.table}>
-                <View style={styles.tableHeaderRow}>
-                  <Text style={[styles.tableCellHeader, { width: 130, flex: undefined }]}>Requirement</Text>
-                  <Text style={styles.tableCellHeader}>Details</Text>
-                </View>
-                {complianceBullets.slice(0, 6).map((b, i) => {
-                  const parts = b.split(':')
-                  const reg = parts[0].trim()
-                  const desc = parts.slice(1).join(':').trim()
-                  return (
-                    <View key={i} style={i % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
-                      <Text style={[styles.tableCell, { width: 130, flex: undefined, fontFamily: 'Helvetica-Bold', fontSize: 7.5 }]}>{reg}</Text>
-                      <Text style={styles.tableCell}>{desc}</Text>
-                    </View>
-                  )
-                })}
-              </View>
-            ) : (
-              <View>
-                {complianceBullets.slice(0, 8).map((b, i) => (
-                  <Bullet key={i} text={b} />
-                ))}
-              </View>
-            )
-          ) : (
-            /* No compliance data — show details prose if present, otherwise note */
-            complianceSection?.details ? (
-              <Text style={styles.bodyText}>{complianceSection.details}</Text>
-            ) : (
-              <Text style={styles.bodyText}>Refer to solicitation for applicable FAR clauses and compliance requirements.</Text>
-            )
-          )}
-        </View>
+              )}
+            </View>
+          )
+        })}
 
         {/* Prepared By footer */}
         <View style={styles.footerBox}>
