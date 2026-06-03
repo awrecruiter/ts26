@@ -12,6 +12,10 @@ declare module "next-auth" {
     user: {
       id: string
       role: string
+      /** Prime contractor identity surfaced in SOWs and emails. */
+      organization?: string | null
+      title?: string | null
+      phone?: string | null
     } & DefaultSession["user"]
     /** Google OAuth access token — available when user signed in with Google */
     googleAccessToken?: string
@@ -20,6 +24,9 @@ declare module "next-auth" {
 
   interface User {
     role: string
+    organization?: string | null
+    title?: string | null
+    phone?: string | null
   }
 }
 
@@ -60,6 +67,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           name: user.name,
           role: user.role,
+          organization: user.organization,
+          title: user.title,
+          phone: user.phone,
         }
       }
     }),
@@ -89,15 +99,33 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
 
   callbacks: {
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger }) {
       if (user) {
         token.id = user.id
         token.role = user.role
+        token.organization = user.organization ?? null
+        token.title = user.title ?? null
+        token.phone = user.phone ?? null
       }
       // Capture Google OAuth tokens on first sign-in
       if (account?.provider === 'google') {
         token.googleAccessToken = account.access_token
         token.googleRefreshToken = account.refresh_token
+      }
+      // Re-fetch identity fields when the user updates their profile —
+      // /api/auth/session?update=1 triggers this. Without it, edits to
+      // organization/title don't reach the JWT until the user re-signs in.
+      if (trigger === 'update' && token.id) {
+        const fresh = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { name: true, organization: true, title: true, phone: true },
+        })
+        if (fresh) {
+          token.name = fresh.name
+          token.organization = fresh.organization
+          token.title = fresh.title
+          token.phone = fresh.phone
+        }
       }
       return token
     },
@@ -105,6 +133,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (session.user) {
         session.user.id = token.id as string
         session.user.role = token.role as string
+        session.user.organization = (token.organization as string | null) ?? null
+        session.user.title = (token.title as string | null) ?? null
+        session.user.phone = (token.phone as string | null) ?? null
       }
       // Expose tokens to server-side code via session
       if (token.googleAccessToken) {

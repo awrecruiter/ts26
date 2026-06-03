@@ -81,6 +81,33 @@ async function generateSOWContent(
     structured.compliance.length > 0
   ))
 
+  // Backfill keyFacts on cached parsedAttachments. Older parses were stored
+  // before keyFacts existed in the schema, so we recompute from the cached
+  // fullText. Without this, AI generations for previously-parsed opportunities
+  // would miss the high-signal extractions (clearance, FAR clauses, locations).
+  if (structured && !structured.keyFacts && parsed?.parsed) {
+    const { extractKeyFacts } = await import('@/lib/attachment-parser')
+    const merged: StructuredContent['keyFacts'] = {
+      clearances: [],
+      certifications: [],
+      farClauses: [],
+      locations: [],
+      contractTypes: [],
+    }
+    for (const att of parsed.parsed) {
+      if (!att.fullText) continue
+      const facts = extractKeyFacts(att.fullText)
+      for (const key of Object.keys(merged) as Array<keyof typeof merged>) {
+        for (const item of facts[key]) {
+          if (!merged[key].some((existing) => existing.toLowerCase() === item.toLowerCase())) {
+            merged[key].push(item)
+          }
+        }
+      }
+    }
+    structured.keyFacts = merged
+  }
+
   // Extract FAR clause references from description + parsed content
   const farClauses = extractFARClauses(opportunity.description, structured)
 
@@ -118,6 +145,7 @@ async function generateSOWContent(
         parsedDeliverables: structured?.deliverables,
         parsedCompliance: structured?.compliance,
         parsedPeriodOfPerformance: structured?.periodOfPerformance,
+        keyFacts: structured?.keyFacts,
         subcontractorName: subcontractor?.name || null,
         primeCompany: primeCompany || null,
       })
@@ -154,21 +182,19 @@ async function generateSOWContent(
     }
   }
 
-  // Append data-driven sections — only when they'd carry genuine, condensed
-  // value for the sub. Previously these were generated from raw parsed-PDF
-  // text and bloated the SOW from 6 useful sections to 10 noisy ones.
+  // No appended data sections. The AI's Section 6 (Quote Submission) now
+  // carries all the "what to send back" content with full bullet specificity,
+  // so the standalone WHAT TO SEND BACK appendix would just duplicate it.
   //
   // Evaluation, Qualifications, and FAR Quick Reference are PRIME-bid concerns,
   // not sub-quote concerns. A sub does not care how the federal government
-  // will evaluate the prime's proposal. Drop them from the sub-facing SOW.
-  // FAR clauses still flow down to the sub through Compliance Pass-Through.
-  const dataSections = [
-    buildResponseRequirementsSection(aiSections.length + 1, quoteDeadline, primeCompany),
-  ]
+  // scores the prime's proposal.
+  const dataSections: Array<ReturnType<typeof buildResponseRequirementsSection>> = []
   // Silence unused-fn warnings; kept for future internal-use SOW variants.
   void buildEvaluationSection
   void buildQualificationsSection
   void buildFARSection
+  void buildResponseRequirementsSection
   void farClauses
 
   const content = {

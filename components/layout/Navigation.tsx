@@ -245,6 +245,13 @@ export default function Navigation() {
                       <div className="px-4 py-2 text-xs text-stone-500 border-b border-stone-100">
                         {session.user?.email}
                       </div>
+                      <Link
+                        href="/profile"
+                        onClick={() => setOpenDropdown(null)}
+                        className="block w-full text-left px-4 py-2 text-sm text-stone-700 hover:bg-stone-50"
+                      >
+                        Profile &amp; organization
+                      </Link>
                       <button
                         onClick={() => { setOpenDropdown(null); signOut() }}
                         className="block w-full text-left px-4 py-2 text-sm text-stone-700 hover:bg-stone-50"

@@ -37,6 +37,17 @@ interface SOWGenerationInput {
   parsedDeliverables?: string[]
   parsedCompliance?: string[]
   parsedPeriodOfPerformance?: string[]
+  /** Targeted facts extracted by the parser via regex — clearance levels,
+   *  CMMC/FedRAMP/NIST citations, FAR/DFARS clause numbers, locations,
+   *  contract types. These are high-signal and worth surfacing distinctly so
+   *  the AI doesn't need to find them in the raw paragraph excerpts. */
+  keyFacts?: {
+    clearances?: string[]
+    certifications?: string[]
+    farClauses?: string[]
+    locations?: string[]
+    contractTypes?: string[]
+  }
   subcontractorName?: string | null
   primeCompany?: string | null
 }
@@ -59,6 +70,7 @@ export async function generateSOWSections(input: SOWGenerationInput): Promise<SO
     parsedDeliverables,
     parsedCompliance,
     parsedPeriodOfPerformance,
+    keyFacts,
     subcontractorName,
     primeCompany,
   } = input
@@ -121,15 +133,34 @@ export async function generateSOWSections(input: SOWGenerationInput): Promise<SO
     const cleaned = s.replace(/\s+/g, ' ').trim()
     return cleaned.length > max ? cleaned.slice(0, max) + '…' : cleaned
   }
+  // High-signal facts pulled by regex from the full attachment text. Keep
+  // this block FIRST so it leads the model — these are explicit verified
+  // citations (a clearance level appears in the source iff it's listed here).
+  const keyFactsBlock = keyFacts && (
+    (keyFacts.clearances?.length ?? 0) > 0 ||
+    (keyFacts.certifications?.length ?? 0) > 0 ||
+    (keyFacts.farClauses?.length ?? 0) > 0 ||
+    (keyFacts.locations?.length ?? 0) > 0 ||
+    (keyFacts.contractTypes?.length ?? 0) > 0
+  )
+    ? `\n\nVERIFIED FACTS (extracted directly from attachment text — these strings appear in the source verbatim, so cite them with confidence):\n` +
+      (keyFacts.clearances?.length ? `- Security clearances mentioned: ${keyFacts.clearances.join(', ')}\n` : '') +
+      (keyFacts.certifications?.length ? `- Certifications / frameworks mentioned: ${keyFacts.certifications.join(', ')}\n` : '') +
+      (keyFacts.farClauses?.length ? `- FAR/DFARS clauses named: ${keyFacts.farClauses.slice(0, 6).join(', ')}\n` : '') +
+      (keyFacts.locations?.length ? `- Place-of-performance locations: ${keyFacts.locations.join(', ')}\n` : '') +
+      (keyFacts.contractTypes?.length ? `- Contract types mentioned: ${keyFacts.contractTypes.join(', ')}\n` : '')
+    : ''
+
   const parsedBlock = hasParsed
     ? `\n\nPARSED SOLICITATION CONTENT (excerpts from attachments — use to synthesize a narrative):\n` +
       (parsedScope?.length ? `Scope excerpts:\n${parsedScope.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
       (parsedDeliverables?.length ? `Deliverable excerpts:\n${parsedDeliverables.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
       (parsedCompliance?.length ? `Compliance excerpts:\n${parsedCompliance.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
-      (parsedPeriodOfPerformance?.length ? `Period of performance excerpts:\n${parsedPeriodOfPerformance.slice(0, 4).map(s => `- ${trim(s)}`).join('\n')}\n` : '')
+      (parsedPeriodOfPerformance?.length ? `Period of performance excerpts:\n${parsedPeriodOfPerformance.slice(0, 4).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      keyFactsBlock
     : description
-    ? `\n\nSOLICITATION DESCRIPTION:\n${description.slice(0, 3000)}`
-    : ''
+    ? `\n\nSOLICITATION DESCRIPTION:\n${description.slice(0, 3000)}${keyFactsBlock}`
+    : keyFactsBlock
 
   const prompt = `You are writing a Statement of Work (SOW) FROM a prime contractor TO a potential subcontractor. The goal: both parties walk away with confidence — the sub understands what they'd be supplying and whether they qualify; the prime gets a useful quote back.
 
@@ -201,7 +232,13 @@ Generate exactly 6 sections in this order:
 
 5. **5.0 Deliverables** — Narrative: what the sub produces and how it integrates with the prime's deliverables to the government. Bullets: specific deliverable items with format/frequency if stated.
 
-6. **6.0 Quote Submission** — Narrative: what the prime needs back from the sub, by when, and why. Bullets: standard quote-content checklist (firm fixed price, lead time, exceptions, capability statement, POC).
+6. **6.0 Quote Submission** — Narrative: explain WHY the prime needs each item (capability statement → fit assessment before the prime spends time on your quote; firm price + lead time → pricing into the federal bid; exceptions → no surprises). Anchor on the quote-to-prime deadline. Bullets MUST include all five with specificity (these are non-negotiable for the sub's response):
+   - Capability statement (1–2 pages — past performance + competencies + certifications + key personnel)
+   - Firm fixed-price quote (all-inclusive: materials, labor, shipping, taxes, fees)
+   - Lead time / delivery schedule from receipt of order
+   - Any exceptions, assumptions, or clarifying questions
+   - Point of contact (name, title, email, direct phone)
+   No "What to Send Back" appendix follows this section — Quote Submission IS the close. End strong.
 
 Return ONLY valid JSON in the shape above. No markdown, no explanation.`
 

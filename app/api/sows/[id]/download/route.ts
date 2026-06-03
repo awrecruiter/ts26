@@ -63,7 +63,12 @@ export async function GET(
     // string "[Your Company Name]" in every prime-name slot. Prefer the
     // user's organization (if set), then their display name. Falls back to
     // the placeholder default in SOWPDF only when nothing is available.
-    const sessionUser = session.user as { organization?: string; name?: string; email?: string }
+    const sessionUser = session.user as {
+      organization?: string | null
+      name?: string | null
+      email?: string | null
+      title?: string | null
+    }
     const preparerCompany =
       sessionUser.organization ||
       sessionUser.name ||
@@ -76,7 +81,8 @@ export async function GET(
       content,
       sowFileName: sow.fileName ?? undefined,
       preparerCompany,
-      preparerName: sessionUser.name ?? undefined,
+      preparerName: sessionUser.organization ? sessionUser.name ?? undefined : undefined,
+      preparerTitle: sessionUser.title ?? undefined,
       status: sow.status,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     }) as any

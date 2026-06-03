@@ -20,6 +20,12 @@ model User {
   emailVerified DateTime?
   image         String?
   role          UserRole  @default(AGENT)
+  // Prime contractor identity surfaced in generated SOWs (PREPARED BY block,
+  // "Quote due to" label, PDF metadata). Falls back to name when organization
+  // is unset; falls back to email prefix when name is also unset.
+  organization  String?
+  title         String?
+  phone         String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
