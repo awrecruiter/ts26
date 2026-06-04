@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import { format, differenceInDays, addMonths, startOfMonth } from 'date-fns'
 import { complianceGlossary } from '@/lib/data/compliance-glossary'
 import type { GlossaryTerm } from '@/lib/data/compliance-glossary'
-import type { OpportunityBrief } from '@/lib/openai'
+import type { OpportunityBrief, ScopeOverviewArtifact } from '@/lib/openai'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +54,10 @@ interface ScopeOverviewPanelProps {
     profitMarginPercent?: number
   } | null
   brief?: OpportunityBrief | null
+  /** AI-generated scope overview (products/services/documentation/compliance).
+   *  When present, replaces the rule-based extraction for deliverables and
+   *  compliance, and adds Products/Services blocks to the Overview tab. */
+  aiScope?: ScopeOverviewArtifact | null
 }
 
 // ── Glossary matching ─────────────────────────────────────────────────────────
@@ -1406,15 +1410,37 @@ function OverviewTab({
 
 type FilterKey = 'overview' | 'compliance' | 'deliverables' | 'qualifications' | 'evaluation' | 'postAward' | 'lifecycle' | 'fieldGuide'
 
-export default function ScopeOverviewPanel({ opportunity, assessment, brief }: ScopeOverviewPanelProps) {
+export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiScope }: ScopeOverviewPanelProps) {
   const [activeFilter, setActiveFilter] = useState<FilterKey>('overview')
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set())
   const [glossaryQuery, setGlossaryQuery] = useState('')
 
   const structured: StructuredContent | undefined = (opportunity.parsedAttachments as any)?.structured
 
-  const deliverables = useMemo(() => extractDeliverables(structured), [opportunity.id])
-  const compliance = useMemo(() => extractCompliance(structured, opportunity.description || ''), [opportunity.id])
+  // AI scope wins when present; otherwise fall back to rule-based extraction.
+  const deliverables = useMemo(() => {
+    if (aiScope?.documentation && aiScope.documentation.length > 0) {
+      return aiScope.documentation.map((d, i): ScopeItem => ({
+        id: `del-${i}`,
+        text: d.frequency ? `${d.text} (${d.frequency})` : d.text,
+        tags: d.tags || [],
+        critical: !!d.critical,
+      }))
+    }
+    return extractDeliverables(structured)
+  }, [aiScope?.documentation, opportunity.id, structured])
+
+  const compliance = useMemo(() => {
+    if (aiScope?.compliance && aiScope.compliance.length > 0) {
+      return aiScope.compliance.map((c, i): ScopeItem => ({
+        id: `comp-${i}`,
+        text: c.text,
+        tags: c.tags || [],
+        critical: !!c.critical,
+      }))
+    }
+    return extractCompliance(structured, opportunity.description || '')
+  }, [aiScope?.compliance, opportunity.id, structured, opportunity.description])
 
   const qualifications: ScopeItem[] = useMemo(() => {
     const raw = structured?.qualifications || []

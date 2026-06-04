@@ -127,8 +127,9 @@ model Opportunity {
   // Metadata
   rawData            Json? // Store full SAM.gov response
   parsedAttachments  Json? // Cached parsed text from solicitation attachments
-  opportunityBrief   Json? // Cached AI-generated opportunity brief (OpportunityBrief)
-  agentBriefing      Json? // Cached AI-generated agent briefing (AgentBriefing)
+  opportunityBrief   Json? // [Legacy] Cached AI-generated opportunity brief (OpportunityBrief) — superseded by aiArtifacts.brief
+  agentBriefing      Json? // [Legacy] Cached AI-generated agent briefing (AgentBriefing) — superseded by aiArtifacts.agentBriefing
+  aiArtifacts        Json? // Unified AI artifacts blob: { brief, callChecklist, scopeOverview, agentBriefing, generatedAt, partial }
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -369,24 +369,55 @@ export default function SOWPanel({
 
             <div className="bg-white shadow-md rounded-lg overflow-hidden">
               {/* Document header */}
-              <div className="px-6 sm:px-10 pt-8 sm:pt-10 pb-6 border-b border-stone-200 text-center">
-                <p className="text-xs font-semibold tracking-widest uppercase text-stone-400 mb-2">
-                  Statement of Work
-                </p>
-                <h2 className="text-lg font-semibold text-stone-900 mb-1">
-                  {sow.content?.opportunity?.title || opportunity.title}
-                </h2>
-                <p className="text-sm text-stone-500">
-                  {sow.content?.opportunity?.solicitationNumber || opportunity.solicitationNumber}
-                </p>
-                <p className="text-sm text-stone-400">
-                  {sow.content?.opportunity?.agency || opportunity.agency}
-                </p>
-                {(sow.content?.opportunity?.naicsCode || opportunity.naicsCode) && (
-                  <p className="text-xs text-stone-400 mt-1">
-                    NAICS: {sow.content?.opportunity?.naicsCode || opportunity.naicsCode}
-                  </p>
-                )}
+              <div className="px-6 sm:px-10 pt-10 sm:pt-12 pb-7 border-b border-stone-200">
+                <div className="flex items-stretch gap-4">
+                  <div className="w-[3px] bg-stone-900 rounded-full flex-shrink-0" aria-hidden />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium uppercase tracking-[0.18em] text-stone-500 mb-2.5">
+                      <span>Statement of Work</span>
+                      <span className="text-stone-300" aria-hidden>·</span>
+                      <span>v{sow.version}</span>
+                      <span className="text-stone-300" aria-hidden>·</span>
+                      <span>Prepared {format(new Date(sow.generatedAt), 'MMM d, yyyy')}</span>
+                    </div>
+                    <h2 className="text-xl sm:text-2xl font-semibold text-stone-900 leading-tight tracking-tight">
+                      {sow.content?.opportunity?.title || opportunity.title}
+                    </h2>
+                    {(sow.content?.opportunity?.agency || opportunity.agency) && (
+                      <p className="mt-1.5 text-sm text-stone-600">
+                        Prepared for <span className="font-medium text-stone-800">{sow.content?.opportunity?.agency || opportunity.agency}</span>
+                      </p>
+                    )}
+                    {(() => {
+                      const solNum = sow.content?.opportunity?.solicitationNumber || opportunity.solicitationNumber
+                      const naics = sow.content?.opportunity?.naicsCode || opportunity.naicsCode
+                      const quoteDue = sow.content?.opportunity?.quoteDeadline
+                      if (!solNum && !naics && !quoteDue) return null
+                      return (
+                        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs">
+                          {solNum && (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="text-stone-400 uppercase tracking-wider text-[10px]">Solicitation</span>
+                              <span className="font-mono text-stone-800">{solNum}</span>
+                            </span>
+                          )}
+                          {naics && (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="text-stone-400 uppercase tracking-wider text-[10px]">NAICS</span>
+                              <span className="font-mono text-stone-800">{naics}</span>
+                            </span>
+                          )}
+                          {quoteDue && (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="text-stone-400 uppercase tracking-wider text-[10px]">Quote due</span>
+                              <span className="text-stone-800">{quoteDue}</span>
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                </div>
               </div>
 
               {/* Sections — always editable inline */}

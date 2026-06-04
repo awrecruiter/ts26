@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 
 interface Subcontractor {
   id: string
@@ -45,6 +45,20 @@ interface SubcontractorPanelProps {
   parsedRequirements?: { qualifications: string[], compliance: string[], scope: string[] }
   opportunityInfo?: { naicsCode?: string, state?: string, setAside?: string }
   keyDeliverables?: Array<{ item: string; frequency?: string }>
+  /** AI-generated yes/no screening questions from aiArtifacts.callChecklist.
+   *  When present, replaces the deterministic rule-based seed list. */
+  aiCallChecklist?: string[]
+  /** Spinner while artifacts are being (re)generated. */
+  isGeneratingArtifacts?: boolean
+  /** Per-artifact regenerate handler. */
+  onRegenerateChecklist?: () => void | Promise<void>
+}
+
+function buildAIChecklist(items: string[]): ChecklistItem[] {
+  return items
+    .map(s => s.trim())
+    .filter(s => s.length > 5)
+    .map((label, i) => ({ id: `ai-${i}`, label, checked: false }))
 }
 
 function buildDefaultChecklist(
@@ -57,30 +71,35 @@ function buildDefaultChecklist(
     items.push({ id: `default-${idx++}`, label, checked: false })
   }
 
-  // Always include these
   if (opportunityInfo?.naicsCode) {
     addItem(`NAICS code match (${opportunityInfo.naicsCode})`)
   }
   addItem('Place of performance capability')
   addItem('Available for timeline')
-
-  if (parsedReqs) {
-    // Extract relevant qualifications
-    for (const q of parsedReqs.qualifications) {
-      if (/bond|certif|licens|personnel|staff|equipment|clearance/i.test(q)) {
-        addItem(q.length > 80 ? q.substring(0, 77) + '...' : q)
-      }
-    }
-    // Extract FAR clause references
-    for (const c of parsedReqs.compliance) {
-      if (/FAR|DFAR|clause/i.test(c)) {
-        addItem(c.length > 80 ? c.substring(0, 77) + '...' : c)
-      }
-    }
-  }
-
   if (opportunityInfo?.setAside) {
     addItem(`Set-aside eligibility: ${opportunityInfo.setAside}`)
+  }
+
+  // Pull at most a few well-formed qualification gates from the parsed solicitation.
+  // The parser collects raw lines under matched section headers, so we have to
+  // reject sentence fragments, bullet leftovers, FAR/citation prose, and anything
+  // truncated — otherwise the checklist becomes a brain dump.
+  if (parsedReqs?.qualifications?.length) {
+    const KEYWORD = /\b(bond(?:ed|ing)?|certif|licens|clearance|insurance|past performance|capability statement)\b/i
+    let autoAdded = 0
+    for (const raw of parsedReqs.qualifications) {
+      if (autoAdded >= 3) break
+      const q = raw.trim()
+      if (q.length < 25 || q.length > 100) continue
+      if (!/^[A-Z]/.test(q)) continue                    // must start a sentence
+      if (/[…]|\.{3}|\[NEEDS DETAIL/i.test(q)) continue  // no truncation/placeholders
+      if (/^[•\-*]/.test(q)) continue                    // no bullet leftovers
+      if (/\b\d{1,3}[A-Z]?\d{0,4}\.\d/.test(q)) continue // no FAR/CFR citations (e.g. 52.219-14, 5X236.604)
+      if (/\([A-Z]{2,5}\/\/[A-Z]+\)/.test(q)) continue   // no classification markings (TS//NF)
+      if (!KEYWORD.test(q)) continue
+      addItem(q)
+      autoAdded++
+    }
   }
 
   return items
@@ -101,6 +120,9 @@ export default function SubcontractorPanel({
   parsedRequirements,
   opportunityInfo,
   keyDeliverables = [],
+  aiCallChecklist,
+  isGeneratingArtifacts,
+  onRegenerateChecklist,
 }: SubcontractorPanelProps) {
   const [filter, setFilter] = useState<'all' | 'quoted' | 'pending'>('all')
   const [isSearching, setIsSearching] = useState(false)
@@ -151,12 +173,34 @@ export default function SubcontractorPanel({
 
   const getChecklist = (subId: string): ChecklistItem[] => {
     if (!checklistState[subId]) {
-      const defaults = buildDefaultChecklist(parsedRequirements, opportunityInfo)
+      const defaults = aiCallChecklist && aiCallChecklist.length > 0
+        ? buildAIChecklist(aiCallChecklist)
+        : buildDefaultChecklist(parsedRequirements, opportunityInfo)
       setChecklistState(prev => ({ ...prev, [subId]: defaults }))
       return defaults
     }
     return checklistState[subId]
   }
+
+  // When AI checklist arrives later, replace any sub's rule-based seed that
+  // the user hasn't touched yet (no checked items, no custom additions).
+  useEffect(() => {
+    if (!aiCallChecklist || aiCallChecklist.length === 0) return
+    setChecklistState(prev => {
+      let dirty = false
+      const next = { ...prev }
+      for (const [subId, items] of Object.entries(prev)) {
+        const untouched =
+          items.length > 0 &&
+          items.every(it => it.id.startsWith('default-') && !it.checked)
+        if (untouched) {
+          next[subId] = buildAIChecklist(aiCallChecklist)
+          dirty = true
+        }
+      }
+      return dirty ? next : prev
+    })
+  }, [aiCallChecklist])
 
   const toggleChecklistItem = (subId: string, itemId: string) => {
     setChecklistState(prev => ({
@@ -727,7 +771,26 @@ export default function SubcontractorPanel({
                     {/* Call Checklist — only visible before call is marked complete */}
                     {!callDone && (
                       <div className="mb-4">
-                        <p className="text-xs font-medium text-stone-500 mb-2">Call Checklist</p>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs font-medium text-stone-500 flex items-center gap-2">
+                            Call Checklist
+                            {isGeneratingArtifacts && (
+                              <svg className="animate-spin h-3 w-3 text-stone-400" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                              </svg>
+                            )}
+                          </p>
+                          {onRegenerateChecklist && !isGeneratingArtifacts && (
+                            <button
+                              onClick={() => onRegenerateChecklist()}
+                              className="text-[11px] text-stone-400 hover:text-stone-600 transition-colors"
+                              title="Regenerate AI screening questions"
+                            >
+                              Regenerate
+                            </button>
+                          )}
+                        </div>
                         <div className="space-y-1.5">
                           {getChecklist(sub.id).map((item) => (
                             <div key={item.id} className="flex items-center gap-2 group">

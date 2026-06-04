@@ -684,6 +684,532 @@ Rules:
   }
 }
 
+// ─── Call Checklist ───────────────────────────────────────────────────────────
+
+interface ChecklistInput {
+  title: string
+  agency: string
+  naicsCode?: string | null
+  setAside?: string | null
+  quoteDeadline?: string | null
+  placeOfPerformance?: string | null
+  description?: string | null
+  parsedAttachments?: {
+    structured?: {
+      scope?: string[]
+      deliverables?: string[]
+      compliance?: string[]
+      qualifications?: string[]
+      keyFacts?: {
+        clearances?: string[]
+        certifications?: string[]
+        farClauses?: string[]
+        locations?: string[]
+        contractTypes?: string[]
+      }
+    }
+  } | null
+}
+
+/**
+ * Generate a short list of yes/no screening questions a prime contractor can
+ * read aloud to a candidate subcontractor during a phone screen. Each question
+ * is grounded in a specific fact from the solicitation — no generic items.
+ */
+export async function generateCallChecklist(input: ChecklistInput): Promise<string[]> {
+  const { title, agency, naicsCode, setAside, quoteDeadline, placeOfPerformance, description, parsedAttachments } = input
+  const structured = parsedAttachments?.structured
+  const keyFacts = structured?.keyFacts
+
+  const contextBlock = [
+    `Opportunity: ${title}`,
+    `Agency: ${agency}`,
+    naicsCode ? `NAICS: ${naicsCode}` : null,
+    setAside ? `Set-aside: ${setAside}` : null,
+    placeOfPerformance ? `Place of performance: ${placeOfPerformance}` : null,
+    quoteDeadline ? `Quote-to-prime deadline: ${quoteDeadline}` : null,
+  ].filter(Boolean).join('\n')
+
+  const factsBlock = keyFacts && (
+    (keyFacts.clearances?.length ?? 0) > 0 ||
+    (keyFacts.certifications?.length ?? 0) > 0 ||
+    (keyFacts.farClauses?.length ?? 0) > 0
+  )
+    ? `\n\nVERIFIED FACTS (extracted verbatim from solicitation):\n` +
+      (keyFacts.clearances?.length ? `- Clearances mentioned: ${keyFacts.clearances.join(', ')}\n` : '') +
+      (keyFacts.certifications?.length ? `- Certifications/frameworks: ${keyFacts.certifications.join(', ')}\n` : '') +
+      (keyFacts.farClauses?.length ? `- FAR/DFARS clauses: ${keyFacts.farClauses.slice(0, 6).join(', ')}\n` : '')
+    : ''
+
+  const trim = (s: string, max = 300) => {
+    const cleaned = s.replace(/\s+/g, ' ').trim()
+    return cleaned.length > max ? cleaned.slice(0, max) + '…' : cleaned
+  }
+  const parsedBlock = structured
+    ? `\n\nPARSED SOLICITATION EXCERPTS:\n` +
+      (structured.scope?.length ? `Scope:\n${structured.scope.slice(0, 6).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (structured.deliverables?.length ? `Deliverables:\n${structured.deliverables.slice(0, 6).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (structured.qualifications?.length ? `Qualifications:\n${structured.qualifications.slice(0, 6).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (structured.compliance?.length ? `Compliance:\n${structured.compliance.slice(0, 6).map(s => `- ${trim(s)}`).join('\n')}\n` : '')
+    : description
+    ? `\n\nDESCRIPTION:\n${description.slice(0, 2500)}`
+    : ''
+
+  const prompt = `You are writing a CALL CHECKLIST — a short list of yes/no questions a prime contractor will read aloud to a candidate subcontractor during a 5-minute phone screen. The caller checks the box if the vendor says "yes".
+
+OPPORTUNITY CONTEXT:
+${contextBlock}${factsBlock}${parsedBlock}
+
+REQUIREMENTS for each question:
+- Complete sentence ending in "?"
+- Answerable yes/no in under 10 seconds
+- References a SPECIFIC fact from this solicitation (NAICS code, set-aside type, named clearance level, named certification, specific deliverable, place of performance, quote deadline). NEVER generic.
+- "Yes" must mean the vendor really qualifies for this opportunity. E.g. ask "Do you hold an active Top Secret/SCI clearance?" not "Can you handle classified work?"
+- Do NOT mention the opportunity title, solicitation number, or prime's name — the caller already knows those
+- Do NOT include placeholders like [NEEDS DETAIL] — if the underlying fact isn't in the source, omit the question entirely
+
+ORDER (most disqualifying first):
+1. NAICS code match
+2. Set-aside eligibility (only if a set-aside applies)
+3. Required security clearance (only if a clearance level is mentioned in the source)
+4. Required certifications (only if named in source — e.g. CMMC Level 2, ISO 9001, FedRAMP)
+5. Place of performance — can the vendor work there
+6. Deliverable cadence — can they meet the stated frequency/format
+7. Past performance — have they done this domain before
+8. Quote-to-prime deadline — can they submit by ${quoteDeadline || 'the deadline'}
+
+Generate 5–8 questions total. Omit any category where the source has no concrete fact to reference. Better to have 5 specific questions than 8 with two generic ones.
+
+OUTPUT — return ONLY valid JSON:
+{
+  "items": [
+    "Are you registered under NAICS XXXXXX (CategoryName)?",
+    "...?",
+    "..."
+  ]
+}`
+
+  const response = await getOpenAI().chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.2,
+    max_tokens: 700,
+    response_format: { type: 'json_object' },
+  })
+
+  const raw = response.choices[0]?.message?.content || '{}'
+  try {
+    const parsed = JSON.parse(raw) as { items?: string[] }
+    const items = Array.isArray(parsed.items) ? parsed.items : []
+    return items
+      .map(s => (typeof s === 'string' ? s.trim() : ''))
+      .filter(s => s.length > 10 && s.endsWith('?') && !/\[NEEDS DETAIL/i.test(s))
+      .slice(0, 8)
+  } catch {
+    throw new Error(`Failed to parse call checklist response: ${raw.slice(0, 200)}`)
+  }
+}
+
+// ─── Scope Overview ───────────────────────────────────────────────────────────
+
+export interface ScopeOverviewItem {
+  text: string
+  tags: string[]
+  critical?: boolean
+  /** Optional frequency/cadence for deliverables (e.g. "Monthly", "Per incident"). */
+  frequency?: string
+}
+
+export interface ScopeOverviewArtifact {
+  products: ScopeOverviewItem[]
+  services: ScopeOverviewItem[]
+  documentation: ScopeOverviewItem[]
+  compliance: ScopeOverviewItem[]
+  generatedAt: string
+}
+
+interface ScopeOverviewInput {
+  title: string
+  agency: string
+  naicsCode?: string | null
+  description?: string | null
+  parsedAttachments?: {
+    structured?: {
+      scope?: string[]
+      deliverables?: string[]
+      compliance?: string[]
+      qualifications?: string[]
+    }
+  } | null
+}
+
+/**
+ * Generate the Scope Overview artifact — products, services, documentation,
+ * and compliance with tags + critical flag. Used by ScopeOverviewPanel.
+ */
+export async function generateScopeOverview(input: ScopeOverviewInput): Promise<ScopeOverviewArtifact> {
+  const { title, agency, naicsCode, description, parsedAttachments } = input
+  const structured = parsedAttachments?.structured
+
+  const contextBlock = [
+    `Title: ${title}`,
+    `Agency: ${agency}`,
+    naicsCode ? `NAICS: ${naicsCode}` : null,
+  ].filter(Boolean).join('\n')
+
+  const trim = (s: string, max = 350) => {
+    const cleaned = s.replace(/\s+/g, ' ').trim()
+    return cleaned.length > max ? cleaned.slice(0, max) + '…' : cleaned
+  }
+  const parsedBlock = structured
+    ? `\n\nPARSED SOLICITATION:\n` +
+      (structured.scope?.length ? `Scope:\n${structured.scope.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (structured.deliverables?.length ? `Deliverables:\n${structured.deliverables.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (structured.compliance?.length ? `Compliance:\n${structured.compliance.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (structured.qualifications?.length ? `Qualifications:\n${structured.qualifications.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '')
+    : description
+    ? `\n\nDESCRIPTION:\n${description.slice(0, 3000)}`
+    : ''
+
+  const prompt = `You are categorizing a federal solicitation into four scannable buckets for a small business reviewer. Each bucket is a short list of concrete items pulled directly from the source.
+
+CONTEXT:
+${contextBlock}${parsedBlock}
+
+CATEGORIES:
+1. **products** — physical or software products the contractor must supply. Empty if the work is purely services.
+2. **services** — labor/services the contractor must perform (development, sustainment, integration, training, maintenance, etc.).
+3. **documentation** — required documents/deliverables (reports, test plans, source code, CDRLs, capability statements, etc.). Include frequency when stated (Monthly, Per incident, One-time, etc.).
+4. **compliance** — regulations, standards, clearances, certifications, FAR/DFARS clauses, security requirements that the contractor must meet.
+
+RULES:
+- Each item must come from the parsed source — no invented standards or generic filler
+- Each item.text: ≤120 chars, plain English, action-oriented when possible
+- Tags: pick from {CRITICAL, FIRST ARTICLE, INSPECTION REQUIRED, ITAR, BUY AMERICAN, QUALITY ASSURANCE, REQUIRED, OPTIONAL, MILITARY GRADE, FAR, DFARS, MIL-SPEC, CUI}. Add CRITICAL when the source uses words like "critical", "mandatory", "shall", "special emphasis", or when failure would disqualify a bid
+- critical: true when the item is a hard gate (clearance, ITAR, FAR clauses with disqualifying force, must-pass certifications)
+- frequency: only on documentation items, only when the source states one
+- Cap each category at 6 items. Better 3 specific items than 6 generic ones.
+
+OUTPUT — return ONLY valid JSON:
+{
+  "products": [{ "text": "...", "tags": [...], "critical": false }],
+  "services": [...],
+  "documentation": [{ "text": "...", "tags": [...], "frequency": "Monthly", "critical": false }],
+  "compliance": [...]
+}`
+
+  const response = await getOpenAI().chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.2,
+    max_tokens: 2000,
+    response_format: { type: 'json_object' },
+  })
+
+  const raw = response.choices[0]?.message?.content || '{}'
+  try {
+    const parsed = JSON.parse(raw)
+    const normalize = (arr: unknown): ScopeOverviewItem[] => {
+      if (!Array.isArray(arr)) return []
+      return arr
+        .map((x): ScopeOverviewItem | null => {
+          if (!x || typeof x !== 'object') return null
+          const o = x as Record<string, unknown>
+          const text = typeof o.text === 'string' ? o.text.trim() : ''
+          if (!text || text.length < 4) return null
+          return {
+            text: text.length > 240 ? text.slice(0, 237) + '…' : text,
+            tags: Array.isArray(o.tags) ? (o.tags as unknown[]).filter((t): t is string => typeof t === 'string').slice(0, 4) : [],
+            critical: o.critical === true,
+            frequency: typeof o.frequency === 'string' ? o.frequency : undefined,
+          }
+        })
+        .filter((x): x is ScopeOverviewItem => x !== null)
+        .slice(0, 6)
+    }
+    return {
+      products: normalize(parsed.products),
+      services: normalize(parsed.services),
+      documentation: normalize(parsed.documentation),
+      compliance: normalize(parsed.compliance),
+      generatedAt: new Date().toISOString(),
+    }
+  } catch {
+    throw new Error(`Failed to parse scope overview response: ${raw.slice(0, 200)}`)
+  }
+}
+
+// ─── Attachment Relevance ─────────────────────────────────────────────────────
+
+export interface AttachmentRelevanceVerdict {
+  include: boolean
+  reason: string
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW'
+}
+
+export type AttachmentRelevanceMap = Record<string, AttachmentRelevanceVerdict>
+
+interface RelevanceInput {
+  attachments: Array<{
+    id: string
+    originalName: string
+    currentName?: string
+    textContent?: string
+  }>
+  /** Title gives the model context about what the contract is for. */
+  title: string
+  agency: string
+}
+
+/**
+ * Classify each attachment as sub-relevant (include) or prime-only (skip).
+ * Used to preselect which attachments get bundled into the email to a sub.
+ *
+ *   Include: PWS / SOW / Spec / Drawings / Wage Determination / DD-254 / Q&A with substantive changes
+ *   Skip:    SF-1449 / SF-33 / SF-26 / SF-30 / bidder lists / past performance forms / prime registration
+ */
+export async function generateAttachmentRelevance(input: RelevanceInput): Promise<AttachmentRelevanceMap> {
+  if (!input.attachments.length) return {}
+
+  const list = input.attachments
+    .map((a, i) => {
+      const name = a.currentName || a.originalName
+      const excerpt = a.textContent ? a.textContent.slice(0, 400).replace(/\s+/g, ' ').trim() : ''
+      return `${i + 1}. ID: "${a.id}"
+   Filename: "${name}"${excerpt ? `\n   Content excerpt: "${excerpt}"` : ''}`
+    })
+    .join('\n\n')
+
+  const prompt = `You are deciding which solicitation attachments to send to a candidate SUBCONTRACTOR for "${input.title}" (${input.agency}). The prime contractor already has all attachments — the question is which ones the subcontractor actually needs to quote the work.
+
+ATTACHMENTS:
+${list}
+
+INCLUDE (sub needs this to quote / understand the work):
+- Performance Work Statement (PWS), Statement of Work (SOW), Statement of Objectives (SOO)
+- Technical specifications, drawings, parts lists, data packages
+- Wage Determinations (if the sub provides labor)
+- DD-254 (Security Classification) when work is classified
+- Q&A / Amendments that contain substantive scope or specification changes
+- Special clauses or contract data requirements lists (CDRLs) that bind the sub's deliverables
+
+SKIP (prime-facing only, sub doesn't need these to quote):
+- SF-1449, SF-33, SF-26, SF-30 (federal forms the PRIME fills out)
+- Bidder lists / bidders library / interested vendors lists
+- Prime past performance forms / Section L proposal instructions
+- Federal evaluation criteria (Section M)
+- SAM.gov registration instructions for the prime
+- Q&A about prime-side procedural questions (how to submit a proposal, etc.)
+
+UNCERTAIN: when the filename is generic or the content excerpt is empty, lean SKIP with confidence: LOW. The user can manually toggle. Never invent a reason.
+
+OUTPUT — return ONLY valid JSON:
+{
+  "verdicts": [
+    {
+      "id": "exact attachment id",
+      "include": true or false,
+      "reason": "≤80 chars, plain English. E.g. 'Performance Work Statement — sub needs this for scope' or 'SF-1449 form — prime-only'.",
+      "confidence": "HIGH" | "MEDIUM" | "LOW"
+    }
+  ]
+}
+
+Return exactly ${input.attachments.length} verdicts, one per attachment.`
+
+  const response = await getOpenAI().chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.1,
+    max_tokens: 1500,
+    response_format: { type: 'json_object' },
+  })
+
+  const raw = response.choices[0]?.message?.content || '{}'
+  try {
+    const parsed = JSON.parse(raw) as { verdicts?: Array<{ id?: string; include?: boolean; reason?: string; confidence?: string }> }
+    const verdicts = Array.isArray(parsed.verdicts) ? parsed.verdicts : []
+    const map: AttachmentRelevanceMap = {}
+    for (const v of verdicts) {
+      if (!v || typeof v.id !== 'string') continue
+      const confidence = v.confidence === 'HIGH' || v.confidence === 'MEDIUM' || v.confidence === 'LOW' ? v.confidence : 'LOW'
+      map[v.id] = {
+        include: v.include === true,
+        reason: typeof v.reason === 'string' ? v.reason.slice(0, 120) : '',
+        confidence,
+      }
+    }
+    return map
+  } catch {
+    // Fail safe: include nothing automatically — user toggles manually
+    return {}
+  }
+}
+
+// ─── Unified Artifacts Pipeline ───────────────────────────────────────────────
+
+export interface OpportunityArtifacts {
+  brief?: OpportunityBrief
+  callChecklist?: string[]
+  scopeOverview?: ScopeOverviewArtifact
+  agentBriefing?: AgentBriefing
+  attachmentRelevance?: AttachmentRelevanceMap
+  generatedAt: string
+  /** Per-artifact error trace when individual generations fail. */
+  partial?: Record<string, string>
+}
+
+export interface ArtifactsInput {
+  title: string
+  agency: string
+  solicitationNumber: string
+  naicsCode?: string | null
+  setAside?: string | null
+  quoteDeadline?: string | null
+  placeOfPerformance?: string | null
+  description?: string | null
+  rawData?: Record<string, unknown> | null
+  parsedAttachments?: {
+    structured?: {
+      scope?: string[]
+      deliverables?: string[]
+      compliance?: string[]
+      periodOfPerformance?: string[]
+      qualifications?: string[]
+      placeOfPerformance?: string
+      keyFacts?: {
+        clearances?: string[]
+        certifications?: string[]
+        farClauses?: string[]
+        locations?: string[]
+        contractTypes?: string[]
+      }
+    }
+  } | null
+  /** Attachments list — when provided, drives attachmentRelevance classification.
+   *  Pass currentName when the user has renamed; textContent when parsed. */
+  attachments?: Array<{
+    id: string
+    originalName: string
+    currentName?: string
+    textContent?: string
+  }>
+}
+
+export type ArtifactKey = 'brief' | 'callChecklist' | 'scopeOverview' | 'agentBriefing' | 'attachmentRelevance'
+
+/**
+ * Run brief + callChecklist + scopeOverview + agentBriefing in parallel.
+ * Individual failures are captured in `partial` without failing the whole call —
+ * caller decides whether to retry the missing ones or surface what made it.
+ *
+ * To regenerate a single artifact, pass `only: ['callChecklist']`.
+ */
+export async function generateOpportunityArtifacts(
+  input: ArtifactsInput,
+  options?: { only?: ArtifactKey[]; existing?: OpportunityArtifacts | null }
+): Promise<OpportunityArtifacts> {
+  const only = options?.only && options.only.length ? new Set<ArtifactKey>(options.only) : null
+  const want = (k: ArtifactKey) => !only || only.has(k)
+
+  const briefInput: BriefGenerationInput = {
+    title: input.title,
+    agency: input.agency,
+    solicitationNumber: input.solicitationNumber,
+    naicsCode: input.naicsCode ?? null,
+    setAside: input.setAside ?? null,
+    description: input.description ?? null,
+    rawData: input.rawData ?? null,
+    parsedAttachments: input.parsedAttachments ?? null,
+  }
+  const checklistInput: ChecklistInput = {
+    title: input.title,
+    agency: input.agency,
+    naicsCode: input.naicsCode,
+    setAside: input.setAside,
+    quoteDeadline: input.quoteDeadline,
+    placeOfPerformance: input.placeOfPerformance,
+    description: input.description,
+    parsedAttachments: input.parsedAttachments,
+  }
+  const scopeInput: ScopeOverviewInput = {
+    title: input.title,
+    agency: input.agency,
+    naicsCode: input.naicsCode,
+    description: input.description,
+    parsedAttachments: input.parsedAttachments,
+  }
+  const agentInput: AgentBriefingInput = {
+    title: input.title,
+    agency: input.agency,
+    naicsCode: input.naicsCode,
+    setAside: input.setAside,
+    description: input.description,
+    rawData: input.rawData,
+    parsedAttachments: input.parsedAttachments,
+  }
+
+  const relevanceInput: RelevanceInput = {
+    attachments: input.attachments ?? [],
+    title: input.title,
+    agency: input.agency,
+  }
+
+  const [briefRes, checklistRes, scopeRes, agentRes, relevanceRes] = await Promise.allSettled([
+    want('brief') ? generateOpportunityBrief(briefInput) : Promise.resolve(undefined),
+    want('callChecklist') ? generateCallChecklist(checklistInput) : Promise.resolve(undefined),
+    want('scopeOverview') ? generateScopeOverview(scopeInput) : Promise.resolve(undefined),
+    want('agentBriefing') ? generateAgentBriefing(agentInput) : Promise.resolve(undefined),
+    want('attachmentRelevance') && relevanceInput.attachments.length > 0
+      ? generateAttachmentRelevance(relevanceInput)
+      : Promise.resolve(undefined),
+  ])
+
+  const partial: Record<string, string> = {}
+  const carry = options?.existing
+
+  const brief = briefRes.status === 'fulfilled' && briefRes.value
+    ? briefRes.value
+    : (() => {
+        if (briefRes.status === 'rejected') partial.brief = String(briefRes.reason)
+        return carry?.brief
+      })()
+  const callChecklist = checklistRes.status === 'fulfilled' && checklistRes.value
+    ? checklistRes.value
+    : (() => {
+        if (checklistRes.status === 'rejected') partial.callChecklist = String(checklistRes.reason)
+        return carry?.callChecklist
+      })()
+  const scopeOverview = scopeRes.status === 'fulfilled' && scopeRes.value
+    ? scopeRes.value
+    : (() => {
+        if (scopeRes.status === 'rejected') partial.scopeOverview = String(scopeRes.reason)
+        return carry?.scopeOverview
+      })()
+  const agentBriefing = agentRes.status === 'fulfilled' && agentRes.value
+    ? agentRes.value
+    : (() => {
+        if (agentRes.status === 'rejected') partial.agentBriefing = String(agentRes.reason)
+        return carry?.agentBriefing
+      })()
+  const attachmentRelevance = relevanceRes.status === 'fulfilled' && relevanceRes.value
+    ? relevanceRes.value
+    : (() => {
+        if (relevanceRes.status === 'rejected') partial.attachmentRelevance = String(relevanceRes.reason)
+        return carry?.attachmentRelevance
+      })()
+
+  return {
+    brief,
+    callChecklist,
+    scopeOverview,
+    agentBriefing,
+    attachmentRelevance,
+    generatedAt: new Date().toISOString(),
+    partial: Object.keys(partial).length ? partial : undefined,
+  }
+}
+
 /**
  * Generate a concise AI synopsis for an opportunity description.
  */

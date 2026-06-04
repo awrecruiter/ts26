@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db'
 import { generateSOWFileName } from '@/lib/sow-utils'
 import { extractAttachmentsFromRawData } from '@/lib/samgov'
 import { parseAllAttachments, mergeStructuredContent } from '@/lib/attachment-parser'
-import { format, addDays, differenceInCalendarDays } from 'date-fns'
+import { format, addDays } from 'date-fns'
 import type { StructuredContent } from '@/lib/attachment-parser'
 import { generateSOWSections } from '@/lib/openai'
 
@@ -13,19 +13,23 @@ import { generateSOWSections } from '@/lib/openai'
  * to the prime. This is NOT the federal response deadline — it's an internal
  * deadline that gives the prime time to compare quotes and assemble the bid.
  *
- *   ≥ 21 days to federal deadline → quote due 7 days before federal deadline
- *   8–20 days                     → quote due 3 days before federal deadline
- *   ≤ 7 days                      → quote due 2 days from today (floor)
- *   no federal deadline known     → quote due 7 days from today
+ * Policy: pull quotes in as fast as reasonably possible, while always leaving
+ * the prime a healthy buffer before the federal deadline.
+ *
+ *   target = today + 5 days                    (ASAP target — ~1 business week)
+ *   buffer = federalDeadline - 5 days          (leave the prime 5 days to assemble)
+ *   floor  = today + 2 days                    (never tighter than 48h)
+ *
+ *   quoteDue = max(floor, min(target, buffer))
  */
 function computeQuoteDeadline(responseDeadline: Date | null): Date {
   const today = new Date()
-  if (!responseDeadline) return addDays(today, 7)
-  const days = differenceInCalendarDays(responseDeadline, today)
-  if (days >= 21) return addDays(responseDeadline, -7)
-  if (days >= 8) return addDays(responseDeadline, -3)
-  // Tight federal window: floor at today+2 so the sub gets at least a couple days
-  return addDays(today, 2)
+  const target = addDays(today, 5)
+  const floor = addDays(today, 2)
+  if (!responseDeadline) return target
+  const buffered = addDays(responseDeadline, -5)
+  const earliest = buffered < target ? buffered : target
+  return earliest < floor ? floor : earliest
 }
 
 /**

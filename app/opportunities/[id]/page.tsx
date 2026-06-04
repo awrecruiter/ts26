@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { format, differenceInDays } from 'date-fns'
@@ -33,6 +33,8 @@ export default function OpportunityWorkspacePage() {
   const [discoveringSubcontractors, setDiscoveringSubcontractors] = useState(false)
   const [solicitationAttachments, setSolicitationAttachments] = useState<RichAttachment[]>([])
   const [emailSelectedAttachments, setEmailSelectedAttachments] = useState<Set<string>>(new Set())
+  const [generatingArtifacts, setGeneratingArtifacts] = useState(false)
+  const artifactsRequestedRef = useRef(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -79,6 +81,41 @@ export default function OpportunityWorkspacePage() {
         }
       })
       .catch(() => {})
+  }, [opportunity?.id])
+
+  // Auto-generate unified AI artifacts (brief, callChecklist, scopeOverview,
+  // agentBriefing) the first time we have parsed attachments but no cached
+  // artifacts. Single request, fires once per page session.
+  useEffect(() => {
+    if (!opportunity?.id) return
+    if (opportunity.aiArtifacts) return
+    if (!opportunity.parsedAttachments) return
+    if (artifactsRequestedRef.current) return
+    artifactsRequestedRef.current = true
+    setGeneratingArtifacts(true)
+    fetch(`/api/opportunities/${opportunity.id}/artifacts`, { method: 'POST' })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.artifacts) {
+          setOpportunity((prev: any) => prev ? { ...prev, aiArtifacts: data.artifacts } : prev)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setGeneratingArtifacts(false))
+  }, [opportunity?.id, opportunity?.parsedAttachments, opportunity?.aiArtifacts])
+
+  const handleRegenerateArtifact = useCallback(async (artifact: 'brief' | 'callChecklist' | 'scopeOverview' | 'agentBriefing') => {
+    if (!opportunity?.id) return
+    setGeneratingArtifacts(true)
+    try {
+      const res = await fetch(`/api/opportunities/${opportunity.id}/artifacts?artifact=${artifact}`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data?.artifacts) {
+        setOpportunity((prev: any) => prev ? { ...prev, aiArtifacts: data.artifacts } : prev)
+      }
+    } finally {
+      setGeneratingArtifacts(false)
+    }
   }, [opportunity?.id])
 
   const handleCreateBid = async () => {
@@ -341,9 +378,9 @@ export default function OpportunityWorkspacePage() {
           onSeeSubcontractors={() => setActivePanel('subcontractors')}
           onProceed={handleProceed}
           nextStep={workflowState.action}
-          brief={opportunity?.opportunityBrief ?? null}
-          isGeneratingBrief={generatingBrief}
-          onGenerateBrief={handleGenerateBrief}
+          brief={opportunity?.aiArtifacts?.brief ?? opportunity?.opportunityBrief ?? null}
+          isGeneratingBrief={generatingBrief || generatingArtifacts}
+          onGenerateBrief={() => handleRegenerateArtifact('brief')}
           briefError={briefError}
         />
       ),
@@ -360,7 +397,8 @@ export default function OpportunityWorkspacePage() {
         <ScopeOverviewPanel
           opportunity={opportunity}
           assessment={assessment}
-          brief={opportunity?.opportunityBrief ?? null}
+          brief={opportunity?.aiArtifacts?.brief ?? opportunity?.opportunityBrief ?? null}
+          aiScope={opportunity?.aiArtifacts?.scopeOverview ?? null}
         />
       ),
     },
@@ -401,7 +439,10 @@ export default function OpportunityWorkspacePage() {
           placeOfPerformance={placeOfPerformanceData}
           parsedRequirements={opportunity.parsedAttachments?.structured}
           opportunityInfo={{ naicsCode: opportunity.naicsCode, state: opportunity.state, setAside: opportunity.setAside }}
-          keyDeliverables={opportunity.opportunityBrief?.keyDeliverables || []}
+          keyDeliverables={opportunity.aiArtifacts?.brief?.keyDeliverables || opportunity.opportunityBrief?.keyDeliverables || []}
+          aiCallChecklist={opportunity.aiArtifacts?.callChecklist}
+          isGeneratingArtifacts={generatingArtifacts}
+          onRegenerateChecklist={() => handleRegenerateArtifact('callChecklist')}
           onRequestQuote={(sub) => {
             setSelectedSubcontractor(sub)
             setEmailTemplateType('quote_request')
@@ -441,6 +482,33 @@ export default function OpportunityWorkspacePage() {
           opportunityId={opportunity.id}
           selectedAttachmentIds={emailSelectedAttachments}
           onSelectionChange={setEmailSelectedAttachments}
+          brief={opportunity?.aiArtifacts?.brief ?? opportunity?.opportunityBrief ?? null}
+          attachmentRelevance={opportunity?.aiArtifacts?.attachmentRelevance ?? null}
+          callChecklist={opportunity?.aiArtifacts?.callChecklist ?? undefined}
+          quoteDeadline={currentSOW?.content?.opportunity?.quoteDeadline ?? null}
+          onSend={async ({ to, subject, body, attachmentIds }) => {
+            try {
+              const res = await fetch('/api/email/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  to,
+                  subject,
+                  body,
+                  attachmentIds,
+                  opportunityId: opportunity.id,
+                  subcontractorId: selectedSubcontractor?.id,
+                }),
+              })
+              const data = await res.json().catch(() => ({}))
+              if (!res.ok || !data.success) {
+                return { success: false, error: data.error || `Send failed (${res.status})` }
+              }
+              return { success: true }
+            } catch (e) {
+              return { success: false, error: e instanceof Error ? e.message : 'Network error' }
+            }
+          }}
         />
       ),
     },

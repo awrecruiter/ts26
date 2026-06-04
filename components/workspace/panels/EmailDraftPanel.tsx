@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { format } from 'date-fns'
 import type { RichAttachment } from '@/lib/types/attachment'
+import type { OpportunityBrief, AttachmentRelevanceMap } from '@/lib/openai'
 
 interface EmailDraftPanelProps {
   recipientName?: string
@@ -14,7 +15,12 @@ interface EmailDraftPanelProps {
   deadline?: Date | null
   agency?: string
   templateType?: 'quote_request' | 'sow_delivery' | 'follow_up' | 'custom'
-  onSend?: (email: { to: string; subject: string; body: string }) => Promise<void>
+  onSend?: (email: {
+    to: string
+    subject: string
+    body: string
+    attachmentIds: string[]
+  }) => Promise<{ success: boolean; error?: string }>
   availableAttachments?: RichAttachment[]
   sowFileName?: string
   sowId?: string
@@ -22,84 +28,127 @@ interface EmailDraftPanelProps {
   /** IDs of pre-selected attachments (parent-controlled, survives panel switching) */
   selectedAttachmentIds?: Set<string>
   onSelectionChange?: (ids: Set<string>) => void
+  /** AI-generated brief — used to make the body specific instead of generic. */
+  brief?: OpportunityBrief | null
+  /** Per-attachment include/skip verdicts from aiArtifacts.attachmentRelevance.
+   *  When present, drives the default selection. */
+  attachmentRelevance?: AttachmentRelevanceMap | null
+  /** AI-generated screening questions to inject into the body. */
+  callChecklist?: string[]
+  /** Internal deadline for the sub to return their quote. */
+  quoteDeadline?: string | null
 }
 
 const TEMPLATES: Record<string, { subject: string; body: string }> = {
   quote_request: {
-    subject: 'Quote Request - {{solicitation}}',
+    subject: 'Quote Request — {{title}} ({{agency}})',
     body: `Hello {{name}},
 
-I am reaching out regarding an opportunity we are pursuing:
+I'm reaching out from a prime bidding on a federal opportunity and would like a quote on the portion that fits your shop.
 
-──────────────────────────────
-QUICK OVERVIEW
-──────────────────────────────
-• Project: {{title}}
-• Solicitation: {{solicitation}}
-• Agency: {{agency}}
-• Deadline: {{deadline}}
+THE WORK
+{{what_we_need}}
 
-{{synopsis}}
-──────────────────────────────
+KEY DELIVERABLES
+{{deliverables_block}}
 
-We would appreciate a quote for your services as part of our bid.
+QUALIFICATION GATES
+{{qualifications_block}}
 
-Please include in your response:
-✓ Scope of work you can provide
-✓ Pricing estimate
-✓ Estimated timeline
-✓ Availability confirmation
+WHAT I NEED FROM YOU BY {{quote_due}}
+• Firm fixed-price quote — all-inclusive (materials, labor, shipping, taxes, fees)
+• Lead time / delivery schedule from receipt of order
+• Capability statement (1–2 pages: past performance + competencies + certifications + key personnel)
+• Any exceptions, assumptions, or clarifying questions
+• Your point of contact (name, title, email, direct phone)
 
-Please respond by {{response_needed}} if possible.
+A few quick screening questions:
+{{screening_questions}}
 
-Thank you,
+The full SOW and supporting docs are attached for reference.
+
+Thanks,
 [Your Name]`,
   },
   sow_delivery: {
-    subject: 'Statement of Work - {{solicitation}}',
+    subject: 'Statement of Work — {{title}} ({{agency}})',
     body: `Hello {{name}},
 
-Please find attached the Statement of Work for your review:
+Per our conversation, here is the Statement of Work for the {{title}} opportunity. The SOW and the supporting solicitation documents you'll need are attached.
 
-──────────────────────────────
-PROJECT SNAPSHOT
-──────────────────────────────
-• Project: {{title}}
-• Solicitation: {{solicitation}}
-• Agency: {{agency}}
-• Deadline: {{deadline}}
+THE WORK
+{{what_we_need}}
 
-{{synopsis}}
-──────────────────────────────
+KEY DELIVERABLES
+{{deliverables_block}}
 
-NEXT STEPS:
-1. Review the attached SOW
-2. Confirm your availability
-3. Provide pricing for your scope
+QUALIFICATION GATES
+{{qualifications_block}}
 
-Please respond by {{response_needed}}.
+NEXT STEPS — please return by {{quote_due}}
+• Firm fixed-price quote (all-inclusive)
+• Lead time / delivery schedule from receipt of order
+• Capability statement (past performance + certifications + key personnel)
+• Any exceptions, assumptions, or clarifying questions
+• Your point of contact
 
-Thank you,
+Let me know if anything in the attached SOW needs clarification before you price.
+
+Thanks,
 [Your Name]`,
   },
   follow_up: {
-    subject: 'Following Up - {{solicitation}}',
+    subject: 'Following Up — {{title}}',
     body: `Hello {{name}},
 
-I wanted to follow up on my previous message regarding:
+Following up on the quote request I sent for {{title}} ({{solicitation}}).
 
-• Project: {{title}}
-• Solicitation: {{solicitation}}
+Our internal deadline to assemble the bid is {{quote_due}} — if you're not able to quote, a quick reply lets me move on. If you are quoting, let me know when I can expect numbers back.
 
-Our deadline is approaching ({{deadline}}). Please let me know your availability.
-
-Thank you,
+Thanks,
 [Your Name]`,
   },
   custom: {
     subject: '',
     body: '',
   },
+}
+
+/**
+ * Build the rich placeholder values from the AI brief + checklist.
+ * Returns plain-text blocks ready to drop into the template body.
+ */
+function buildBriefContext(brief: OpportunityBrief | null | undefined, callChecklist?: string[]): {
+  what_we_need: string
+  deliverables_block: string
+  qualifications_block: string
+  screening_questions: string
+} {
+  const what = brief?.whatTheyAreBuying?.trim()
+  const what_we_need = what || '(SOW attached — see "What We Need From You" section.)'
+
+  const deliverables_block = brief?.keyDeliverables?.length
+    ? brief.keyDeliverables
+        .slice(0, 5)
+        .map(d => `• ${d.item}${d.frequency ? ` (${d.frequency})` : ''}`)
+        .join('\n')
+    : '• See attached SOW for the deliverables list.'
+
+  const qParts: string[] = []
+  const wq = brief?.whoQualifies
+  if (wq?.setAside) qParts.push(`Set-aside: ${wq.setAside}`)
+  if (wq?.clearances?.length) qParts.push(`Clearance: ${wq.clearances.join(', ')}`)
+  if (wq?.certifications?.length) qParts.push(`Certifications: ${wq.certifications.join(', ')}`)
+  if (wq?.licenses?.length) qParts.push(`Licenses: ${wq.licenses.join(', ')}`)
+  const qualifications_block = qParts.length
+    ? qParts.map(p => `• ${p}`).join('\n')
+    : '• No special clearance or certification gates flagged. Confirm fit per the SOW.'
+
+  const screening_questions = callChecklist?.length
+    ? callChecklist.slice(0, 3).map(q => `   – ${q}`).join('\n')
+    : '   – (See call checklist in our sub vetting workflow.)'
+
+  return { what_we_need, deliverables_block, qualifications_block, screening_questions }
 }
 
 // ─── Attachment Preview Modal ────────────────────────────────────────────────
@@ -190,21 +239,50 @@ export default function EmailDraftPanel({
   opportunityId,
   selectedAttachmentIds,
   onSelectionChange,
+  brief,
+  attachmentRelevance,
+  callChecklist,
+  quoteDeadline,
 }: EmailDraftPanelProps) {
   const [to, setTo] = useState(recipientEmail)
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
   const [toError, setToError] = useState<string | null>(null)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const [sendSuccess, setSendSuccess] = useState<string | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState(templateType)
   const [previewAttachment, setPreviewAttachment] = useState<RichAttachment | null>(null)
 
   const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-  // Local attachment selection state — used when parent doesn't control it
-  const [localSelected, setLocalSelected] = useState<Set<string>>(() =>
-    new Set(availableAttachments?.map((a) => a.id) ?? [])
-  )
+  // Initial default selection: respect relevance verdicts when present,
+  // otherwise fall back to "all attachments selected" to preserve old behavior.
+  const computeInitialSelected = (): Set<string> => {
+    if (!availableAttachments?.length) return new Set()
+    if (attachmentRelevance && Object.keys(attachmentRelevance).length > 0) {
+      return new Set(availableAttachments.filter(a => attachmentRelevance[a.id]?.include).map(a => a.id))
+    }
+    return new Set(availableAttachments.map(a => a.id))
+  }
+  const [localSelected, setLocalSelected] = useState<Set<string>>(computeInitialSelected)
+
+  // When relevance arrives after first mount (auto-trigger), re-seed selection
+  // — but only if the user hasn't customized (i.e. local matches what we'd seed
+  // without relevance, or is the parent-controlled "all" default).
+  const relevanceAppliedRef = useRef(false)
+  useEffect(() => {
+    if (!attachmentRelevance || Object.keys(attachmentRelevance).length === 0) return
+    if (relevanceAppliedRef.current) return
+    if (!availableAttachments?.length) return
+    relevanceAppliedRef.current = true
+    const next = new Set(availableAttachments.filter(a => attachmentRelevance[a.id]?.include).map(a => a.id))
+    if (onSelectionChange) {
+      onSelectionChange(next)
+    } else {
+      setLocalSelected(next)
+    }
+  }, [attachmentRelevance, availableAttachments, onSelectionChange])
 
   // Resolved selected set: prefer parent-controlled, fall back to local
   const selectedAttachments = selectedAttachmentIds ?? localSelected
@@ -232,6 +310,7 @@ export default function EmailDraftPanel({
     const template = TEMPLATES[selectedTemplate]
     if (!template) return
 
+    const briefCtx = buildBriefContext(brief, callChecklist)
     const formattedSynopsis = sowSynopsis
       ? `KEY DELIVERABLES:\n• ${sowSynopsis}`
       : '(SOW synopsis will appear here once generated)'
@@ -244,7 +323,12 @@ export default function EmailDraftPanel({
       '{{agency}}': agency || '[Agency]',
       '{{deadline}}': deadline ? format(deadline, 'MMMM d, yyyy') : '[Deadline]',
       '{{response_needed}}': responseNeeded,
+      '{{quote_due}}': quoteDeadline || responseNeeded,
       '{{synopsis}}': formattedSynopsis,
+      '{{what_we_need}}': briefCtx.what_we_need,
+      '{{deliverables_block}}': briefCtx.deliverables_block,
+      '{{qualifications_block}}': briefCtx.qualifications_block,
+      '{{screening_questions}}': briefCtx.screening_questions,
     }
 
     let newSubject = template.subject
@@ -257,7 +341,7 @@ export default function EmailDraftPanel({
 
     setSubject(newSubject)
     setBody(newBody)
-  }, [selectedTemplate, recipientName, opportunityTitle, solicitationNumber, bidAmount, sowSynopsis, deadline, agency, responseNeeded])
+  }, [selectedTemplate, recipientName, opportunityTitle, solicitationNumber, bidAmount, sowSynopsis, deadline, agency, responseNeeded, brief, callChecklist, quoteDeadline])
 
   const handleSend = async () => {
     if (!to || !subject || !body) return
@@ -268,6 +352,8 @@ export default function EmailDraftPanel({
       return
     }
     setToError(null)
+    setSendError(null)
+    setSendSuccess(null)
 
     if (!onSend) {
       const mailtoUrl = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
@@ -277,7 +363,19 @@ export default function EmailDraftPanel({
 
     setSending(true)
     try {
-      await onSend({ to: to.trim(), subject, body })
+      const result = await onSend({
+        to: to.trim(),
+        subject,
+        body,
+        attachmentIds: Array.from(selectedAttachments),
+      })
+      if (result?.success) {
+        setSendSuccess(`Email sent to ${to.trim()}.`)
+      } else {
+        setSendError(result?.error || 'Email send failed.')
+      }
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : 'Email send failed.')
     } finally {
       setSending(false)
     }
@@ -508,6 +606,17 @@ export default function EmailDraftPanel({
                               renamed → {att.currentName}
                             </p>
                           )}
+                          {/* AI relevance verdict */}
+                          {attachmentRelevance?.[att.id] && (
+                            <p
+                              className={`text-[11px] truncate mt-0.5 ${
+                                attachmentRelevance[att.id].include ? 'text-stone-500' : 'text-stone-400'
+                              }`}
+                              title={attachmentRelevance[att.id].reason}
+                            >
+                              {attachmentRelevance[att.id].include ? '✓ Auto-included' : '○ Skipped'} — {attachmentRelevance[att.id].reason}
+                            </p>
+                          )}
                         </div>
 
                         {att.size && (
@@ -535,6 +644,18 @@ export default function EmailDraftPanel({
               <p className="text-xs text-stone-400">
                 Generate a SOW first to build your attachment bundle.
               </p>
+            </div>
+          )}
+
+          {/* Send result banner */}
+          {sendSuccess && (
+            <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-sm text-green-800">
+              {sendSuccess}
+            </div>
+          )}
+          {sendError && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+              {sendError}
             </div>
           )}
 
