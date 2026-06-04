@@ -58,6 +58,9 @@ ENV/
 *.swo
 *~
 
+# Claude Code transient state
+.claude/scheduled_tasks.lock
+
 # OS
 .DS_Store
 Thumbs.db
