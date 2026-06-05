@@ -168,7 +168,12 @@ export async function POST(
       if (normAddr) existingAddresses.add(normAddr)
     }
 
-    const allCreateData: any[] = []
+    // Split slot quotas between sources so Google can't starve SAM out.
+    // Total cap of 15 per run, with Google capped at 10 leaving 5+ for SAM.
+    const TOTAL_CAP = 15
+    const GOOGLE_CAP = 10
+    const googleCreateData: any[] = []
+    const samCreateData: any[] = []
 
     // === Source 1: Google Places ===
     let googlePlacesApiError: string | undefined
@@ -192,7 +197,7 @@ export async function POST(
       for (const vendor of vendors) {
         if (isDuplicate(vendor)) continue
         markAdded(vendor)
-        allCreateData.push({
+        googleCreateData.push({
           opportunityId,
           name: vendor.name,
           phone: vendor.phone || null,
@@ -209,7 +214,7 @@ export async function POST(
           source: 'google_places',
         })
       }
-      console.log(`[Discover] Google Places: ${allCreateData.length} new vendors after dedup`)
+      console.log(`[Discover] Google Places: ${googleCreateData.length} new vendors after dedup`)
     } else {
       console.log('[Discover] Google Places API not configured, skipping')
     }
@@ -220,16 +225,20 @@ export async function POST(
     if (!isNational && stateCode) samParams.stateCode = stateCode
 
     let samWarning: string | undefined
+    let samTotalRecords = 0
+    let samSearched = false
+    let samAdded = 0
     if (samParams.naicsCode || samParams.stateCode) {
+      samSearched = true
       console.log(`[Discover] Searching SAM.gov entities: NAICS=${samParams.naicsCode}, state=${samParams.stateCode}`)
       const samResult = await searchSamEntities(samParams)
+      samTotalRecords = samResult.totalRecords
       console.log(`[Discover] SAM.gov returned ${samResult.totalRecords} total, ${samResult.entityData.length} in page`)
 
       if (samResult.error) {
         samWarning = samResult.error
       }
 
-      let samAdded = 0
       for (const entity of samResult.entityData) {
         const subData = samEntityToSubcontractor(entity, opportunityId)
 
@@ -241,13 +250,18 @@ export async function POST(
         })) continue
 
         markAdded(subData as any)
-        allCreateData.push(subData)
+        samCreateData.push(subData)
         samAdded++
       }
       console.log(`[Discover] SAM.gov: ${samAdded} new vendors after dedup`)
     } else {
       console.log('[Discover] No NAICS/state for SAM.gov search, skipping')
     }
+
+    // Compose final list: Google capped at GOOGLE_CAP, SAM fills remaining slots up to TOTAL_CAP.
+    const googleSlice = googleCreateData.slice(0, GOOGLE_CAP)
+    const samSlice = samCreateData.slice(0, TOTAL_CAP - googleSlice.length)
+    const allCreateData = [...googleSlice, ...samSlice]
 
     if (allCreateData.length === 0) {
       if (!isApiConfigured) {
@@ -263,6 +277,8 @@ export async function POST(
       return NextResponse.json({
         message: 'No new vendors found for this opportunity.',
         added: 0,
+        sources: { google: 0, sam: 0 },
+        sam: { searched: samSearched, totalRecords: samTotalRecords, added: 0, error: samWarning ?? null },
         geography: { city, state: stateCode, radiusMiles, suggestedRadius },
         ...(googlePlacesApiError && {
           googlePlacesStatus: googlePlacesApiError,
@@ -274,9 +290,8 @@ export async function POST(
       })
     }
 
-    // Limit to 15 total new vendors
     const result = await prisma.subcontractor.createMany({
-      data: allCreateData.slice(0, 15),
+      data: allCreateData,
       skipDuplicates: true,
     })
 
@@ -287,6 +302,7 @@ export async function POST(
       message: `Found ${result.count} vendors (${googleCount} Google Maps, ${samCount} SAM.gov)`,
       added: result.count,
       sources: { google: googleCount, sam: samCount },
+      sam: { searched: samSearched, totalRecords: samTotalRecords, added: samAdded, error: samWarning ?? null },
       geography: { city, state: stateCode, radiusMiles, suggestedRadius },
       ...(samWarning && { samWarning }),
     })

@@ -137,6 +137,12 @@ export default function SubcontractorPanel({
   // Track optimistic call state (in case server is slow)
   const [optimisticCalls, setOptimisticCalls] = useState<Record<string, boolean>>({})
   const [samWarning, setSamWarning] = useState<string | null>(null)
+  const [samStatus, setSamStatus] = useState<{
+    searched: boolean
+    totalRecords: number
+    added: number
+    error: string | null
+  } | null>(null)
   const [checklistState, setChecklistState] = useState<Record<string, ChecklistItem[]>>({})
   const [deliverableChecks, setDeliverableChecks] = useState<Record<string, Set<number>>>({})
 
@@ -241,6 +247,7 @@ export default function SubcontractorPanel({
     setApiError(null)
     setCleanupMessage(null)
     setSamWarning(null)
+    setSamStatus(null)
     setExpandStatus(null)
 
     const startIdx = RADIUS_TIERS.indexOf(radiusMiles)
@@ -265,6 +272,7 @@ export default function SubcontractorPanel({
         }
 
         if (data.samWarning) setSamWarning(data.samWarning)
+        if (data.sam) setSamStatus(data.sam)
 
         if (data.added > 0) {
           setRadiusMiles(currentRadius)
@@ -497,6 +505,29 @@ export default function SubcontractorPanel({
                 </svg>
               </button>
             </div>
+          </div>
+        )}
+
+        {/* SAM.gov Empty Result Banner — only when no error and nothing added */}
+        {!samWarning && samStatus?.searched && samStatus.added === 0 && (
+          <div className="mb-4 p-3 bg-stone-50 border border-stone-200 rounded-lg flex items-start gap-3">
+            <svg className="h-4 w-4 text-stone-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="flex-1">
+              <p className="text-xs text-stone-600">
+                <span className="font-medium text-stone-700">SAM.gov:</span>{' '}
+                {samStatus.totalRecords === 0
+                  ? 'No SAM-registered vendors matched this NAICS code'
+                  : `${samStatus.totalRecords} SAM-registered ${samStatus.totalRecords === 1 ? 'vendor matches' : 'vendors match'} this NAICS code, but all were duplicates of existing Google Maps results`}
+                {samStatus.totalRecords > 0 ? '.' : ' in this geography.'}
+              </p>
+            </div>
+            <button onClick={() => setSamStatus(null)} className="text-stone-400 hover:text-stone-600">
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         )}
 
