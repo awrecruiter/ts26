@@ -89,22 +89,26 @@ export async function POST(
     const placeOfPerformance = extractPlaceOfPerformance(opportunity.rawData, opportunity.state)
 
     // Determine effective radius:
-    // - If caller passed an explicit radiusMiles, use it.
-    // - Otherwise auto-suggest based on city density (urban tighter, rural wider).
-    // - Product solicitations always use 250mi (national).
+    // - If caller passed an explicit radiusMiles, use it (even for products —
+    //   the user gets to choose whether to bias by location or go national).
+    // - Otherwise auto-suggest based on city density (urban tighter, rural wider),
+    //   defaulting to 250mi (national) for products without a city hint.
     const suggestedRadius = suggestSearchRadius(city, stateCode)
-    const radiusMiles: 25 | 50 | 100 | 250 = classification.isProduct
-      ? 250
-      : ([25, 50, 100, 250].includes(body.radiusMiles) ? body.radiusMiles : suggestedRadius)
+    const explicitRadius: 25 | 50 | 100 | 250 | null =
+      [25, 50, 100, 250].includes(body.radiusMiles) ? body.radiusMiles : null
+    const radiusMiles: 25 | 50 | 100 | 250 =
+      explicitRadius ?? (classification.isProduct ? 250 : suggestedRadius)
 
-    // For services: use specific location. For products: use broad "United States"
-    const searchLocation = classification.isProduct ? 'United States' : placeOfPerformance
-    console.log(`[Discover] Search location: "${searchLocation}" (stateCode: ${stateCode}, radiusMiles: ${radiusMiles}, suggested: ${suggestedRadius})`)
+    // National = no state/POP bias. Anything under 250mi uses the POP location +
+    // state filter even for products, so the user's local-first selection wins.
+    const isNational = radiusMiles === 250
+    const searchLocation = isNational ? 'United States' : placeOfPerformance
+    console.log(`[Discover] Search location: "${searchLocation}" (stateCode: ${stateCode}, radiusMiles: ${radiusMiles}, suggested: ${suggestedRadius}, isProduct: ${classification.isProduct}, isNational: ${isNational})`)
 
     // Geocode the place of performance once — used for per-vendor distance computation.
-    // Skip for product solicitations (national search, distance irrelevant).
+    // Skip when going national (distance irrelevant).
     let popCoords: { lat: number; lng: number } | null = null
-    if (!classification.isProduct && placeOfPerformance && isApiConfigured) {
+    if (!isNational && placeOfPerformance && isApiConfigured) {
       popCoords = await geocodePlaceOfPerformance(placeOfPerformance)
       if (popCoords) {
         console.log(`[Discover] POP geocoded: ${placeOfPerformance} → (${popCoords.lat.toFixed(4)}, ${popCoords.lng.toFixed(4)})`)
@@ -172,12 +176,12 @@ export async function POST(
       console.log(`[Discover] Searching Google Places: NAICS=${opportunity.naicsCode}, location="${searchLocation}", radius=${radiusMiles}mi, title="${opportunity.title?.substring(0, 50)}"`)
       const { vendors, apiError } = await findSubcontractorsForOpportunity({
         naicsCode: opportunity.naicsCode,
-        placeOfPerformance: classification.isProduct ? null : placeOfPerformance,
-        stateCode: classification.isProduct ? null : stateCode,
+        placeOfPerformance: isNational ? null : placeOfPerformance,
+        stateCode: isNational ? null : stateCode,
         title: opportunity.title,
-        radiusMiles: classification.isProduct ? 250 : radiusMiles,
-        city: classification.isProduct ? null : city,
-        popCoords: classification.isProduct ? null : popCoords,
+        radiusMiles,
+        city: isNational ? null : city,
+        popCoords: isNational ? null : popCoords,
       })
 
       if (apiError) {
@@ -213,7 +217,7 @@ export async function POST(
     // === Source 2: SAM.gov Entity Search ===
     const samParams: { naicsCode?: string; stateCode?: string } = {}
     if (opportunity.naicsCode) samParams.naicsCode = opportunity.naicsCode
-    if (!classification.isProduct && stateCode) samParams.stateCode = stateCode
+    if (!isNational && stateCode) samParams.stateCode = stateCode
 
     let samWarning: string | undefined
     if (samParams.naicsCode || samParams.stateCode) {
