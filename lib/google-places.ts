@@ -40,6 +40,12 @@ const NAICS_SERVICE_MAP: Record<string, string[]> = {
   '334210': ['Telephone Apparatus', 'Communications Equipment'],
   '334220': ['Communications Equipment Repair', 'Electronics Repair', 'RF Electronics'],
   '334290': ['Communications Equipment', 'Electronic Components'],
+  '333120': ['Construction Equipment Dealer', 'Heavy Equipment Supplier'],
+  '333922': ['Material Handling Equipment', 'Conveyor Supplier'],
+  '339994': ['Broom Supplier', 'Brush Supplier', 'Industrial Sweeper Supplier', 'Janitorial Equipment Supplier'],
+  '423810': ['Construction Equipment Dealer', 'Heavy Equipment Supplier'],
+  '423830': ['Industrial Equipment Supplier', 'Industrial Machinery Supplier'],
+  '423840': ['Industrial Supplies', 'MRO Supplier'],
   '334511': ['Radar Systems', 'Navigation Equipment'],
   '334519': ['Measuring Instruments', 'Testing Equipment'],
   '336411': ['Aircraft Manufacturing', 'Aerospace Contractor'],
@@ -101,6 +107,14 @@ const TITLE_KEYWORD_MAP: Record<string, string[]> = {
   'architecture': ['Architectural Services', 'Architecture Firm'],
   'survey': ['Surveying Services', 'Land Surveyor'],
   'remediation': ['Environmental Remediation', 'Cleanup Services'],
+  'broom': ['Broom Supplier', 'Industrial Sweeper Supplier'],
+  'brush': ['Brush Supplier', 'Industrial Brush Manufacturer'],
+  'sweeper': ['Industrial Sweeper Supplier', 'Street Sweeper Dealer'],
+  'mop': ['Janitorial Equipment Supplier', 'Mop Supplier'],
+  'janitorial': ['Janitorial Equipment Supplier', 'Janitorial Supplies'],
+  'tractor': ['Tractor Dealer', 'Farm Equipment Dealer'],
+  'attachment': ['Tractor Implement Dealer', 'Equipment Attachment Supplier'],
+  'hydraulic': ['Hydraulic Equipment Dealer', 'Hydraulics Supplier'],
 }
 
 // Full state names keyed by 2-letter code — used to match against formatted_address
