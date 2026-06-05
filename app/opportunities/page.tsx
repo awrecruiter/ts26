@@ -397,7 +397,10 @@ function OpportunitiesContent() {
                     <label className="block text-xs font-medium text-stone-600 mb-1">NAICS Codes</label>
                     <ChipInput
                       values={naicsCodes}
-                      onChange={setNaicsCodes}
+                      onChange={(next) => {
+                        setNaicsCodes(next)
+                        applyFiltersWithOverride({ naics: next.join(',') })
+                      }}
                       placeholder="e.g., 334519 (Enter to add)"
                       validate={validateNaics}
                     />
