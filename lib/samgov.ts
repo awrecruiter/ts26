@@ -469,7 +469,8 @@ export async function searchSamEntities(
       url.searchParams.set('naicsCode', params.naicsCode)
     }
     if (params.stateCode) {
-      url.searchParams.set('stateCode', params.stateCode)
+      // SAM.gov Entity API expects physicalAddressProvinceOrStateCode, not stateCode
+      url.searchParams.set('physicalAddressProvinceOrStateCode', params.stateCode)
     }
     if (params.legalBusinessName) {
       url.searchParams.set('legalBusinessName', params.legalBusinessName)
