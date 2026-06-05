@@ -48,6 +48,16 @@ export interface GmailMessage {
 }
 
 /**
+ * RFC 2047 encode a header value if it contains any non-ASCII characters.
+ * Without this, Gmail mis-renders UTF-8 bytes as Latin-1 (e.g. em-dash → "Ã¢Â€Â—").
+ */
+function encodeHeader(value: string): string {
+  // eslint-disable-next-line no-control-regex
+  if (/^[\x00-\x7F]*$/.test(value)) return value
+  return `=?UTF-8?B?${Buffer.from(value, 'utf-8').toString('base64')}?=`
+}
+
+/**
  * Build an RFC 2822 MIME message and base64url-encode it for the Gmail API.
  */
 function buildRawMessage(opts: GmailSendOptions, fromAddress: string): string {
@@ -58,7 +68,7 @@ function buildRawMessage(opts: GmailSendOptions, fromAddress: string): string {
   const headers = [
     `From: ${fromAddress}`,
     `To: ${opts.to}`,
-    `Subject: ${opts.subject}`,
+    `Subject: ${encodeHeader(opts.subject)}`,
     `MIME-Version: 1.0`,
   ]
 

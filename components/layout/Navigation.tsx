@@ -253,7 +253,7 @@ export default function Navigation() {
                         Profile &amp; organization
                       </Link>
                       <button
-                        onClick={() => { setOpenDropdown(null); signOut() }}
+                        onClick={() => { setOpenDropdown(null); signOut({ callbackUrl: '/login' }) }}
                         className="block w-full text-left px-4 py-2 text-sm text-stone-700 hover:bg-stone-50"
                       >
                         Sign out
