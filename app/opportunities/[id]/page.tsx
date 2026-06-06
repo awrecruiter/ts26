@@ -451,6 +451,54 @@ export default function OpportunityWorkspacePage() {
             setEmailTemplateType('sow_delivery')
             setActivePanel('email')
           }}
+          onSendSowDirect={async (sub) => {
+            const email = sub.email
+            if (!email) return { success: false, error: 'Vendor has no email saved' }
+            if (!currentSOW?.id) return { success: false, error: 'No SOW available to attach' }
+
+            const senderName = session?.user?.name || ''
+            const senderOrg = session?.user?.organization || ''
+            const senderTitle = session?.user?.title || ''
+            const signature = [senderName, senderTitle, senderOrg].filter(Boolean).join('\n') || senderName
+
+            const quoteDue =
+              (currentSOW?.content as any)?.opportunity?.quoteDeadline ||
+              'the end of this week'
+
+            const recipientName = sub.contactName || sub.name
+            const subject = `Statement of Work — ${opportunity.title} (${opportunity.agency || ''})`.trim()
+            const body =
+              `Hello ${recipientName},\n\n` +
+              `Per our conversation, here is the Statement of Work for the ${opportunity.title} ` +
+              `opportunity (${opportunity.solicitationNumber}). The SOW is attached for your review.\n\n` +
+              `Please return a firm fixed-price quote — all-inclusive (materials, labor, shipping, ` +
+              `taxes, fees) — by ${quoteDue}.\n\n` +
+              `Thanks,\n${signature}`
+
+            try {
+              const res = await fetch('/api/email/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  to: email,
+                  subject,
+                  body,
+                  opportunityId: opportunity.id,
+                  subcontractorId: sub.id,
+                  sowId: currentSOW.id,
+                  attachmentIds: [],
+                }),
+              })
+              const data = await res.json().catch(() => ({}))
+              if (!res.ok || !data.success) {
+                return { success: false, error: data.error || `Send failed (${res.status})` }
+              }
+              fetchData()
+              return { success: true }
+            } catch (e) {
+              return { success: false, error: e instanceof Error ? e.message : 'Network error' }
+            }
+          }}
           onSubcontractorsUpdated={fetchData}
           expandedSubcontractorId={expandedSubcontractorId}
           onExpandedSubcontractorChange={setExpandedSubcontractorId}
