@@ -1023,56 +1023,61 @@ export default function SubcontractorPanel({
                       </div>
                     )}
 
-                    {/* Step 2: Email (appears ONLY after call marked complete) */}
-                    {callDone && (
-                      <div className="mb-4 flex items-start gap-3">
-                        <div className="pt-6">
-                          <StepBadge n={2} state={hasEmail ? 'done' : 'current'} />
-                        </div>
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-stone-600 mb-1.5">
-                            Vendor Email Address
-                          </label>
-                          <div className="flex gap-2">
-                            <input
-                              type="email"
-                              value={emailValue}
-                              onChange={(e) => setEmailInputs(prev => ({ ...prev, [sub.id]: e.target.value }))}
-                              placeholder="Enter email from call..."
-                              className="flex-1 px-3 py-2 text-sm border border-stone-200 rounded focus:ring-2 focus:ring-stone-300 focus:border-stone-300"
-                            />
-                            {emailValue && emailValue !== (sub.email || '') && (
-                              <button
-                                onClick={() => handleSaveEmail(sub)}
-                                className="px-3 py-2 text-xs font-medium text-white bg-stone-800 rounded hover:bg-stone-700 transition-colors"
-                              >
-                                Save
-                              </button>
-                            )}
-                          </div>
+                    {/* Step 2: Email — always visible so the goal is obvious. Input is
+                        disabled until the call is marked complete. */}
+                    <div className="mb-4 flex items-start gap-3">
+                      <div className="pt-6">
+                        <StepBadge
+                          n={2}
+                          state={!callDone ? 'pending' : hasEmail ? 'done' : 'current'}
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className={`block text-xs font-medium mb-1.5 ${callDone ? 'text-stone-600' : 'text-stone-400'}`}>
+                          Vendor Email Address
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="email"
+                            value={emailValue}
+                            onChange={(e) => setEmailInputs(prev => ({ ...prev, [sub.id]: e.target.value }))}
+                            placeholder={callDone ? 'Enter email from call...' : 'Mark call complete to enable'}
+                            disabled={!callDone}
+                            className={`flex-1 px-3 py-2 text-sm border rounded focus:ring-2 focus:ring-stone-300 focus:border-stone-300 ${
+                              callDone ? 'border-stone-200 bg-white' : 'border-stone-200 bg-stone-50 text-stone-400 cursor-not-allowed'
+                            }`}
+                          />
+                          {callDone && emailValue && emailValue !== (sub.email || '') && (
+                            <button
+                              onClick={() => handleSaveEmail(sub)}
+                              className="px-3 py-2 text-xs font-medium text-white bg-stone-800 rounded hover:bg-stone-700 transition-colors"
+                            >
+                              Save
+                            </button>
+                          )}
                         </div>
                       </div>
-                    )}
+                    </div>
 
-                    {/* Step 3: Send SOW (activates ONLY after a valid email is entered).
-                        The sow_delivery template asks for a quote in the body, so this
-                        single button handles both "deliver SOW" and "request quote". */}
-                    {callDone && (
-                      <div className="flex items-center gap-3">
-                        <StepBadge n={3} state={canSendSOW ? 'current' : 'pending'} />
-                        <button
-                          onClick={() => handleSendSOW(sub)}
-                          disabled={!canSendSOW}
-                          className={`flex-1 px-4 py-2.5 text-sm font-medium rounded transition-colors ${
-                            canSendSOW
-                              ? 'bg-stone-800 text-white hover:bg-stone-700'
-                              : 'bg-stone-100 text-stone-400 cursor-not-allowed'
-                          }`}
-                        >
-                          {canSendSOW ? 'Send SOW' : 'Enter email to send SOW'}
-                        </button>
-                      </div>
-                    )}
+                    {/* Step 3: Send SOW — always visible, illuminates only when call done + valid email. */}
+                    <div className="flex items-center gap-3">
+                      <StepBadge n={3} state={canSendSOW ? 'current' : 'pending'} />
+                      <button
+                        onClick={() => handleSendSOW(sub)}
+                        disabled={!canSendSOW}
+                        className={`flex-1 px-4 py-2.5 text-sm font-medium rounded transition-colors ${
+                          canSendSOW
+                            ? 'bg-stone-800 text-white hover:bg-stone-700'
+                            : 'bg-stone-100 text-stone-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {canSendSOW
+                          ? 'Send SOW'
+                          : !callDone
+                          ? 'Mark call complete to send SOW'
+                          : 'Enter email to send SOW'}
+                      </button>
+                    </div>
 
                     {/* Workflow status hint */}
                     {!callDone && (
