@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { getPricingRecommendation } from '@/lib/usaspending'
+import { getComparablesForOpportunity } from '@/lib/comparables'
 
 export async function POST(
   req: Request,
@@ -33,45 +33,50 @@ export async function POST(
       return NextResponse.json({ error: 'Opportunity not found' }, { status: 404 })
     }
 
-    // Get pricing recommendation from USASpending
-    const pricingAnalysis = await getPricingRecommendation({
+    const summary = await getComparablesForOpportunity({
+      id: opportunity.id,
       naicsCode: opportunity.naicsCode,
-      title: opportunity.title,
+      pscCode: opportunity.pscCode,
       agency: opportunity.agency,
+      title: opportunity.title,
+      solicitationNumber: opportunity.solicitationNumber,
+      rawData: opportunity.rawData,
     })
 
-    // If no historical data found, don't create an assessment with invented numbers
-    if (pricingAnalysis.confidence === 'no_data' || pricingAnalysis.recommendedBidPrice === 0) {
+    if (summary.confidence === 'insufficient' || summary.median <= 0) {
       return NextResponse.json(
         {
           error: 'no_historical_data',
           message: `No historical contracts found on USASpending.gov for NAICS ${opportunity.naicsCode ?? 'unknown'}${opportunity.agency ? ` / ${opportunity.agency}` : ''}. Enter your own estimated value and cost to create an assessment.`,
-          dataSource: pricingAnalysis.dataSource,
+          dataSource: `USASpending.gov · n=${summary.count} · ${summary.confidence} confidence`,
         },
         { status: 422 }
       )
     }
 
-    // Historical median is the estimated contract value
-    const recommendedPrice = pricingAnalysis.recommendedBidPrice
+    const recommendedPrice = summary.median
 
-    // Determine opportunity size and strategic value based on historical data
     let strategicValue: 'HIGH' | 'MEDIUM' | 'LOW' = 'MEDIUM'
-    if (recommendedPrice >= 10000000) {
-      strategicValue = 'HIGH'
-    } else if (recommendedPrice < 100000) {
-      strategicValue = 'LOW'
-    }
+    if (recommendedPrice >= 10_000_000) strategicValue = 'HIGH'
+    else if (recommendedPrice < 100_000) strategicValue = 'LOW'
 
-    // Determine risk level based on data confidence
     let riskLevel: 'HIGH' | 'MEDIUM' | 'LOW' = 'MEDIUM'
-    if (pricingAnalysis.confidence === 'high' || pricingAnalysis.confidence === 'medium') {
-      riskLevel = 'LOW'
-    } else if (pricingAnalysis.confidence === 'very_low') {
-      riskLevel = 'HIGH'
-    }
+    if (summary.confidence === 'high' || summary.confidence === 'medium') riskLevel = 'LOW'
+    else if (summary.confidence === 'low') riskLevel = 'HIGH'
 
-    const sourceNote = `${pricingAnalysis.dataSource}. Value shown is median of historical awards — enter your own cost estimate to calculate margin.`
+    const sourceNote = `USASpending.gov · n=${summary.count} · tier=${summary.matchTier} · range $${Math.round(summary.p25).toLocaleString()}–$${Math.round(summary.p75).toLocaleString()} · median $${Math.round(summary.median).toLocaleString()} · ${summary.confidence}. Value shown is median of comparable historical awards — enter your own cost estimate to calculate margin.`
+
+    // Keep historicalData populated for the panel's legacy display (top 10 awards):
+    const historicalData = summary.awards.slice(0, 10).map((a) => ({
+      award_id: a.awardId,
+      award_amount: a.awardAmount,
+      awarding_agency_name: a.awardingAgency ?? null,
+      recipient_name: a.recipientName,
+      description: a.description ?? null,
+      period_of_performance_start_date: a.popStart?.toISOString() ?? null,
+      period_of_performance_current_end_date: a.popEnd?.toISOString() ?? null,
+      naics_code: a.naicsCode ?? null,
+    }))
 
     // Create assessment with value from historical data; cost left blank for user to fill
     const assessment = await prisma.opportunityAssessment.create({
@@ -87,7 +92,7 @@ export async function POST(
         recommendation: 'REVIEW',
         notes: sourceNote,
         assessedById: session.user.id,
-        historicalData: pricingAnalysis.historicalContracts as any,
+        historicalData: historicalData as any,
       },
       include: {
         assessedBy: {

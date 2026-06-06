@@ -90,7 +90,8 @@ async function fetchOpportunities() {
         || opp.officeAddress?.state
         || null
 
-      let naicsCode = opp.naicsCode || opp.classificationCode || null
+      const naicsCode = opp.naicsCode || null
+      const pscCode = opp.classificationCode || null
 
       await prisma.opportunity.upsert({
         where: { solicitationNumber: solNum },
@@ -98,6 +99,7 @@ async function fetchOpportunities() {
           title: opp.title || 'Untitled',
           description: typeof description === 'string' ? description.substring(0, 10000) : JSON.stringify(description).substring(0, 10000),
           naicsCode,
+          pscCode,
           agency: opp.fullParentPathName || opp.organizationName || null,
           department: opp.department || null,
           state: popState,
@@ -112,6 +114,7 @@ async function fetchOpportunities() {
           title: opp.title || 'Untitled',
           description: typeof description === 'string' ? description.substring(0, 10000) : JSON.stringify(description).substring(0, 10000),
           naicsCode,
+          pscCode,
           agency: opp.fullParentPathName || opp.organizationName || null,
           department: opp.department || null,
           state: popState,

@@ -1,7 +1,27 @@
 'use client'
 
 import Link from 'next/link'
-import { extractOpportunityValue } from '@/components/assessment/MarginCalculator'
+import { format } from 'date-fns'
+
+interface ComparablesData {
+  count: number
+  p25: number
+  median: number
+  p75: number
+  min: number
+  max: number
+  confidence: 'high' | 'medium' | 'low' | 'insufficient'
+  matchTier:
+    | 'naics+agency+keywords'
+    | 'naics+keywords'
+    | 'naics+agency'
+    | 'naics'
+    | null
+  fetchedAt: string
+  topIncumbent: { name: string; amount: number; popStart: string | null } | null
+  currentIncumbent: { name: string; popEnd: string | null } | null
+  isStale: boolean
+}
 
 interface OpportunityCardProps {
   opportunity: {
@@ -11,15 +31,12 @@ interface OpportunityCardProps {
     description?: string | null
     agency?: string | null
     naicsCode?: string | null
+    pscCode?: string | null
     responseDeadline?: Date | null
     postedDate?: Date | null
     status: string
     rawData?: unknown
-    comparable?: {
-      value: number
-      source: string
-      totalContracts: number
-    } | null
+    comparables?: ComparablesData | null
     _count?: {
       bids: number
       subcontractors: number
@@ -41,6 +58,21 @@ interface OpportunityCardProps {
       } | null
     }>
   }
+}
+
+function formatCompact(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '$0'
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(1)}B`
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`
+  return `$${Math.round(n)}`
+}
+
+function formatMonYear(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return format(d, 'MMM yyyy')
 }
 
 function DataSourceIndicator({ bids }: { bids?: OpportunityCardProps['opportunity']['bids'] }) {
@@ -86,20 +118,7 @@ function DataSourceIndicator({ bids }: { bids?: OpportunityCardProps['opportunit
 
 export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
   const assessment = opportunity.assessment
-  const samValue = extractOpportunityValue(opportunity.rawData)
-  const comparable = opportunity.comparable
-  const valueVal = (assessment?.estimatedValue && assessment.estimatedValue > 0)
-    ? assessment.estimatedValue
-    : (samValue.value && samValue.value > 0)
-      ? samValue.value
-      : (comparable?.value && comparable.value > 0)
-        ? comparable.value
-        : 0
-  const valueSource = (assessment?.estimatedValue && assessment.estimatedValue > 0)
-    ? 'Saved estimate'
-    : (samValue.value && samValue.value > 0)
-      ? samValue.source
-      : comparable?.source ?? 'Insufficient data — enter manual estimate'
+  const comparables = opportunity.comparables
 
   const costVal = assessment?.estimatedCost ?? 0
   const marginPercent = assessment?.profitMarginPercent ?? null
@@ -113,6 +132,57 @@ export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
   const daysUntilDeadline = deadline
     ? Math.ceil((deadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     : null
+
+  const savedEstimate =
+    assessment?.estimatedValue && assessment.estimatedValue > 0
+      ? assessment.estimatedValue
+      : null
+
+  // Comparables tile content
+  let comparablesTile: React.ReactNode
+  if (comparables === null || comparables === undefined) {
+    comparablesTile = (
+      <p className="text-xs italic text-stone-400">Loading comparables…</p>
+    )
+  } else if (comparables.confidence === 'insufficient' || comparables.count < 3) {
+    comparablesTile = (
+      <p className="text-xs text-stone-400">
+        Insufficient data — enter manual estimate
+      </p>
+    )
+  } else {
+    const metaParts: string[] = [`n=${comparables.count}`]
+    metaParts.push(opportunity.naicsCode ? `NAICS ${opportunity.naicsCode}` : 'NAICS —')
+    if (opportunity.pscCode) metaParts.push(`PSC ${opportunity.pscCode}`)
+    if (comparables.matchTier) metaParts.push(comparables.matchTier)
+    metaParts.push(comparables.confidence)
+    if (comparables.isStale) metaParts.push('stale')
+
+    comparablesTile = (
+      <>
+        <p className="text-base font-semibold text-stone-900 tabular-nums">
+          {formatCompact(comparables.min)} – {formatCompact(comparables.max)}
+          {' '}· median {formatCompact(comparables.median)}
+        </p>
+        <p className="text-[10px] text-stone-400 mt-0.5">
+          {metaParts.join(' · ')}
+        </p>
+        {comparables.topIncumbent && (
+          <p className="text-xs text-stone-600 mt-1">
+            Top winner: {comparables.topIncumbent.name} (
+            {formatCompact(comparables.topIncumbent.amount)},{' '}
+            {formatMonYear(comparables.topIncumbent.popStart)})
+          </p>
+        )}
+        {comparables.currentIncumbent && (
+          <p className="text-xs text-amber-700 font-medium mt-0.5">
+            Recompete · current contract expires{' '}
+            {formatMonYear(comparables.currentIncumbent.popEnd)}
+          </p>
+        )}
+      </>
+    )
+  }
 
   return (
     <Link href={`/opportunities/${opportunity.id}`}>
@@ -161,15 +231,15 @@ export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
           </p>
         )}
 
-        {/* Assessment Metrics — always shown; sourced from saved assessment OR SAM.gov */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 p-3 bg-stone-50 rounded-lg border border-stone-100">
-          <div>
-            <p className="text-xs text-stone-500 mb-1">Contract Value</p>
-            <p className="text-base font-bold text-stone-900">
-              {valueVal > 0 ? `$${valueVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
-            </p>
-            {valueSource && (
-              <p className="text-[10px] text-stone-400 mt-0.5 truncate" title={valueSource}>{valueSource}</p>
+        {/* Assessment Metrics — comparables lead; saved assessment + cost/margin follow */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4 p-3 bg-stone-50 rounded-lg border border-stone-100">
+          <div className="col-span-2 sm:col-span-2">
+            <p className="text-xs text-stone-500 mb-1">Comparable awards (last 5 yrs)</p>
+            {comparablesTile}
+            {savedEstimate !== null && (
+              <p className="text-[10px] text-stone-500 mt-1">
+                Saved estimate: {formatCompact(savedEstimate)}
+              </p>
             )}
           </div>
           <div>
@@ -194,7 +264,7 @@ export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
           </div>
           <div>
             <p className="text-xs text-stone-500 mb-1">Risk / Strategic</p>
-            <div className="flex gap-1">
+            <div className="flex gap-1 flex-wrap">
               <span className="text-xs px-2 py-0.5 rounded font-medium bg-stone-200 text-stone-700">
                 {assessment?.riskLevel || '—'}
               </span>
@@ -213,10 +283,23 @@ export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
               <span className="ml-2 text-stone-700">{opportunity.agency}</span>
             </div>
           )}
-          {opportunity.naicsCode && (
+          {(opportunity.naicsCode || opportunity.pscCode) && (
             <div>
-              <span className="text-stone-400">NAICS:</span>
-              <span className="ml-2 text-stone-700">{opportunity.naicsCode}</span>
+              {opportunity.naicsCode && (
+                <>
+                  <span className="text-stone-400">NAICS:</span>
+                  <span className="ml-2 text-stone-700">{opportunity.naicsCode}</span>
+                </>
+              )}
+              {opportunity.naicsCode && opportunity.pscCode && (
+                <span className="mx-2 text-stone-300">·</span>
+              )}
+              {opportunity.pscCode && (
+                <>
+                  <span className="text-stone-400">PSC:</span>
+                  <span className="ml-2 text-stone-700">{opportunity.pscCode}</span>
+                </>
+              )}
             </div>
           )}
         </div>

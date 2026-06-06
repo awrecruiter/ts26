@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { format } from 'date-fns'
 import type { RichAttachment } from '@/lib/types/attachment'
 import type { OpportunityBrief, AttachmentRelevanceMap } from '@/lib/openai'
+import AttachmentPreviewModal from '@/components/shared/AttachmentPreviewModal'
 
 interface EmailDraftPanelProps {
   recipientName?: string
@@ -150,75 +151,6 @@ function buildBriefContext(brief: OpportunityBrief | null | undefined, callCheck
     : '   – (See call checklist in our sub vetting workflow.)'
 
   return { what_we_need, deliverables_block, qualifications_block, screening_questions }
-}
-
-// ─── Attachment Preview Modal ────────────────────────────────────────────────
-
-function AttachmentPreviewModal({
-  attachment,
-  opportunityId,
-  onClose,
-}: {
-  attachment: RichAttachment
-  opportunityId: string
-  onClose: () => void
-}) {
-  const proxyUrl = `/api/opportunities/${opportunityId}/attachments/${attachment.id}/proxy`
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', handleKey)
-    return () => document.removeEventListener('keydown', handleKey)
-  }, [onClose])
-
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-stone-900/90" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      {/* Header bar */}
-      <div className="flex items-center justify-between px-4 py-3 bg-stone-900 border-b border-stone-700 flex-shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <svg className="h-4 w-4 text-stone-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-          </svg>
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-white truncate">{attachment.originalName}</p>
-            {attachment.isEdited && (
-              <p className="text-xs text-stone-400 truncate">Working name: {attachment.currentName}</p>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <a
-            href={proxyUrl}
-            download={attachment.currentName}
-            className="px-3 py-1.5 text-xs font-medium text-stone-300 border border-stone-600 rounded-lg hover:bg-stone-700 transition-colors flex items-center gap-1.5"
-          >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            Download
-          </a>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-stone-400 hover:text-white hover:bg-stone-700 rounded-lg transition-colors"
-            aria-label="Close preview"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {/* iframe */}
-      <div className="flex-1 min-h-0">
-        <iframe
-          src={proxyUrl}
-          className="w-full h-full border-0"
-          title={attachment.originalName}
-        />
-      </div>
-    </div>
-  )
 }
 
 // ─── Main Panel ──────────────────────────────────────────────────────────────

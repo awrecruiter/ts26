@@ -1,7 +1,15 @@
 /**
  * USASpending API Integration
  * Fetches historical contract data to inform competitive bid pricing
+ *
+ * NOTE: getPricingRecommendation now delegates to lib/comparables.ts so each
+ * opportunity gets its own per-opportunity cached comparables (no more global
+ * (NAICS, agency) cache that bled identical medians across unrelated procurements).
+ * The raw fetch helper searchHistoricalContracts and the deterministic stats
+ * helper analyzeHistoricalPricing are still exported for callers that need them.
  */
+
+import { getComparablesForOpportunity } from './comparables'
 
 const USASPENDING_API_BASE = 'https://api.usaspending.gov/api/v2'
 
@@ -210,48 +218,91 @@ export function analyzeHistoricalPricing(
 }
 
 /**
- * Get pricing recommendation for an opportunity
+ * Get pricing recommendation for an opportunity.
+ *
+ * Delegates to the per-opportunity comparables system (lib/comparables.ts) so the
+ * underlying USASpending results are scoped per-opportunity rather than shared via
+ * a global (NAICS, agency) cache. Returns the same PricingAnalysis shape existing
+ * callers (assessment/auto-generate, bids) expect.
  */
 export async function getPricingRecommendation(
   opportunity: {
+    id: string
     naicsCode?: string | null
+    pscCode?: string | null
     title: string
     agency?: string | null
+    solicitationNumber: string
+    rawData?: unknown
   },
   estimatedCost?: number
 ): Promise<PricingAnalysis> {
-  // Strategy: search by NAICS + agency first; if empty, drop agency; if still empty, try 4-digit parent NAICS
-  const naics6 = opportunity.naicsCode ?? undefined
-  const naics4 = naics6?.slice(0, 4)
+  const summary = await getComparablesForOpportunity({
+    id: opportunity.id,
+    naicsCode: opportunity.naicsCode ?? null,
+    pscCode: opportunity.pscCode ?? null,
+    agency: opportunity.agency ?? null,
+    title: opportunity.title,
+    solicitationNumber: opportunity.solicitationNumber,
+    // Prisma's JsonValue type can't be re-narrowed safely here; cast for the call.
+    rawData: (opportunity.rawData ?? null) as never,
+  })
 
-  // Pass 1: NAICS + agency (most specific)
-  if (naics6) {
-    const contracts = await searchHistoricalContracts({
-      naicsCode: naics6,
-      agencyName: opportunity.agency ?? undefined,
-      limit: 100,
-    })
-    if (contracts.length > 0) {
-      return analyzeHistoricalPricing(contracts, estimatedCost, naics6)
+  const naicsLabel = opportunity.naicsCode ? ` NAICS ${opportunity.naicsCode}` : ''
+
+  if (summary.confidence === 'insufficient') {
+    const costBasedPrice = estimatedCost && estimatedCost > 0 ? estimatedCost * 1.20 : 0
+    return {
+      averageContractValue: 0,
+      medianContractValue: 0,
+      minContractValue: 0,
+      maxContractValue: 0,
+      totalContracts: 0,
+      recommendedBidPrice: costBasedPrice,
+      confidence: 'no_data',
+      dataSource: costBasedPrice > 0
+        ? `Cost-based estimate (20% markup) — no USASpending.gov comparables found for${naicsLabel}`
+        : `No USASpending.gov comparables found for${naicsLabel}`,
+      historicalContracts: [],
     }
   }
 
-  // Pass 2: NAICS only (drop agency — agency name might not match USASpending toptier name)
-  if (naics6) {
-    const contracts = await searchHistoricalContracts({ naicsCode: naics6, limit: 100 })
-    if (contracts.length > 0) {
-      return analyzeHistoricalPricing(contracts, estimatedCost, naics6)
-    }
-  }
+  const averageContractValue = (summary.p25 + summary.median + summary.p75) / 3
+  const medianBased = summary.median
+  const costFloor = estimatedCost && estimatedCost > 0 ? estimatedCost * 1.20 : 0
+  const recommendedBidPrice = Math.max(medianBased, costFloor)
 
-  // Pass 3: 4-digit parent NAICS (broader sector)
-  if (naics4 && naics4 !== naics6) {
-    const contracts = await searchHistoricalContracts({ naicsCode: naics4, limit: 100 })
-    if (contracts.length > 0) {
-      return analyzeHistoricalPricing(contracts, estimatedCost, naics4)
-    }
-  }
+  const confidence: PricingAnalysis['confidence'] =
+    summary.confidence === 'high'
+      ? 'high'
+      : summary.confidence === 'medium'
+        ? 'medium'
+        : 'low'
 
-  // No data found at any breadth
-  return analyzeHistoricalPricing([], estimatedCost, opportunity.naicsCode)
+  const fetchedLabel = summary.fetchedAt.toISOString().split('T')[0]
+  const dataSource = `USASpending.gov · n=${summary.count} · tier=${summary.matchTier ?? 'none'} · fetched ${fetchedLabel} · ${summary.confidence} confidence`
+
+  const historicalContracts: HistoricalContract[] = summary.awards.slice(0, 10).map((a) => ({
+    award_id: a.awardId,
+    award_amount: a.awardAmount,
+    awarding_agency_name: a.awardingAgency || 'N/A',
+    recipient_name: a.recipientName,
+    description: a.description || 'N/A',
+    period_of_performance_start_date: a.popStart ? a.popStart.toISOString().split('T')[0] : '',
+    period_of_performance_current_end_date: a.popEnd ? a.popEnd.toISOString().split('T')[0] : '',
+    naics_code: a.naicsCode || '',
+    naics_description: '',
+  }))
+
+  return {
+    averageContractValue,
+    medianContractValue: summary.median,
+    minContractValue: summary.min,
+    maxContractValue: summary.max,
+    totalContracts: summary.count,
+    recommendedBidPrice,
+    confidence,
+    dataSource,
+    historicalContracts,
+  }
 }

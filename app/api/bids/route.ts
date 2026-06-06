@@ -45,9 +45,11 @@ export async function POST(req: Request) {
     const estimatedCost = opportunity.assessment?.estimatedCost || undefined
     const pricingAnalysis = await getPricingRecommendation(
       {
+        id: opportunity.id,
         naicsCode: opportunity.naicsCode,
         title: opportunity.title,
         agency: opportunity.agency,
+        solicitationNumber: opportunity.solicitationNumber,
       },
       estimatedCost
     )

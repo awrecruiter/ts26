@@ -112,6 +112,7 @@ model Opportunity {
   title              String
   description        String? @db.Text
   naicsCode          String?
+  pscCode            String? // Product Service Code (FSC) from SAM.gov classificationCode
   agency             String?
   department         String?
   state              String?
@@ -143,12 +144,49 @@ model Opportunity {
   attachmentOverrides AttachmentOverride[]
   attachmentFormData  AttachmentFormData[]
   bidApprovalRequests BidApprovalRequest[]
+  comparables         OpportunityComparable[]
 
   @@index([solicitationNumber])
   @@index([responseDeadline])
   @@index([status])
   @@index([naicsCode])
   @@map("opportunities")
+}
+
+// ============ OPPORTUNITY COMPARABLES ============
+// Cached USASpending historical-award results, scoped per-opportunity.
+// Replaces the (NAICS, agency) in-process cache that produced identical
+// inflated medians for unrelated procurements.
+model OpportunityComparable {
+  id            String @id @default(cuid())
+  opportunityId String
+
+  // From USASpending
+  awardId        String
+  recipientName  String
+  awardAmount    Float
+  awardingAgency String?
+  awardingOffice String?
+  description    String? @db.Text
+  popStart       DateTime?
+  popEnd         DateTime?
+  naicsCode      String?
+  pscCode        String?
+  solicitationId String? // For recompete matching against Opportunity.solicitationNumber
+
+  isRecompete        Boolean @default(false) // solicitationId == opportunity.solicitationNumber
+  isCurrentIncumbent Boolean @default(false) // isRecompete && popEnd > now
+
+  // Provenance
+  fetchedAt DateTime @default(now())
+  matchTier String // 'naics+agency+keywords' | 'naics+keywords' | 'naics+agency' | 'naics'
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@unique([opportunityId, awardId])
+  @@index([opportunityId])
+  @@index([opportunityId, awardAmount])
+  @@map("opportunity_comparables")
 }
 
 enum OpportunityStatus {

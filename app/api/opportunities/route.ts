@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { getNaicsBenchmarks, benchmarkKey } from '@/lib/naics-benchmark'
+import { summarizeComparables, type MatchTier } from '@/lib/comparables'
 
 export async function GET(req: Request) {
   try {
@@ -181,29 +181,47 @@ export async function GET(req: Request) {
       },
     })
 
-    // Enrich with NAICS-level USASpending benchmarks for any opportunity that
-    // lacks a saved estimatedValue. SAM.gov rarely includes value on active
-    // solicitations, so this is the primary signal for the card UI.
-    const needsBenchmark = opportunities.filter(
-      (o) => !o.assessment?.estimatedValue || o.assessment.estimatedValue <= 0
-    )
-    const benchmarkPairs = needsBenchmark
-      .filter((o) => o.naicsCode)
-      .map((o) => ({ naicsCode: o.naicsCode!, agency: o.agency }))
-    const benchmarks = benchmarkPairs.length > 0
-      ? await getNaicsBenchmarks(benchmarkPairs)
-      : new Map()
+    // Batch-load cached comparables for all returned opps (avoid N+1).
+    const oppIds = opportunities.map((o) => o.id)
+    const allComparables = await prisma.opportunityComparable.findMany({
+      where: { opportunityId: { in: oppIds } },
+      orderBy: { awardAmount: 'desc' },
+    })
+    const byOpp = new Map<string, typeof allComparables>()
+    for (const c of allComparables) {
+      const arr = byOpp.get(c.opportunityId) ?? []
+      arr.push(c)
+      byOpp.set(c.opportunityId, arr)
+    }
 
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
     const enriched = opportunities.map((o) => {
-      if (!o.naicsCode) return o
-      const b = benchmarks.get(benchmarkKey(o.naicsCode, o.agency))
-      if (!b) return o
+      const awards = byOpp.get(o.id) ?? []
+      if (awards.length === 0) {
+        return { ...o, comparables: null }
+      }
+      const fetchedAt = awards[0].fetchedAt
+      const isStale = Date.now() - fetchedAt.getTime() > SEVEN_DAYS_MS
+      const summary = summarizeComparables(
+        awards,
+        (awards[0].matchTier as MatchTier) || null,
+        fetchedAt
+      )
       return {
         ...o,
-        comparable: {
-          value: b.medianValue,
-          source: b.source,
-          totalContracts: b.totalContracts,
+        comparables: {
+          count: summary.count,
+          p25: summary.p25,
+          median: summary.median,
+          p75: summary.p75,
+          min: summary.min,
+          max: summary.max,
+          confidence: summary.confidence,
+          matchTier: summary.matchTier,
+          fetchedAt: summary.fetchedAt,
+          topIncumbent: summary.topIncumbent,
+          currentIncumbent: summary.currentIncumbent,
+          isStale,
         },
       }
     })

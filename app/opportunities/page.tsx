@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import OpportunityCard from '@/components/opportunities/OpportunityCard'
@@ -62,6 +62,7 @@ function OpportunitiesContent() {
   const [fetchResult, setFetchResult] = useState<string | null>(null)
   const [searchingSam, setSearchingSam] = useState(false)
   const [samSearchResult, setSamSearchResult] = useState<string | null>(null)
+  const refreshedIdsRef = useRef<Set<string>>(new Set())
 
   // Basic filters
   const [search, setSearch] = useState(searchParams.get('search') || '')
@@ -159,6 +160,38 @@ function OpportunitiesContent() {
     }
   }
 
+  const refreshComparablesInBatches = useCallback(async (ids: string[]) => {
+    const POOL_SIZE = 3
+    const queue = [...ids]
+
+    async function worker() {
+      while (queue.length > 0) {
+        const id = queue.shift()
+        if (!id) return
+        if (refreshedIdsRef.current.has(id)) continue
+        refreshedIdsRef.current.add(id)
+        try {
+          const resp = await fetch(`/api/opportunities/${id}/comparables/refresh`, { method: 'POST' })
+          if (!resp.ok) continue
+          const json = await resp.json()
+          if (!json?.summary) continue
+          setOpportunities((prev: any[]) =>
+            prev.map((o) =>
+              o.id === id
+                ? { ...o, comparables: { ...json.summary, isStale: false } }
+                : o
+            )
+          )
+        } catch {
+          // Swallow — opp stays in refreshedIdsRef so we don't retry on filter change.
+          // Card will continue to show "Loading comparables…" until next full reload.
+        }
+      }
+    }
+
+    await Promise.all(Array.from({ length: POOL_SIZE }, () => worker()))
+  }, [])
+
   const fetchOpportunities = async () => {
     try {
       setLoading(true)
@@ -171,8 +204,16 @@ function OpportunitiesContent() {
       if (!response.ok) throw new Error('Failed to fetch opportunities')
       const data = await response.json()
 
-      setOpportunities(data.opportunities || [])
+      const opps: any[] = data.opportunities || []
+      setOpportunities(opps)
       setPagination(data.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 })
+
+      const toRefresh = opps.filter(
+        (o) => o.comparables == null && o.naicsCode && !refreshedIdsRef.current.has(o.id)
+      )
+      if (toRefresh.length > 0) {
+        void refreshComparablesInBatches(toRefresh.map((o) => o.id))
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
