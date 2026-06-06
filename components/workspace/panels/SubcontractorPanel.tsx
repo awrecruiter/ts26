@@ -1021,32 +1021,21 @@ export default function SubcontractorPanel({
                       </div>
                     )}
 
-                    {/* Step 3: Send SOW + Request Quote (activate ONLY after a valid email is entered) */}
+                    {/* Step 3: Send SOW (activates ONLY after a valid email is entered).
+                        The sow_delivery template asks for a quote in the body, so this
+                        single button handles both "deliver SOW" and "request quote". */}
                     {callDone && (
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <button
-                          onClick={() => handleSendSOW(sub)}
-                          disabled={!canSendSOW}
-                          className={`flex-1 px-4 py-2.5 text-sm font-medium rounded transition-colors ${
-                            canSendSOW
-                              ? 'bg-stone-800 text-white hover:bg-stone-700'
-                              : 'bg-stone-100 text-stone-400 cursor-not-allowed'
-                          }`}
-                        >
-                          {canSendSOW ? 'Send SOW' : 'Enter email to send SOW'}
-                        </button>
-                        <button
-                          onClick={() => { if (canSendSOW && onRequestQuote) onRequestQuote(sub) }}
-                          disabled={!canSendSOW}
-                          className={`flex-1 px-4 py-2.5 text-sm font-medium rounded transition-colors ${
-                            canSendSOW
-                              ? 'bg-stone-800 text-white hover:bg-stone-700'
-                              : 'bg-stone-100 text-stone-400 cursor-not-allowed'
-                          }`}
-                        >
-                          {canSendSOW ? 'Request Quote' : 'Enter email to request quote'}
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => handleSendSOW(sub)}
+                        disabled={!canSendSOW}
+                        className={`w-full px-4 py-2.5 text-sm font-medium rounded transition-colors ${
+                          canSendSOW
+                            ? 'bg-stone-800 text-white hover:bg-stone-700'
+                            : 'bg-stone-100 text-stone-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {canSendSOW ? 'Send SOW' : 'Enter email to send SOW'}
+                      </button>
                     )}
 
                     {/* Workflow status hint */}
