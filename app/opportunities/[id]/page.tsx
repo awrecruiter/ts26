@@ -25,6 +25,7 @@ export default function OpportunityWorkspacePage() {
   const [error, setError] = useState('')
   const [activePanel, setActivePanel] = useState('summary')
   const [selectedSubcontractor, setSelectedSubcontractor] = useState<any>(null)
+  const [expandedSubcontractorId, setExpandedSubcontractorId] = useState<string | null>(null)
   const [emailContext, setEmailContext] = useState<{ sowSynopsis?: string }>({})
   const [emailTemplateType, setEmailTemplateType] = useState<'quote_request' | 'sow_delivery' | 'follow_up' | 'custom'>('quote_request')
   const [generatingSOW, setGeneratingSOW] = useState(false)
@@ -451,6 +452,8 @@ export default function OpportunityWorkspacePage() {
             setActivePanel('email')
           }}
           onSubcontractorsUpdated={fetchData}
+          expandedSubcontractorId={expandedSubcontractorId}
+          onExpandedSubcontractorChange={setExpandedSubcontractorId}
         />
       ),
     },
@@ -502,9 +505,13 @@ export default function OpportunityWorkspacePage() {
               if (!res.ok || !data.success) {
                 return { success: false, error: data.error || `Send failed (${res.status})` }
               }
-              // Refetch so the subcontractor's new sowSentAt lands in state
-              // and the vendor moves into the Pending group on next render.
+              // Refetch so sowSentAt lands in state, then return to the Subs
+              // panel and collapse the just-worked card so the next active
+              // vendor is the visual top of the list. The user can re-expand
+              // the just-sent card later to Mark Complete in batch.
               fetchData()
+              setExpandedSubcontractorId(null)
+              setActivePanel('subcontractors')
               return { success: true }
             } catch (e) {
               return { success: false, error: e instanceof Error ? e.message : 'Network error' }

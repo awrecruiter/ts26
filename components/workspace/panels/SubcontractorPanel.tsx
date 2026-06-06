@@ -70,6 +70,9 @@ interface SubcontractorPanelProps {
   onRequestQuote?: (sub: Subcontractor) => void
   onSendDetails?: (sub: Subcontractor) => void
   onSubcontractorsUpdated?: () => void
+  /** Parent-controlled expanded card so post-send flows can collapse. */
+  expandedSubcontractorId?: string | null
+  onExpandedSubcontractorChange?: (id: string | null) => void
   parsedRequirements?: { qualifications: string[], compliance: string[], scope: string[] }
   opportunityInfo?: { naicsCode?: string, state?: string, setAside?: string }
   keyDeliverables?: Array<{ item: string; frequency?: string }>
@@ -145,6 +148,8 @@ export default function SubcontractorPanel({
   onRequestQuote,
   onSendDetails,
   onSubcontractorsUpdated,
+  expandedSubcontractorId,
+  onExpandedSubcontractorChange,
   parsedRequirements,
   opportunityInfo,
   keyDeliverables = [],
@@ -155,7 +160,12 @@ export default function SubcontractorPanel({
   const [filter, setFilter] = useState<'all' | 'quoted' | 'pending'>('all')
   const [isSearching, setIsSearching] = useState(false)
   const [isCleaning, setIsCleaning] = useState(false)
-  const [expandedCard, setExpandedCard] = useState<string | null>(null)
+  const [localExpandedCard, setLocalExpandedCard] = useState<string | null>(null)
+  const expandedCard = expandedSubcontractorId ?? localExpandedCard
+  const setExpandedCard = (id: string | null) => {
+    if (onExpandedSubcontractorChange) onExpandedSubcontractorChange(id)
+    else setLocalExpandedCard(id)
+  }
   const [apiError, setApiError] = useState<string | null>(null)
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null)
   const [radiusMiles, setRadiusMiles] = useState<RadiusMiles>(50)
