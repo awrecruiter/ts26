@@ -1038,23 +1038,17 @@ export default function SubcontractorPanel({
                         <label className="block text-xs font-medium mb-1.5 text-stone-600">
                           Vendor Email Address
                         </label>
-                        <div className="flex gap-2">
-                          <input
-                            type="email"
-                            value={emailValue}
-                            onChange={(e) => setEmailInputs(prev => ({ ...prev, [sub.id]: e.target.value }))}
-                            placeholder="Enter vendor email..."
-                            className="flex-1 px-3 py-2 text-sm border border-stone-200 rounded focus:ring-2 focus:ring-stone-300 focus:border-stone-300 bg-white"
-                          />
-                          {emailValue && emailValue !== (sub.email || '') && (
-                            <button
-                              onClick={() => handleSaveEmail(sub)}
-                              className="px-3 py-2 text-xs font-medium text-white bg-stone-800 rounded hover:bg-stone-700 transition-colors"
-                            >
-                              Save
-                            </button>
-                          )}
-                        </div>
+                        <input
+                          type="email"
+                          value={emailValue}
+                          onChange={(e) => setEmailInputs(prev => ({ ...prev, [sub.id]: e.target.value }))}
+                          onBlur={() => {
+                            const v = (emailInputs[sub.id] ?? '').trim()
+                            if (v && v !== (sub.email || '') && EMAIL_RE.test(v)) handleSaveEmail(sub)
+                          }}
+                          placeholder="Enter vendor email..."
+                          className="w-full px-3 py-2 text-sm border border-stone-200 rounded focus:ring-2 focus:ring-stone-300 focus:border-stone-300 bg-white"
+                        />
                       </div>
                     </div>
 
