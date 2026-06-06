@@ -209,9 +209,18 @@ export async function POST(req: Request) {
       )
     }
 
-    // (VendorCommunication logging skipped — no direct Subcontractor → Vendor
-    //  link in schema today. Add when that relation lands.)
-    void subcontractorId
+    // Stamp the subcontractor as "quote requested" when the send carried a SOW.
+    // Wrapped in try/catch so a failed stamp never fails the user's email.
+    if (subcontractorId && sowId) {
+      try {
+        await prisma.subcontractor.update({
+          where: { id: subcontractorId },
+          data: { sowSentAt: new Date() },
+        })
+      } catch (e) {
+        console.error('[email/send] sowSentAt stamp failed:', e)
+      }
+    }
 
     return NextResponse.json({
       success: true,

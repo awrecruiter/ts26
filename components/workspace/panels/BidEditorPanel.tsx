@@ -40,8 +40,9 @@ export default function BidEditorPanel({
   onSave,
   onStatusChange,
 }: BidEditorPanelProps) {
+  const _isAdmin = userRole === 'ADMIN'
   if (process.env.NODE_ENV !== 'production') {
-    if (bid.status === 'REVIEWED' && !onStatusChange) {
+    if (_isAdmin && bid.status === 'REVIEWED' && !onStatusChange) {
       console.warn('[BidEditorPanel] Reviewed bid rendered without onStatusChange handler — submit button will no-op')
     }
     if (!onSave) {
@@ -268,6 +269,16 @@ export default function BidEditorPanel({
             >
               {saving ? 'Saving...' : 'Save changes'}
             </button>
+          </div>
+        )}
+
+        {/* Agent: Ready-for-admin note (REVIEWED but agent can't submit) */}
+        {isAgent && bid.status === 'REVIEWED' && (
+          <div className="flex items-center gap-2 py-3 px-4 bg-stone-50 border border-stone-200 rounded-lg">
+            <svg className="h-4 w-4 text-stone-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <p className="text-sm text-stone-600">Ready for admin to submit.</p>
           </div>
         )}
 

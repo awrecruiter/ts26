@@ -34,6 +34,30 @@ interface Subcontractor {
   contactEmail?: string | null
   checklistState?: ChecklistItem[] | null
   deliverableChecks?: number[] | null
+  sowSentAt?: string | null
+}
+
+type StepState = 'done' | 'current' | 'pending'
+
+function StepBadge({ n, state }: { n: 1 | 2 | 3; state: StepState }) {
+  const base = 'h-5 w-5 rounded-full text-[11px] font-semibold flex items-center justify-center shrink-0'
+  if (state === 'done') {
+    return (
+      <span className={`${base} bg-stone-800 text-white`} aria-label={`Step ${n} complete`}>
+        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+        </svg>
+      </span>
+    )
+  }
+  return (
+    <span
+      className={state === 'current' ? `${base} bg-stone-800 text-white` : `${base} bg-stone-100 text-stone-400`}
+      aria-label={`Step ${n}`}
+    >
+      {n}
+    </span>
+  )
 }
 
 interface SubcontractorPanelProps {
@@ -474,6 +498,11 @@ export default function SubcontractorPanel({
                   ? ' from SAM.gov'
                   : ''}
               </p>
+              {subcontractors.length > 0 && (
+                <p className="text-xs text-stone-500 mt-1">
+                  {subcontractors.filter(v => v.sowSentAt).length} of {subcontractors.length} quotes requested
+                </p>
+              )}
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
@@ -844,10 +873,9 @@ export default function SubcontractorPanel({
                 {/* Expanded: Call → Email → Send SOW workflow */}
                 {expandedCard === sub.id && (
                   <div className="px-4 pb-4 pt-3 border-t border-stone-100 bg-stone-50">
-                    <p className="text-xs font-medium text-stone-500 mb-3 uppercase tracking-wide">Vendor Workflow</p>
-
                     {/* Step 1: Call */}
                     <div className="flex items-center gap-3 mb-4">
+                      <StepBadge n={1} state={callDone ? 'done' : 'current'} />
                       {sub.phone && !callDone && (
                         <a
                           href={`tel:${sub.phone}`}
@@ -997,26 +1025,31 @@ export default function SubcontractorPanel({
 
                     {/* Step 2: Email (appears ONLY after call marked complete) */}
                     {callDone && (
-                      <div className="mb-4">
-                        <label className="block text-xs font-medium text-stone-600 mb-1.5">
-                          Vendor Email Address
-                        </label>
-                        <div className="flex gap-2">
-                          <input
-                            type="email"
-                            value={emailValue}
-                            onChange={(e) => setEmailInputs(prev => ({ ...prev, [sub.id]: e.target.value }))}
-                            placeholder="Enter email from call..."
-                            className="flex-1 px-3 py-2 text-sm border border-stone-200 rounded focus:ring-2 focus:ring-stone-300 focus:border-stone-300"
-                          />
-                          {emailValue && emailValue !== (sub.email || '') && (
-                            <button
-                              onClick={() => handleSaveEmail(sub)}
-                              className="px-3 py-2 text-xs font-medium text-white bg-stone-800 rounded hover:bg-stone-700 transition-colors"
-                            >
-                              Save
-                            </button>
-                          )}
+                      <div className="mb-4 flex items-start gap-3">
+                        <div className="pt-6">
+                          <StepBadge n={2} state={hasEmail ? 'done' : 'current'} />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-xs font-medium text-stone-600 mb-1.5">
+                            Vendor Email Address
+                          </label>
+                          <div className="flex gap-2">
+                            <input
+                              type="email"
+                              value={emailValue}
+                              onChange={(e) => setEmailInputs(prev => ({ ...prev, [sub.id]: e.target.value }))}
+                              placeholder="Enter email from call..."
+                              className="flex-1 px-3 py-2 text-sm border border-stone-200 rounded focus:ring-2 focus:ring-stone-300 focus:border-stone-300"
+                            />
+                            {emailValue && emailValue !== (sub.email || '') && (
+                              <button
+                                onClick={() => handleSaveEmail(sub)}
+                                className="px-3 py-2 text-xs font-medium text-white bg-stone-800 rounded hover:bg-stone-700 transition-colors"
+                              >
+                                Save
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1025,17 +1058,20 @@ export default function SubcontractorPanel({
                         The sow_delivery template asks for a quote in the body, so this
                         single button handles both "deliver SOW" and "request quote". */}
                     {callDone && (
-                      <button
-                        onClick={() => handleSendSOW(sub)}
-                        disabled={!canSendSOW}
-                        className={`w-full px-4 py-2.5 text-sm font-medium rounded transition-colors ${
-                          canSendSOW
-                            ? 'bg-stone-800 text-white hover:bg-stone-700'
-                            : 'bg-stone-100 text-stone-400 cursor-not-allowed'
-                        }`}
-                      >
-                        {canSendSOW ? 'Send SOW' : 'Enter email to send SOW'}
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <StepBadge n={3} state={canSendSOW ? 'current' : 'pending'} />
+                        <button
+                          onClick={() => handleSendSOW(sub)}
+                          disabled={!canSendSOW}
+                          className={`flex-1 px-4 py-2.5 text-sm font-medium rounded transition-colors ${
+                            canSendSOW
+                              ? 'bg-stone-800 text-white hover:bg-stone-700'
+                              : 'bg-stone-100 text-stone-400 cursor-not-allowed'
+                          }`}
+                        >
+                          {canSendSOW ? 'Send SOW' : 'Enter email to send SOW'}
+                        </button>
+                      </div>
                     )}
 
                     {/* Workflow status hint */}

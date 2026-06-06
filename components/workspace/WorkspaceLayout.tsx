@@ -25,6 +25,8 @@ interface WorkspaceLayoutProps {
   headerContent?: React.ReactNode
   progress?: WorkspaceProgress
   nextAction?: string
+  /** Only ADMIN users see the Submit stage and submit affordances. */
+  isAdmin?: boolean
 }
 
 export default function WorkspaceLayout({
@@ -35,6 +37,7 @@ export default function WorkspaceLayout({
   headerContent,
   progress,
   nextAction,
+  isAdmin = false,
 }: WorkspaceLayoutProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -94,13 +97,14 @@ export default function WorkspaceLayout({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [currentIndex])
 
-  // Calculate progress percentage
+  // Calculate progress percentage — denominator drops to 4 for non-admins
+  // since they can't reach the Submit stage.
   const progressSteps = progress ? [
     progress.sowCreated,
     progress.subcontractorsFound,
     progress.quotesReceived,
     progress.bidCreated,
-    progress.bidSubmitted,
+    ...(isAdmin ? [progress.bidSubmitted] : []),
   ] : []
   const completedSteps = progressSteps.filter(Boolean).length
   const progressPercent = progressSteps.length > 0 ? (completedSteps / progressSteps.length) * 100 : 0
@@ -126,11 +130,11 @@ export default function WorkspaceLayout({
           {/* Progress steps indicator */}
           <div className="px-3 py-2 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto">
-              <ProgressStep label="SOW" completed={progress.sowCreated} />
-              <ProgressStep label="Subs" completed={progress.subcontractorsFound} />
-              <ProgressStep label="Quotes" completed={progress.quotesReceived} />
-              <ProgressStep label="Bid" completed={progress.bidCreated} />
-              <ProgressStep label="Submit" completed={progress.bidSubmitted} />
+              <ProgressStep n={1} label="SOW" completed={progress.sowCreated} />
+              <ProgressStep n={2} label="Subs" completed={progress.subcontractorsFound} />
+              <ProgressStep n={3} label="Quotes" completed={progress.quotesReceived} />
+              <ProgressStep n={4} label="Bid" completed={progress.bidCreated} />
+              {isAdmin && <ProgressStep n={5} label="Submit" completed={progress.bidSubmitted} />}
             </div>
             {nextAction && (
               <p className="text-xs text-stone-500 flex-shrink-0 hidden sm:block">
@@ -252,17 +256,19 @@ export default function WorkspaceLayout({
 }
 
 // Progress step indicator component
-function ProgressStep({ label, completed }: { label: string; completed?: boolean }) {
+function ProgressStep({ n, label, completed }: { n?: number; label: string; completed?: boolean }) {
   return (
     <div className="flex items-center gap-1.5">
-      <div className={`w-4 h-4 rounded-full flex items-center justify-center ${
+      <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
         completed ? 'bg-stone-600' : 'bg-stone-200'
       }`}>
-        {completed && (
-          <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        {completed ? (
+          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
           </svg>
-        )}
+        ) : n !== undefined ? (
+          <span className="text-[10px] font-semibold text-stone-500">{n}</span>
+        ) : null}
       </div>
       <span className={`text-xs ${completed ? 'text-stone-700' : 'text-stone-400'}`}>
         {label}

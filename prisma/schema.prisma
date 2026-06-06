@@ -328,6 +328,7 @@ model Subcontractor {
   // SOW
   sowUrl         String? // Vercel Blob URL
   sowGeneratedAt DateTime?
+  sowSentAt      DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
