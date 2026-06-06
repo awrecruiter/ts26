@@ -73,6 +73,10 @@ interface SubcontractorPanelProps {
    *  Gmail send inline. Returns success or an error string. */
   onSendSowDirect?: (sub: Subcontractor) => Promise<{ success: boolean; error?: string }>
   onSubcontractorsUpdated?: () => void
+  /** Apply a per-vendor patch to the parent's state without refetching the
+   *  whole opportunity. Use this for save email / mark call / sowSentAt
+   *  stamping — anything that should feel instant and not blink the panel. */
+  onSubPatchOptimistic?: (subId: string, patch: Partial<Subcontractor>) => void
   /** Parent-controlled expanded card so post-send flows can collapse. */
   expandedSubcontractorId?: string | null
   onExpandedSubcontractorChange?: (id: string | null) => void
@@ -152,6 +156,7 @@ export default function SubcontractorPanel({
   onSendDetails,
   onSendSowDirect,
   onSubcontractorsUpdated,
+  onSubPatchOptimistic,
   expandedSubcontractorId,
   onExpandedSubcontractorChange,
   parsedRequirements,
@@ -447,7 +452,6 @@ export default function SubcontractorPanel({
 
   const handleToggleCall = async (sub: Subcontractor) => {
     const newValue = !isCallCompleted(sub)
-    // Optimistic update
     setOptimisticCalls(prev => ({ ...prev, [sub.id]: newValue }))
 
     try {
@@ -457,28 +461,30 @@ export default function SubcontractorPanel({
         body: JSON.stringify({ callCompleted: newValue }),
       })
       if (res.ok) {
-        onSubcontractorsUpdated?.()
+        onSubPatchOptimistic?.(sub.id, {
+          callCompleted: newValue,
+          callCompletedAt: newValue ? new Date().toISOString() : null,
+        })
       } else {
-        // Revert on failure
         setOptimisticCalls(prev => ({ ...prev, [sub.id]: !newValue }))
       }
-    } catch (error) {
+    } catch {
       setOptimisticCalls(prev => ({ ...prev, [sub.id]: !newValue }))
     }
   }
 
   const handleSaveEmail = async (sub: Subcontractor) => {
-    const email = emailInputs[sub.id]
-    if (!email?.trim()) return
+    const email = emailInputs[sub.id]?.trim()
+    if (!email) return
 
     try {
       const res = await fetch(`/api/opportunities/${opportunityId}/subcontractors/${sub.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email }),
       })
       if (res.ok) {
-        onSubcontractorsUpdated?.()
+        onSubPatchOptimistic?.(sub.id, { email })
       }
     } catch (error) {
       console.error('Failed to save email:', error)

@@ -493,11 +493,24 @@ export default function OpportunityWorkspacePage() {
               if (!res.ok || !data.success) {
                 return { success: false, error: data.error || `Send failed (${res.status})` }
               }
-              fetchData()
+              setOpportunity((prev: any) => prev ? {
+                ...prev,
+                subcontractors: prev.subcontractors?.map((s: any) =>
+                  s.id === sub.id ? { ...s, sowSentAt: new Date().toISOString() } : s
+                ),
+              } : prev)
               return { success: true }
             } catch (e) {
               return { success: false, error: e instanceof Error ? e.message : 'Network error' }
             }
+          }}
+          onSubPatchOptimistic={(subId, patch) => {
+            setOpportunity((prev: any) => prev ? {
+              ...prev,
+              subcontractors: prev.subcontractors?.map((s: any) =>
+                s.id === subId ? { ...s, ...patch } : s
+              ),
+            } : prev)
           }}
           onSubcontractorsUpdated={fetchData}
           expandedSubcontractorId={expandedSubcontractorId}
