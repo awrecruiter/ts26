@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server'
+import React from 'react'
+import { renderToBuffer } from '@react-pdf/renderer'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { sendEmail, type EmailAttachment } from '@/lib/email'
 import { extractAttachmentsFromRawData } from '@/lib/samgov'
+import { SOWPDF } from '@/components/sows/SOWPDF'
 
 interface SendRequestBody {
   to: string
@@ -14,6 +17,8 @@ interface SendRequestBody {
   subcontractorId?: string
   /** Attachment IDs to bundle from the opportunity's SAM.gov rawData. */
   attachmentIds?: string[]
+  /** SOW id — when present, the PDF is rendered server-side and prepended to attachments. */
+  sowId?: string
 }
 
 /** Fetch one SAM.gov attachment server-side and return it as an EmailAttachment.
@@ -77,8 +82,20 @@ export async function POST(req: Request) {
     }
 
     const body = (await req.json()) as SendRequestBody
-    const { to, subject, attachmentIds = [], opportunityId, subcontractorId } = body
-    const bodyText = body.body
+    const { to, subject, attachmentIds = [], opportunityId, subcontractorId, sowId } = body
+
+    // Substitute the literal "[Your Name]" placeholder with the sender's identity
+    // so signatures don't go out reading "Thanks,\n[Your Name]". Prefer display
+    // name, then organization, then the email prefix.
+    const senderName =
+      session.user.name ||
+      session.user.organization ||
+      session.user.email?.split('@')[0] ||
+      ''
+    const senderLines = [senderName, session.user.title, session.user.organization]
+      .filter((s): s is string => Boolean(s && s.trim()))
+      .join('\n')
+    const bodyText = (body.body || '').replace(/\[Your Name\]/g, senderLines || senderName)
 
     if (!to || !subject || !bodyText) {
       return NextResponse.json(
@@ -113,6 +130,48 @@ export async function POST(req: Request) {
       for (const { id, result } of fetched) {
         if (result) resolvedAttachments.push(result)
         else attachmentFailures.push(id)
+      }
+    }
+
+    // Render the SOW PDF server-side and prepend so the "always-included" SOW
+    // badge in the UI is actually true. Mirrors GET /api/sows/[id]/download.
+    if (sowId) {
+      try {
+        const sow = await prisma.sOW.findUnique({
+          where: { id: sowId },
+          include: {
+            opportunity: { select: { solicitationNumber: true } },
+          },
+        })
+        if (sow?.content) {
+          const preparerCompany =
+            session.user.organization ||
+            session.user.name ||
+            session.user.email?.split('@')[0] ||
+            undefined
+          const element = React.createElement(SOWPDF, {
+            content: sow.content as any,
+            sowFileName: sow.fileName ?? undefined,
+            preparerCompany,
+            preparerName: session.user.organization ? session.user.name ?? undefined : undefined,
+            preparerTitle: session.user.title ?? undefined,
+            status: sow.status,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          }) as any
+          const pdfBuffer = await renderToBuffer(element)
+          const solNum = sow.opportunity?.solicitationNumber || sowId
+          const filename = `SOW_${solNum}.pdf`.replace(/[^\w.\-\s]/g, '_')
+          resolvedAttachments.unshift({
+            filename,
+            content: Buffer.from(pdfBuffer),
+            contentType: 'application/pdf',
+          })
+        } else {
+          attachmentFailures.push(`sow:${sowId}`)
+        }
+      } catch (e) {
+        console.error('[email/send] SOW PDF render failed:', e)
+        attachmentFailures.push(`sow:${sowId}`)
       }
     }
 

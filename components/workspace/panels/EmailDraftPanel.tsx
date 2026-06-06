@@ -20,6 +20,7 @@ interface EmailDraftPanelProps {
     subject: string
     body: string
     attachmentIds: string[]
+    sowId?: string
   }) => Promise<{ success: boolean; error?: string }>
   availableAttachments?: RichAttachment[]
   sowFileName?: string
@@ -368,6 +369,7 @@ export default function EmailDraftPanel({
         subject,
         body,
         attachmentIds: Array.from(selectedAttachments),
+        sowId,
       })
       if (result?.success) {
         setSendSuccess(`Email sent to ${to.trim()}.`)
