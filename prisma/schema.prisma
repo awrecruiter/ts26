@@ -315,6 +315,10 @@ model Subcontractor {
   callCompleted   Boolean   @default(false)
   callCompletedAt DateTime?
 
+  // Persistent checklist + deliverable confirmations (per-vendor)
+  checklistState     Json?
+  deliverableChecks  Json?
+
   // Quote Information
   quotedAmount    Float?
   quoteReceivedAt DateTime?

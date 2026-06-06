@@ -44,6 +44,15 @@ export async function PATCH(
       updateData.contactEmail = body.contactEmail
     }
 
+    // Persistent per-vendor checklist + deliverable check state
+    if (body.checklistState !== undefined) {
+      updateData.checklistState = body.checklistState
+    }
+
+    if (body.deliverableChecks !== undefined) {
+      updateData.deliverableChecks = body.deliverableChecks
+    }
+
     const subcontractor = await prisma.subcontractor.update({
       where: { id: subId },
       data: updateData,

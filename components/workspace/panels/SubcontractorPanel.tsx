@@ -1,6 +1,12 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+
+interface ChecklistItem {
+  id: string
+  label: string
+  checked: boolean
+}
 
 interface Subcontractor {
   id: string
@@ -25,12 +31,9 @@ interface Subcontractor {
   callCompletedAt?: string | null
   /** Straight-line distance in km from the place of performance. Null = unknown. */
   distanceKm?: number | null
-}
-
-interface ChecklistItem {
-  id: string
-  label: string
-  checked: boolean
+  contactEmail?: string | null
+  checklistState?: ChecklistItem[] | null
+  deliverableChecks?: number[] | null
 }
 
 interface SubcontractorPanelProps {
@@ -146,12 +149,66 @@ export default function SubcontractorPanel({
   const [checklistState, setChecklistState] = useState<Record<string, ChecklistItem[]>>({})
   const [deliverableChecks, setDeliverableChecks] = useState<Record<string, Set<number>>>({})
 
+  const checklistTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const deliverableTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  useEffect(() => {
+    setChecklistState(prev => {
+      const next = { ...prev }
+      let dirty = false
+      for (const sub of subcontractors) {
+        if (next[sub.id]) continue
+        if (Array.isArray(sub.checklistState) && sub.checklistState.length > 0) {
+          next[sub.id] = sub.checklistState
+          dirty = true
+        }
+      }
+      return dirty ? next : prev
+    })
+    setDeliverableChecks(prev => {
+      const next = { ...prev }
+      let dirty = false
+      for (const sub of subcontractors) {
+        if (next[sub.id]) continue
+        if (Array.isArray(sub.deliverableChecks)) {
+          next[sub.id] = new Set(sub.deliverableChecks)
+          dirty = true
+        }
+      }
+      return dirty ? next : prev
+    })
+  }, [subcontractors])
+
+  const persistChecklist = useCallback((subId: string, items: ChecklistItem[]) => {
+    if (checklistTimers.current[subId]) clearTimeout(checklistTimers.current[subId])
+    checklistTimers.current[subId] = setTimeout(() => {
+      fetch(`/api/opportunities/${opportunityId}/subcontractors/${subId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checklistState: items }),
+      }).catch(() => {})
+    }, 600)
+  }, [opportunityId])
+
+  const persistDeliverables = useCallback((subId: string, set: Set<number>) => {
+    if (deliverableTimers.current[subId]) clearTimeout(deliverableTimers.current[subId])
+    deliverableTimers.current[subId] = setTimeout(() => {
+      fetch(`/api/opportunities/${opportunityId}/subcontractors/${subId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deliverableChecks: Array.from(set).sort((a, b) => a - b) }),
+      }).catch(() => {})
+    }, 600)
+  }, [opportunityId])
+
   const toggleDeliverable = (subId: string, idx: number) => {
     setDeliverableChecks((prev) => {
       const next = new Set(prev[subId] || [])
       if (next.has(idx)) next.delete(idx)
       else next.add(idx)
-      return { ...prev, [subId]: next }
+      const updated = { ...prev, [subId]: next }
+      persistDeliverables(subId, next)
+      return updated
     })
   }
   const [newChecklistItem, setNewChecklistItem] = useState<Record<string, string>>({})
@@ -179,6 +236,11 @@ export default function SubcontractorPanel({
 
   const getChecklist = (subId: string): ChecklistItem[] => {
     if (!checklistState[subId]) {
+      const stored = subcontractors.find(s => s.id === subId)?.checklistState
+      if (Array.isArray(stored) && stored.length > 0) {
+        setChecklistState(prev => ({ ...prev, [subId]: stored }))
+        return stored
+      }
       const defaults = aiCallChecklist && aiCallChecklist.length > 0
         ? buildAIChecklist(aiCallChecklist)
         : buildDefaultChecklist(parsedRequirements, opportunityInfo)
@@ -209,12 +271,13 @@ export default function SubcontractorPanel({
   }, [aiCallChecklist])
 
   const toggleChecklistItem = (subId: string, itemId: string) => {
-    setChecklistState(prev => ({
-      ...prev,
-      [subId]: (prev[subId] || []).map(item =>
+    setChecklistState(prev => {
+      const updated = (prev[subId] || []).map(item =>
         item.id === itemId ? { ...item, checked: !item.checked } : item
-      ),
-    }))
+      )
+      persistChecklist(subId, updated)
+      return { ...prev, [subId]: updated }
+    })
   }
 
   const addChecklistItem = (subId: string) => {
@@ -225,18 +288,26 @@ export default function SubcontractorPanel({
       label: text,
       checked: false,
     }
-    setChecklistState(prev => ({
-      ...prev,
-      [subId]: [...(prev[subId] || []), newItem],
-    }))
+    setChecklistState(prev => {
+      const updated = [...(prev[subId] || []), newItem]
+      persistChecklist(subId, updated)
+      return { ...prev, [subId]: updated }
+    })
     setNewChecklistItem(prev => ({ ...prev, [subId]: '' }))
   }
 
   const removeChecklistItem = (subId: string, itemId: string) => {
-    setChecklistState(prev => ({
-      ...prev,
-      [subId]: (prev[subId] || []).filter(item => item.id !== itemId),
-    }))
+    setChecklistState(prev => {
+      const updated = (prev[subId] || []).filter(item => item.id !== itemId)
+      persistChecklist(subId, updated)
+      return { ...prev, [subId]: updated }
+    })
+  }
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  const hasValidEmail = (sub: Subcontractor) => {
+    const e = (emailInputs[sub.id] || sub.email || '').trim()
+    return e.length > 0 && EMAIL_RE.test(e)
   }
 
   const samCount = subcontractors.filter(s => s.source === 'sam_gov').length
@@ -573,7 +644,7 @@ export default function SubcontractorPanel({
           {[...activeVendors, ...pendingVendors].map((sub, idx) => {
             const callDone = isCallCompleted(sub)
             const emailValue = getEmailInput(sub)
-            const hasEmail = !!(emailValue && emailValue.trim())
+            const hasEmail = hasValidEmail(sub)
             const canSendSOW = callDone && hasEmail
             const isSamGov = sub.source === 'sam_gov'
             const certs = sub.certifications || []
@@ -950,19 +1021,32 @@ export default function SubcontractorPanel({
                       </div>
                     )}
 
-                    {/* Step 3: Send SOW (activates ONLY after email entered) */}
+                    {/* Step 3: Send SOW + Request Quote (activate ONLY after a valid email is entered) */}
                     {callDone && (
-                      <button
-                        onClick={() => handleSendSOW(sub)}
-                        disabled={!canSendSOW}
-                        className={`w-full px-4 py-2.5 text-sm font-medium rounded transition-colors ${
-                          canSendSOW
-                            ? 'bg-stone-800 text-white hover:bg-stone-700'
-                            : 'bg-stone-100 text-stone-400 cursor-not-allowed'
-                        }`}
-                      >
-                        {canSendSOW ? 'Send SOW' : 'Enter email to send SOW'}
-                      </button>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <button
+                          onClick={() => handleSendSOW(sub)}
+                          disabled={!canSendSOW}
+                          className={`flex-1 px-4 py-2.5 text-sm font-medium rounded transition-colors ${
+                            canSendSOW
+                              ? 'bg-stone-800 text-white hover:bg-stone-700'
+                              : 'bg-stone-100 text-stone-400 cursor-not-allowed'
+                          }`}
+                        >
+                          {canSendSOW ? 'Send SOW' : 'Enter email to send SOW'}
+                        </button>
+                        <button
+                          onClick={() => { if (canSendSOW && onRequestQuote) onRequestQuote(sub) }}
+                          disabled={!canSendSOW}
+                          className={`flex-1 px-4 py-2.5 text-sm font-medium rounded transition-colors ${
+                            canSendSOW
+                              ? 'bg-stone-800 text-white hover:bg-stone-700'
+                              : 'bg-stone-100 text-stone-400 cursor-not-allowed'
+                          }`}
+                        >
+                          {canSendSOW ? 'Request Quote' : 'Enter email to request quote'}
+                        </button>
+                      </div>
                     )}
 
                     {/* Workflow status hint */}
