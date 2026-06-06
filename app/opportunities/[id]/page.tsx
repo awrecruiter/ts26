@@ -14,6 +14,7 @@ import ScopeOverviewPanel from '@/components/workspace/panels/ScopeOverviewPanel
 import AgentActivityPanel from '@/components/workspace/panels/AgentActivityPanel'
 import type { RichAttachment } from '@/lib/types/attachment'
 import { extractCity, extractStateCode } from '@/lib/opportunity-classification'
+import { buildSowDeliveryEmail } from '@/lib/email-templates'
 
 export default function OpportunityWorkspacePage() {
   const params = useParams()
@@ -455,24 +456,19 @@ export default function OpportunityWorkspacePage() {
             if (!email) return { success: false, error: 'Vendor has no email saved' }
             if (!currentSOW?.id) return { success: false, error: 'No SOW available to attach' }
 
-            const senderName = session?.user?.name || ''
-            const senderOrg = session?.user?.organization || ''
-            const senderTitle = session?.user?.title || ''
-            const signature = [senderName, senderTitle, senderOrg].filter(Boolean).join('\n') || senderName
-
-            const quoteDue =
-              (currentSOW?.content as any)?.opportunity?.quoteDeadline ||
-              'the end of this week'
-
-            const recipientName = sub.contactName || sub.name
-            const subject = `Statement of Work — ${opportunity.title} (${opportunity.agency || ''})`.trim()
-            const body =
-              `Hello ${recipientName},\n\n` +
-              `Per our conversation, here is the Statement of Work for the ${opportunity.title} ` +
-              `opportunity (${opportunity.solicitationNumber}). The SOW is attached for your review.\n\n` +
-              `Please return a firm fixed-price quote — all-inclusive (materials, labor, shipping, ` +
-              `taxes, fees) — by ${quoteDue}.\n\n` +
-              `Thanks,\n${signature}`
+            const { subject, body } = buildSowDeliveryEmail({
+              vendorName: sub.contactName || sub.name,
+              opportunityTitle: opportunity.title,
+              solicitationNumber: opportunity.solicitationNumber,
+              agency: opportunity.agency,
+              quoteDeadline:
+                (currentSOW?.content as any)?.opportunity?.quoteDeadline || null,
+              brief:
+                opportunity.aiArtifacts?.brief ??
+                opportunity.opportunityBrief ??
+                null,
+              callChecklist: opportunity.aiArtifacts?.callChecklist,
+            })
 
             try {
               const res = await fetch('/api/email/send', {
