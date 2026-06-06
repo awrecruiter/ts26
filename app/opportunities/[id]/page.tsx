@@ -370,12 +370,9 @@ export default function OpportunityWorkspacePage() {
           hasSOW={!!currentSOW}
           hasSubcontractors={hasSubcontractors}
           onCreateBid={handleCreateBid}
-          onSeeBid={() => setActivePanel('bid')}
           onGenerateSOW={handleGenerateSOW}
-          onSeeSOW={() => setActivePanel('sow')}
           isGeneratingSOW={generatingSOW}
           onFindSubcontractors={handleDiscoverSubcontractors}
-          onSeeSubcontractors={() => setActivePanel('subcontractors')}
           onProceed={handleProceed}
           nextStep={workflowState.action}
           brief={opportunity?.aiArtifacts?.brief ?? opportunity?.opportunityBrief ?? null}

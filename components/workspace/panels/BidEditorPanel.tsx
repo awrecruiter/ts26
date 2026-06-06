@@ -40,6 +40,15 @@ export default function BidEditorPanel({
   onSave,
   onStatusChange,
 }: BidEditorPanelProps) {
+  if (process.env.NODE_ENV !== 'production') {
+    if (bid.status === 'REVIEWED' && !onStatusChange) {
+      console.warn('[BidEditorPanel] Reviewed bid rendered without onStatusChange handler — submit button will no-op')
+    }
+    if (!onSave) {
+      console.warn('[BidEditorPanel] Rendered without onSave handler — save button will no-op')
+    }
+  }
+
   const [bidAmount, setBidAmount] = useState(bid.recommendedPrice.toString())
   const [margin, setMargin] = useState(bid.grossMargin || 0)
   const [saving, setSaving] = useState(false)

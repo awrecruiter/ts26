@@ -65,12 +65,9 @@ interface OpportunitySummaryPanelProps {
   hasSOW?: boolean
   hasSubcontractors?: boolean
   onGenerateSOW?: (selectedAttachments?: string[]) => void
-  onSeeSOW?: () => void
   isGeneratingSOW?: boolean
   onFindSubcontractors?: () => void
-  onSeeSubcontractors?: () => void
   onCreateBid?: () => void
-  onSeeBid?: () => void
   onProceed?: () => void
   nextStep?: string
   brief?: OpportunityBrief | null
@@ -86,12 +83,9 @@ export default function OpportunitySummaryPanel({
   hasSOW,
   hasSubcontractors,
   onGenerateSOW,
-  onSeeSOW,
   isGeneratingSOW,
   onFindSubcontractors,
-  onSeeSubcontractors,
   onCreateBid,
-  onSeeBid,
   onProceed,
   nextStep,
   brief = null,
