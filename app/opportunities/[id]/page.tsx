@@ -502,6 +502,9 @@ export default function OpportunityWorkspacePage() {
               if (!res.ok || !data.success) {
                 return { success: false, error: data.error || `Send failed (${res.status})` }
               }
+              // Refetch so the subcontractor's new sowSentAt lands in state
+              // and the vendor moves into the Pending group on next render.
+              fetchData()
               return { success: true }
             } catch (e) {
               return { success: false, error: e instanceof Error ? e.message : 'Network error' }

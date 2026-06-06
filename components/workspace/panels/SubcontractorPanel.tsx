@@ -242,16 +242,18 @@ export default function SubcontractorPanel({
   }
 
   const filtered = subcontractors.filter((sub) => {
-    // Pending = call complete but no quote yet (awaiting vendor email response)
-    if (filter === 'pending') return isCallCompleted(sub) && sub.quotedAmount == null
+    // Pending = SOW already sent, awaiting the vendor's quote response.
+    if (filter === 'pending') return !!sub.sowSentAt && sub.quotedAmount == null
     // Quoted = vendor responded with a quote
     if (filter === 'quoted') return sub.quotedAmount != null
     return true
   })
 
-  // Sort: active (not called) first, then called/pending
-  const activeVendors = filtered.filter(sub => !isCallCompleted(sub))
-  const pendingVendors = filtered.filter(sub => isCallCompleted(sub))
+  // "Pending" means the SOW has been sent and we're waiting on the vendor's
+  // quote response — not just "we called them". A vendor is active until the
+  // user actually fires off the SOW email.
+  const activeVendors = filtered.filter(sub => !sub.sowSentAt)
+  const pendingVendors = filtered.filter(sub => !!sub.sowSentAt)
   const hasBothGroups = activeVendors.length > 0 && pendingVendors.length > 0
 
   const getEmailInput = (sub: Subcontractor) => {
@@ -678,8 +680,9 @@ export default function SubcontractorPanel({
             const isSamGov = sub.source === 'sam_gov'
             const certs = sub.certifications || []
 
-            // Show divider between active and pending groups
-            const showDivider = hasBothGroups && callDone && idx === activeVendors.length
+            // Show divider between active and pending groups — pending now means
+            // "SOW sent, awaiting quote", so trigger on sowSentAt, not callDone.
+            const showDivider = hasBothGroups && !!sub.sowSentAt && idx === activeVendors.length
 
             return (
               <div key={sub.id}>
@@ -687,7 +690,7 @@ export default function SubcontractorPanel({
                   <div className="flex items-center gap-3 py-3 mb-3">
                     <div className="flex-1 h-px bg-stone-200" />
                     <span className="text-[11px] font-medium text-stone-400 uppercase tracking-wide">
-                      Pending — Awaiting SOW / Quote
+                      Pending — Awaiting Quote Response
                     </span>
                     <div className="flex-1 h-px bg-stone-200" />
                   </div>
@@ -1101,7 +1104,7 @@ export default function SubcontractorPanel({
               </div>
               <p className="text-sm text-stone-500 mb-2">
                 {filter === 'all' ? 'No vendors found yet' :
-                 filter === 'pending' ? 'No vendors awaiting a quote — mark a call complete to move a vendor here' :
+                 filter === 'pending' ? 'No vendors awaiting a quote — send a SOW to move a vendor here' :
                  'No quotes received yet — quotes appear here once vendors reply by email'}
               </p>
               <button
