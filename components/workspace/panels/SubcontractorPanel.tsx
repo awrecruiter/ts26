@@ -166,7 +166,7 @@ export default function SubcontractorPanel({
   isGeneratingArtifacts,
   onRegenerateChecklist,
 }: SubcontractorPanelProps) {
-  const [filter, setFilter] = useState<'all' | 'quoted' | 'pending'>('all')
+  const [filter, setFilter] = useState<'active' | 'quoted' | 'pending'>('active')
   const [isSearching, setIsSearching] = useState(false)
   const [isCleaning, setIsCleaning] = useState(false)
   const [localExpandedCard, setLocalExpandedCard] = useState<string | null>(null)
@@ -266,7 +266,9 @@ export default function SubcontractorPanel({
     if (filter === 'pending') return !!sub.sowSentAt && sub.quotedAmount == null
     // Quoted = vendor responded with a quote
     if (filter === 'quoted') return sub.quotedAmount != null
-    return true
+    // Active = vendor still needs work. Excludes both vendors with a SOW
+    // already sent and vendors marked "called" in the legacy workflow.
+    return !sub.sowSentAt && !isCallCompleted(sub)
   })
 
   // "Pending" = SOW has been sent, awaiting vendor's quote response.
@@ -694,7 +696,7 @@ export default function SubcontractorPanel({
 
         {/* Filter tabs */}
         <div className="flex gap-1 bg-stone-100 p-1 rounded-lg mb-4 w-fit">
-          {(['all', 'pending', 'quoted'] as const).map((f) => (
+          {(['active', 'pending', 'quoted'] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
@@ -704,7 +706,7 @@ export default function SubcontractorPanel({
                   : 'text-stone-500 hover:text-stone-700'
               }`}
             >
-              {f === 'all' ? 'All' : f === 'quoted' ? 'Quoted' : 'Pending'}
+              {f === 'active' ? 'Active' : f === 'quoted' ? 'Quoted' : 'Pending'}
             </button>
           ))}
         </div>
@@ -1108,7 +1110,7 @@ export default function SubcontractorPanel({
                 </svg>
               </div>
               <p className="text-sm text-stone-500 mb-2">
-                {filter === 'all' ? 'No vendors found yet' :
+                {filter === 'active' ? 'No active vendors — everyone has either been sent a SOW or is no longer in scope.' :
                  filter === 'pending' ? 'No vendors awaiting a quote — send a SOW to move a vendor here.' :
                  'No quotes received yet — quotes appear here once vendors reply by email'}
               </p>
