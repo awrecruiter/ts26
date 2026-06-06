@@ -330,6 +330,10 @@ model Subcontractor {
   sowGeneratedAt DateTime?
   sowSentAt      DateTime?
 
+  // Agent explicitly marks the per-vendor workflow done. Drives the move
+  // from Active to Pending — Awaiting Quote Response.
+  workflowCompletedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -35,6 +35,7 @@ interface Subcontractor {
   checklistState?: ChecklistItem[] | null
   deliverableChecks?: number[] | null
   sowSentAt?: string | null
+  workflowCompletedAt?: string | null
 }
 
 type StepState = 'done' | 'current' | 'pending'
@@ -242,18 +243,17 @@ export default function SubcontractorPanel({
   }
 
   const filtered = subcontractors.filter((sub) => {
-    // Pending = SOW already sent, awaiting the vendor's quote response.
-    if (filter === 'pending') return !!sub.sowSentAt && sub.quotedAmount == null
+    // Pending = agent marked the workflow complete and is now waiting on the vendor.
+    if (filter === 'pending') return !!sub.workflowCompletedAt && sub.quotedAmount == null
     // Quoted = vendor responded with a quote
     if (filter === 'quoted') return sub.quotedAmount != null
     return true
   })
 
-  // "Pending" means the SOW has been sent and we're waiting on the vendor's
-  // quote response — not just "we called them". A vendor is active until the
-  // user actually fires off the SOW email.
-  const activeVendors = filtered.filter(sub => !sub.sowSentAt)
-  const pendingVendors = filtered.filter(sub => !!sub.sowSentAt)
+  // "Pending" = the agent has explicitly marked the per-vendor workflow done.
+  // Sending the SOW alone isn't enough; the user must confirm via Step 3.
+  const activeVendors = filtered.filter(sub => !sub.workflowCompletedAt)
+  const pendingVendors = filtered.filter(sub => !!sub.workflowCompletedAt)
   const hasBothGroups = activeVendors.length > 0 && pendingVendors.length > 0
 
   const getEmailInput = (sub: Subcontractor) => {
@@ -471,6 +471,22 @@ export default function SubcontractorPanel({
     }
   }
 
+  const handleToggleWorkflowComplete = async (sub: Subcontractor) => {
+    const next = !sub.workflowCompletedAt
+    try {
+      const res = await fetch(`/api/opportunities/${opportunityId}/subcontractors/${sub.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workflowCompleted: next }),
+      })
+      if (res.ok) {
+        onSubcontractorsUpdated?.()
+      }
+    } catch (error) {
+      console.error('Failed to toggle workflow complete:', error)
+    }
+  }
+
   const handleSendSOW = useCallback((sub: Subcontractor) => {
     const email = emailInputs[sub.id] || sub.email
     if (!email) return
@@ -676,13 +692,12 @@ export default function SubcontractorPanel({
             const callDone = isCallCompleted(sub)
             const emailValue = getEmailInput(sub)
             const hasEmail = hasValidEmail(sub)
-            const canSendSOW = callDone && hasEmail
             const isSamGov = sub.source === 'sam_gov'
             const certs = sub.certifications || []
 
-            // Show divider between active and pending groups — pending now means
-            // "SOW sent, awaiting quote", so trigger on sowSentAt, not callDone.
-            const showDivider = hasBothGroups && !!sub.sowSentAt && idx === activeVendors.length
+            // Show divider between active and pending groups — pending = the
+            // agent explicitly marked the workflow complete (Step 3 trigger).
+            const showDivider = hasBothGroups && !!sub.workflowCompletedAt && idx === activeVendors.length
 
             return (
               <div key={sub.id}>
@@ -873,12 +888,12 @@ export default function SubcontractorPanel({
                   </div>
                 </div>
 
-                {/* Expanded: Call → Email → Send SOW workflow */}
+                {/* Expanded: Email → Send → Mark Complete. Call sits above as
+                    a helper that doesn't gate the numbered sequence. */}
                 {expandedCard === sub.id && (
                   <div className="px-4 pb-4 pt-3 border-t border-stone-100 bg-stone-50">
-                    {/* Step 1: Call */}
+                    {/* Helper: Call (not numbered — agents can call at any point) */}
                     <div className="flex items-center gap-3 mb-4">
-                      <StepBadge n={1} state={callDone ? 'done' : 'current'} />
                       {sub.phone && !callDone && (
                         <a
                           href={`tel:${sub.phone}`}
@@ -1026,17 +1041,13 @@ export default function SubcontractorPanel({
                       </div>
                     )}
 
-                    {/* Step 2: Email — always visible so the goal is obvious. Input is
-                        disabled until the call is marked complete. */}
+                    {/* Step 1: Email — first action. Always enabled. */}
                     <div className="mb-4 flex items-start gap-3">
                       <div className="pt-6">
-                        <StepBadge
-                          n={2}
-                          state={!callDone ? 'pending' : hasEmail ? 'done' : 'current'}
-                        />
+                        <StepBadge n={1} state={hasEmail ? 'done' : 'current'} />
                       </div>
                       <div className="flex-1">
-                        <label className={`block text-xs font-medium mb-1.5 ${callDone ? 'text-stone-600' : 'text-stone-400'}`}>
+                        <label className="block text-xs font-medium mb-1.5 text-stone-600">
                           Vendor Email Address
                         </label>
                         <div className="flex gap-2">
@@ -1044,13 +1055,10 @@ export default function SubcontractorPanel({
                             type="email"
                             value={emailValue}
                             onChange={(e) => setEmailInputs(prev => ({ ...prev, [sub.id]: e.target.value }))}
-                            placeholder={callDone ? 'Enter email from call...' : 'Mark call complete to enable'}
-                            disabled={!callDone}
-                            className={`flex-1 px-3 py-2 text-sm border rounded focus:ring-2 focus:ring-stone-300 focus:border-stone-300 ${
-                              callDone ? 'border-stone-200 bg-white' : 'border-stone-200 bg-stone-50 text-stone-400 cursor-not-allowed'
-                            }`}
+                            placeholder="Enter vendor email..."
+                            className="flex-1 px-3 py-2 text-sm border border-stone-200 rounded focus:ring-2 focus:ring-stone-300 focus:border-stone-300 bg-white"
                           />
-                          {callDone && emailValue && emailValue !== (sub.email || '') && (
+                          {emailValue && emailValue !== (sub.email || '') && (
                             <button
                               onClick={() => handleSaveEmail(sub)}
                               className="px-3 py-2 text-xs font-medium text-white bg-stone-800 rounded hover:bg-stone-700 transition-colors"
@@ -1062,23 +1070,45 @@ export default function SubcontractorPanel({
                       </div>
                     </div>
 
-                    {/* Step 3: Send SOW — always visible, illuminates only when call done + valid email. */}
-                    <div className="flex items-center gap-3">
-                      <StepBadge n={3} state={canSendSOW ? 'current' : 'pending'} />
+                    {/* Step 2: Send SOW — illuminates only when a valid email is saved. */}
+                    <div className="mb-4 flex items-center gap-3">
+                      <StepBadge n={2} state={sub.sowSentAt ? 'done' : hasEmail ? 'current' : 'pending'} />
                       <button
                         onClick={() => handleSendSOW(sub)}
-                        disabled={!canSendSOW}
+                        disabled={!hasEmail}
                         className={`flex-1 px-4 py-2.5 text-sm font-medium rounded transition-colors ${
-                          canSendSOW
+                          hasEmail
                             ? 'bg-stone-800 text-white hover:bg-stone-700'
                             : 'bg-stone-100 text-stone-400 cursor-not-allowed'
                         }`}
                       >
-                        {canSendSOW
-                          ? 'Send SOW'
-                          : !callDone
-                          ? 'Mark call complete to send SOW'
-                          : 'Enter email to send SOW'}
+                        {sub.sowSentAt ? 'Send SOW again' : hasEmail ? 'Send SOW' : 'Enter email to send SOW'}
+                      </button>
+                    </div>
+
+                    {/* Step 3: Mark Complete — illuminates only after the SOW has been sent.
+                        Clicking moves the vendor to Pending — Awaiting Quote Response. */}
+                    <div className="flex items-center gap-3">
+                      <StepBadge
+                        n={3}
+                        state={sub.workflowCompletedAt ? 'done' : sub.sowSentAt ? 'current' : 'pending'}
+                      />
+                      <button
+                        onClick={() => handleToggleWorkflowComplete(sub)}
+                        disabled={!sub.sowSentAt}
+                        className={`flex-1 px-4 py-2.5 text-sm font-medium rounded transition-colors ${
+                          sub.workflowCompletedAt
+                            ? 'bg-white text-stone-700 border border-stone-300 hover:bg-stone-50'
+                            : sub.sowSentAt
+                            ? 'bg-stone-800 text-white hover:bg-stone-700'
+                            : 'bg-stone-100 text-stone-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {sub.workflowCompletedAt
+                          ? 'Marked Complete — click to undo'
+                          : sub.sowSentAt
+                          ? 'Mark Complete'
+                          : 'Send SOW to enable Mark Complete'}
                       </button>
                     </div>
 
@@ -1104,7 +1134,7 @@ export default function SubcontractorPanel({
               </div>
               <p className="text-sm text-stone-500 mb-2">
                 {filter === 'all' ? 'No vendors found yet' :
-                 filter === 'pending' ? 'No vendors awaiting a quote — send a SOW to move a vendor here' :
+                 filter === 'pending' ? 'No vendors awaiting a quote — mark a vendor complete to move them here' :
                  'No quotes received yet — quotes appear here once vendors reply by email'}
               </p>
               <button

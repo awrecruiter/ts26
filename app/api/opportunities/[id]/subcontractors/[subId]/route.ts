@@ -53,6 +53,12 @@ export async function PATCH(
       updateData.deliverableChecks = body.deliverableChecks
     }
 
+    // Agent explicitly marks the per-vendor workflow done (Step 3 trigger).
+    // Pass true to stamp now, false to clear (puts the card back in Active).
+    if (body.workflowCompleted !== undefined) {
+      updateData.workflowCompletedAt = body.workflowCompleted ? new Date() : null
+    }
+
     const subcontractor = await prisma.subcontractor.update({
       where: { id: subId },
       data: updateData,
