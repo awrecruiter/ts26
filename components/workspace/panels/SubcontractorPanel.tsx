@@ -71,7 +71,7 @@ interface SubcontractorPanelProps {
   onSendDetails?: (sub: Subcontractor) => void
   /** Direct-send for Step 2 SOW: skips the email composer and fires the
    *  Gmail send inline. Returns success or an error string. */
-  onSendSowDirect?: (sub: Subcontractor) => Promise<{ success: boolean; error?: string }>
+  onSendSowDirect?: (sub: Subcontractor, email: string) => Promise<{ success: boolean; error?: string }>
   onSubcontractorsUpdated?: () => void
   /** Apply a per-vendor patch to the parent's state without refetching the
    *  whole opportunity. Use this for save email / mark call / sowSentAt
@@ -262,17 +262,18 @@ export default function SubcontractorPanel({
   }
 
   const filtered = subcontractors.filter((sub) => {
-    // Pending = call done / marked complete, awaiting vendor's quote response.
-    if (filter === 'pending') return isCallCompleted(sub) && sub.quotedAmount == null
+    // Pending = SOW sent, awaiting vendor's quote response.
+    if (filter === 'pending') return !!sub.sowSentAt && sub.quotedAmount == null
     // Quoted = vendor responded with a quote
     if (filter === 'quoted') return sub.quotedAmount != null
     return true
   })
 
-  // "Pending" = called/marked complete; the agent is done with this vendor
-  // from their side and is now waiting on the vendor's quote response.
-  const activeVendors = filtered.filter(sub => !isCallCompleted(sub))
-  const pendingVendors = filtered.filter(sub => isCallCompleted(sub))
+  // "Pending" = SOW has been sent, awaiting vendor's quote response.
+  // sowSentAt is the single source of truth (callCompleted is legacy and
+  // may have been set by old workflows without an actual SOW going out).
+  const activeVendors = filtered.filter(sub => !sub.sowSentAt)
+  const pendingVendors = filtered.filter(sub => !!sub.sowSentAt)
   const hasBothGroups = activeVendors.length > 0 && pendingVendors.length > 0
 
   const getEmailInput = (sub: Subcontractor) => {
@@ -473,45 +474,51 @@ export default function SubcontractorPanel({
     }
   }
 
-  const handleSaveEmail = async (sub: Subcontractor) => {
+  const handleSaveEmail = (sub: Subcontractor) => {
     const email = emailInputs[sub.id]?.trim()
     if (!email) return
-
-    try {
-      const res = await fetch(`/api/opportunities/${opportunityId}/subcontractors/${sub.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      })
-      if (res.ok) {
-        onSubPatchOptimistic?.(sub.id, { email })
-      }
-    } catch (error) {
+    // Truly optimistic: UI updates first, server in the background.
+    onSubPatchOptimistic?.(sub.id, { email })
+    fetch(`/api/opportunities/${opportunityId}/subcontractors/${sub.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    }).catch((error) => {
       console.error('Failed to save email:', error)
-    }
+    })
   }
 
   const [sendingSowId, setSendingSowId] = useState<string | null>(null)
   const [sendError, setSendError] = useState<{ id: string; msg: string } | null>(null)
+  // Synchronous guard against double-click races (React state updates lag).
+  const sendInFlightRef = useRef<Set<string>>(new Set())
 
   const handleSendSOW = useCallback(async (sub: Subcontractor) => {
-    const email = emailInputs[sub.id] || sub.email
-    if (!email) return
+    if (sendInFlightRef.current.has(sub.id)) return
+    if (sub.sowSentAt) return // already sent — button should be disabled anyway
 
-    // Prefer the direct-send path — no email composer detour.
+    const liveEmail = (emailInputs[sub.id] ?? sub.email ?? '').trim()
+    if (!liveEmail || !EMAIL_RE.test(liveEmail)) return
+
+    // Persist email in the background if it isn't saved yet.
+    if (liveEmail !== (sub.email || '')) {
+      handleSaveEmail(sub)
+    }
+
+    sendInFlightRef.current.add(sub.id)
     if (onSendSowDirect) {
       setSendingSowId(sub.id)
       setSendError(null)
-      const result = await onSendSowDirect(sub)
+      const result = await onSendSowDirect(sub, liveEmail)
       setSendingSowId(null)
+      sendInFlightRef.current.delete(sub.id)
       if (!result.success) {
         setSendError({ id: sub.id, msg: result.error || 'Send failed' })
       }
       return
     }
-    if (onSendDetails) {
-      onSendDetails(sub)
-    }
+    if (onSendDetails) onSendDetails(sub)
+    sendInFlightRef.current.delete(sub.id)
   }, [emailInputs, onSendSowDirect, onSendDetails])
 
   return (
@@ -524,7 +531,6 @@ export default function SubcontractorPanel({
               <h1 className="text-lg font-semibold text-stone-900">Subcontractors</h1>
               <p className="text-sm text-stone-500 mt-1">
                 {subcontractors.length} vendor{subcontractors.length !== 1 ? 's' : ''}
-                {pendingVendors.length > 0 && ` (${pendingVendors.length} pending)`}
                 {googleCount > 0 && samCount > 0
                   ? ` — ${googleCount} Google, ${samCount} SAM.gov`
                   : googleCount > 0
@@ -712,8 +718,8 @@ export default function SubcontractorPanel({
             const isSamGov = sub.source === 'sam_gov'
             const certs = sub.certifications || []
 
-            // Show divider between active and pending groups
-            const showDivider = hasBothGroups && callDone && idx === activeVendors.length
+            // Divider sits between the last active vendor and the first pending one.
+            const showDivider = hasBothGroups && !!sub.sowSentAt && idx === activeVendors.length
 
             return (
               <div key={sub.id}>
@@ -1058,14 +1064,18 @@ export default function SubcontractorPanel({
                       </div>
                     </div>
 
-                    {/* Step 2: Send SOW — illuminates only when a valid email is saved. */}
-                    <div className="mb-4 flex items-center gap-3">
+                    {/* Step 2: Send SOW — illuminates when a valid email is saved.
+                        After a successful send the button greys out (done state)
+                        and the vendor auto-moves to the Pending group. */}
+                    <div className="flex items-center gap-3">
                       <StepBadge n={2} state={sub.sowSentAt ? 'done' : hasEmail ? 'current' : 'pending'} />
                       <button
                         onClick={() => handleSendSOW(sub)}
-                        disabled={!hasEmail || sendingSowId === sub.id}
+                        disabled={!hasEmail || sendingSowId === sub.id || !!sub.sowSentAt}
                         className={`flex-1 px-4 py-2.5 text-sm font-medium rounded transition-colors ${
-                          hasEmail
+                          sub.sowSentAt
+                            ? 'bg-stone-100 text-stone-500 cursor-default'
+                            : hasEmail
                             ? 'bg-stone-800 text-white hover:bg-stone-700 disabled:opacity-60'
                             : 'bg-stone-100 text-stone-400 cursor-not-allowed'
                         }`}
@@ -1073,42 +1083,15 @@ export default function SubcontractorPanel({
                         {sendingSowId === sub.id
                           ? 'Sending…'
                           : sub.sowSentAt
-                          ? 'Send SOW again'
+                          ? '✓ SOW Sent'
                           : hasEmail
                           ? 'Send SOW'
                           : 'Enter email to send SOW'}
                       </button>
                     </div>
                     {sendError && sendError.id === sub.id && (
-                      <p className="text-xs text-red-500 mb-3 -mt-2">{sendError.msg}</p>
+                      <p className="text-xs text-red-500 mt-2">{sendError.msg}</p>
                     )}
-
-                    {/* Step 3: Mark Complete — illuminates only after the SOW has been sent.
-                        Clicking sets callCompleted, which moves the vendor below the
-                        "Pending — Awaiting Quote Response" divider. */}
-                    <div className="flex items-center gap-3">
-                      <StepBadge
-                        n={3}
-                        state={callDone ? 'done' : sub.sowSentAt ? 'current' : 'pending'}
-                      />
-                      <button
-                        onClick={() => handleToggleCall(sub)}
-                        disabled={!sub.sowSentAt && !callDone}
-                        className={`flex-1 px-4 py-2.5 text-sm font-medium rounded transition-colors ${
-                          callDone
-                            ? 'bg-white text-stone-700 border border-stone-300 hover:bg-stone-50'
-                            : sub.sowSentAt
-                            ? 'bg-stone-800 text-white hover:bg-stone-700'
-                            : 'bg-stone-100 text-stone-400 cursor-not-allowed'
-                        }`}
-                      >
-                        {callDone
-                          ? 'Marked Complete — click to undo'
-                          : sub.sowSentAt
-                          ? 'Mark Complete'
-                          : 'Send SOW to enable Mark Complete'}
-                      </button>
-                    </div>
 
                   </div>
                 )}
@@ -1126,7 +1109,7 @@ export default function SubcontractorPanel({
               </div>
               <p className="text-sm text-stone-500 mb-2">
                 {filter === 'all' ? 'No vendors found yet' :
-                 filter === 'pending' ? 'No vendors awaiting a quote — mark a vendor complete to move them here.' :
+                 filter === 'pending' ? 'No vendors awaiting a quote — send a SOW to move a vendor here.' :
                  'No quotes received yet — quotes appear here once vendors reply by email'}
               </p>
               <button

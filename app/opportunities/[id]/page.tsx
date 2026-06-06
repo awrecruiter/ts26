@@ -451,8 +451,7 @@ export default function OpportunityWorkspacePage() {
             setEmailTemplateType('sow_delivery')
             setActivePanel('email')
           }}
-          onSendSowDirect={async (sub) => {
-            const email = sub.email
+          onSendSowDirect={async (sub, email) => {
             if (!email) return { success: false, error: 'Vendor has no email saved' }
             if (!currentSOW?.id) return { success: false, error: 'No SOW available to attach' }
 
@@ -493,12 +492,24 @@ export default function OpportunityWorkspacePage() {
               if (!res.ok || !data.success) {
                 return { success: false, error: data.error || `Send failed (${res.status})` }
               }
+              // Send is the single trigger: stamp sowSentAt AND callCompleted
+              // so the vendor moves below the Pending divider immediately.
+              const nowIso = new Date().toISOString()
               setOpportunity((prev: any) => prev ? {
                 ...prev,
                 subcontractors: prev.subcontractors?.map((s: any) =>
-                  s.id === sub.id ? { ...s, sowSentAt: new Date().toISOString() } : s
+                  s.id === sub.id
+                    ? { ...s, sowSentAt: nowIso, callCompleted: true, callCompletedAt: nowIso }
+                    : s
                 ),
               } : prev)
+              // Persist callCompleted in the background (sowSentAt was stamped
+              // by /api/email/send already). Fire and forget — UI is optimistic.
+              fetch(`/api/opportunities/${opportunity.id}/subcontractors/${sub.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ callCompleted: true }),
+              }).catch(() => {})
               return { success: true }
             } catch (e) {
               return { success: false, error: e instanceof Error ? e.message : 'Network error' }
