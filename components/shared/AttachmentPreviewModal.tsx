@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { RichAttachment } from '@/lib/types/attachment'
 import { isPreviewable } from '@/lib/attachment-preview'
 
@@ -15,6 +16,13 @@ export default function AttachmentPreviewModal({
   opportunityId,
   onClose,
 }: AttachmentPreviewModalProps) {
+  // Portal to document.body so the modal escapes any ancestor with a CSS
+  // transform — the workspace panel-slide container uses translateX which
+  // would otherwise become the containing block for position:fixed children,
+  // anchoring the modal off-screen when the email panel is active.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -23,10 +31,12 @@ export default function AttachmentPreviewModal({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
+  if (!mounted) return null
+
   const proxyUrl = `/api/opportunities/${opportunityId}/attachments/${attachment.id}/proxy`
   const downloadUrl = `${proxyUrl}?download=1`
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex flex-col bg-stone-900/80 backdrop-blur-sm"
       onClick={onClose}
@@ -91,6 +101,7 @@ export default function AttachmentPreviewModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
