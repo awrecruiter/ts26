@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { RichAttachment } from '@/lib/types/attachment'
-import { isPreviewable } from '@/lib/attachment-preview'
+import { previewKind } from '@/lib/attachment-preview'
 
 interface AttachmentPreviewModalProps {
   attachments: RichAttachment[]
@@ -58,8 +58,10 @@ export default function AttachmentPreviewModal({
   if (!current) return null
 
   const proxyUrl = `/api/opportunities/${opportunityId}/attachments/${current.id}/proxy`
+  const previewHtmlUrl = `/api/opportunities/${opportunityId}/attachments/${current.id}/preview-html`
   const downloadUrl = `${proxyUrl}?download=1`
   const showNav = total > 1
+  const kind = previewKind(current.currentName)
 
   return createPortal(
     <div
@@ -105,10 +107,10 @@ export default function AttachmentPreviewModal({
           </div>
         </div>
         <div className="relative flex-1 flex flex-col">
-          {isPreviewable(current.currentName) ? (
+          {kind !== 'unsupported' ? (
             <iframe
               key={current.id}
-              src={proxyUrl}
+              src={kind === 'iframe-html' ? previewHtmlUrl : proxyUrl}
               className="flex-1 w-full border-0"
               title={current.currentName}
             />
