@@ -321,10 +321,15 @@ export default function EmailDraftPanel({
   return (
     <>
       {/* Attachment Preview Modal */}
-      {previewAttachment && opportunityId && (
+      {previewAttachment && opportunityId && availableAttachments && (
         <AttachmentPreviewModal
-          attachment={previewAttachment}
+          attachments={availableAttachments}
+          currentId={previewAttachment.id}
           opportunityId={opportunityId}
+          onChange={(id) => {
+            const next = availableAttachments?.find(a => a.id === id)
+            if (next) setPreviewAttachment(next)
+          }}
           onClose={() => setPreviewAttachment(null)}
         />
       )}
