@@ -790,8 +790,13 @@ export default function OpportunitySummaryPanel({
       {/* Inline attachment viewer modal — full screen on mobile */}
       {viewingAttachment && (
         <AttachmentPreviewModal
-          attachment={viewingAttachment}
+          attachments={attachments}
+          currentId={viewingAttachment.id}
           opportunityId={opportunity.id}
+          onChange={(id) => {
+            const next = attachments.find(a => a.id === id)
+            if (next) setViewingAttachment(next)
+          }}
           onClose={closeViewer}
         />
       )}
