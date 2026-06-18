@@ -54,6 +54,9 @@ model User {
   attachmentEdits     AttachmentEditHistory[]
   attachmentFormData  AttachmentFormData[]
 
+  // Dismissal Relations
+  dismissedOpportunities Opportunity[] @relation("DismissedBy")
+
   @@map("users")
 }
 
@@ -125,6 +128,11 @@ model Opportunity {
   // Status
   status OpportunityStatus @default(ACTIVE)
 
+  // Dismissal (user-curated "not interested")
+  dismissedAt   DateTime?
+  dismissedById String?
+  dismissedBy   User?     @relation("DismissedBy", fields: [dismissedById], references: [id])
+
   // Metadata
   rawData            Json? // Store full SAM.gov response
   parsedAttachments  Json? // Cached parsed text from solicitation attachments
@@ -150,6 +158,7 @@ model Opportunity {
   @@index([responseDeadline])
   @@index([status])
   @@index([naicsCode])
+  @@index([dismissedAt])
   @@map("opportunities")
 }
 
@@ -194,6 +203,7 @@ enum OpportunityStatus {
   EXPIRED
   AWARDED
   CANCELLED
+  DISMISSED // user-curated "not interested"
 }
 
 model OpportunityWatch {
