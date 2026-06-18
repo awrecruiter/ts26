@@ -34,7 +34,7 @@ export default function OpportunityWorkspacePage() {
   const [briefError, setBriefError] = useState<string | null>(null)
   const [discoveringSubcontractors, setDiscoveringSubcontractors] = useState(false)
   const [solicitationAttachments, setSolicitationAttachments] = useState<RichAttachment[]>([])
-  const [emailSelectedAttachments, setEmailSelectedAttachments] = useState<Set<string>>(new Set())
+  const [selectedAttachments, setSelectedAttachments] = useState<Set<string>>(new Set())
   const [generatingArtifacts, setGeneratingArtifacts] = useState(false)
   const artifactsRequestedRef = useRef(false)
 
@@ -74,8 +74,9 @@ export default function OpportunityWorkspacePage() {
         if (data?.attachments) {
           const atts: RichAttachment[] = data.attachments
           setSolicitationAttachments(atts)
-          // Initialize email selection to all attachments (default all selected)
-          setEmailSelectedAttachments(prev => {
+          // Initialize selection to all attachments (default all selected).
+          // Shared between Summary panel checkboxes, Email bundle, and SOW input.
+          setSelectedAttachments(prev => {
             // Only initialize if not yet set
             if (prev.size === 0) return new Set(atts.map((a) => a.id))
             return prev
@@ -105,6 +106,20 @@ export default function OpportunityWorkspacePage() {
       .catch(() => {})
       .finally(() => setGeneratingArtifacts(false))
   }, [opportunity?.id, opportunity?.parsedAttachments, opportunity?.aiArtifacts])
+
+  // Shared attachment selection — read/written by Summary panel checkboxes and
+  // Email panel Select All / Deselect All / per-row toggles. Same Set drives
+  // the outgoing email bundle and the SOW generator input.
+  const handleToggleAttachment = useCallback((id: string) => {
+    setSelectedAttachments(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }, [])
+  const handleSetAttachmentSelection = useCallback((next: Set<string>) => {
+    setSelectedAttachments(next)
+  }, [])
 
   const handleRegenerateArtifact = useCallback(async (artifact: 'brief' | 'callChecklist' | 'scopeOverview' | 'agentBriefing') => {
     if (!opportunity?.id) return
@@ -155,13 +170,16 @@ export default function OpportunityWorkspacePage() {
     }
   }
 
-  const handleGenerateSOW = async (selectedAttachments?: string[]) => {
+  const handleGenerateSOW = async (explicitSelected?: string[]) => {
     try {
       setGeneratingSOW(true)
+      // Prefer explicit arg if a caller passes one; otherwise source from the
+      // shared parent-owned Set (Summary checkboxes / Email bundle).
+      const selected = explicitSelected ?? Array.from(selectedAttachments)
       const res = await fetch('/api/sows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ opportunityId: opportunity.id, selectedAttachments }),
+        body: JSON.stringify({ opportunityId: opportunity.id, selectedAttachments: selected }),
       })
       if (res.ok) {
         await fetchData()
@@ -381,6 +399,8 @@ export default function OpportunityWorkspacePage() {
           isGeneratingBrief={generatingBrief || generatingArtifacts}
           onGenerateBrief={() => handleRegenerateArtifact('brief')}
           briefError={briefError}
+          selectedAttachments={selectedAttachments}
+          onToggleAttachment={handleToggleAttachment}
         />
       ),
     },
@@ -548,8 +568,8 @@ export default function OpportunityWorkspacePage() {
           sowFileName={currentSOW?.fileName}
           sowId={currentSOW?.id}
           opportunityId={opportunity.id}
-          selectedAttachmentIds={emailSelectedAttachments}
-          onSelectionChange={setEmailSelectedAttachments}
+          selectedAttachmentIds={selectedAttachments}
+          onSelectionChange={handleSetAttachmentSelection}
           brief={opportunity?.aiArtifacts?.brief ?? opportunity?.opportunityBrief ?? null}
           attachmentRelevance={opportunity?.aiArtifacts?.attachmentRelevance ?? null}
           callChecklist={opportunity?.aiArtifacts?.callChecklist ?? undefined}
