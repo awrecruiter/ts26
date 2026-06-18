@@ -221,6 +221,32 @@ function OpportunitiesContent() {
     }
   }
 
+  // Optimistic dismiss/restore: when viewing the matching status filter,
+  // drop the row immediately; if the API call fails the card surfaces its
+  // own alert and we re-fetch to restore truth.
+  const handleDismissed = useCallback(
+    (id: string) => {
+      if (statusFilter !== 'DISMISSED') {
+        setOpportunities((prev) => prev.filter((o) => o.id !== id))
+      } else {
+        // We're already on the dismissed view — refresh to pick up the new entry.
+        fetchOpportunities()
+      }
+    },
+    [statusFilter]
+  )
+
+  const handleRestored = useCallback(
+    (id: string) => {
+      if (statusFilter === 'DISMISSED') {
+        setOpportunities((prev) => prev.filter((o) => o.id !== id))
+      } else {
+        fetchOpportunities()
+      }
+    },
+    [statusFilter]
+  )
+
   const applyFilters = () => {
     const params = buildParams()
     params.set('page', '1')
@@ -469,6 +495,7 @@ function OpportunitiesContent() {
                       <option value="EXPIRED">Expired</option>
                       <option value="AWARDED">Awarded</option>
                       <option value="CANCELLED">Cancelled</option>
+                      <option value="DISMISSED">Dismissed</option>
                     </select>
                   </div>
                 </div>
@@ -632,7 +659,12 @@ function OpportunitiesContent() {
 
             <div className="grid gap-5">
               {opportunities.map((opp) => (
-                <OpportunityCard key={opp.id} opportunity={opp} />
+                <OpportunityCard
+                  key={opp.id}
+                  opportunity={opp}
+                  onDismissed={handleDismissed}
+                  onRestored={handleRestored}
+                />
               ))}
             </div>
 

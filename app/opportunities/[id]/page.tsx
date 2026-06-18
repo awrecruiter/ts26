@@ -635,6 +635,8 @@ export default function OpportunityWorkspacePage() {
       progress={progress}
       nextAction={nextAction}
       isAdmin={session?.user?.role === 'ADMIN'}
+      opportunityId={opportunity.id}
+      opportunityStatus={opportunity.status}
       headerContent={
         <div className="px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2 min-h-[48px]">
           {/* Left: Back + Title */}

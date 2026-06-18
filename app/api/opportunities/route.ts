@@ -17,7 +17,7 @@ export async function GET(req: Request) {
     const search = searchParams.get('search')
     const naicsCode = searchParams.get('naics')
     const agency = searchParams.get('agency')
-    const VALID_STATUSES = ['ACTIVE', 'EXPIRED', 'AWARDED', 'CANCELLED']
+    const VALID_STATUSES = ['ACTIVE', 'EXPIRED', 'AWARDED', 'CANCELLED', 'DISMISSED']
     const rawStatus = searchParams.get('status')
     const status = rawStatus && VALID_STATUSES.includes(rawStatus) ? rawStatus : (rawStatus ? null : 'ACTIVE')
 
@@ -44,7 +44,9 @@ export async function GET(req: Request) {
       const maxDate = new Date()
       maxDate.setDate(maxDate.getDate() + parseInt(deadlineDays))
       where.responseDeadline = { gte: now, lte: maxDate }
-    } else if (!showExpiring && minDaysUntilClose > 0) {
+    } else if (!showExpiring && minDaysUntilClose > 0 && status !== 'DISMISSED') {
+      // Don't apply the deadline cutoff to the Dismissed view — dismissed
+      // opps may have already-passed deadlines and we still want to show them.
       const cutoffDate = new Date()
       cutoffDate.setDate(cutoffDate.getDate() + minDaysUntilClose)
       where.responseDeadline = { gte: cutoffDate }
