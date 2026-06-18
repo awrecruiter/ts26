@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 
 interface WorkspacePanel {
   id: string
@@ -27,6 +28,9 @@ interface WorkspaceLayoutProps {
   nextAction?: string
   /** Only ADMIN users see the Submit stage and submit affordances. */
   isAdmin?: boolean
+  /** Opportunity id + status enable the header Dismiss/Restore action. */
+  opportunityId?: string
+  opportunityStatus?: string
 }
 
 export default function WorkspaceLayout({
@@ -38,7 +42,45 @@ export default function WorkspaceLayout({
   progress,
   nextAction,
   isAdmin = false,
+  opportunityId,
+  opportunityStatus,
 }: WorkspaceLayoutProps) {
+  const router = useRouter()
+  const [dismissPending, setDismissPending] = useState(false)
+  const isDismissed = opportunityStatus === 'DISMISSED'
+
+  const handleDismiss = async () => {
+    if (!opportunityId || dismissPending) return
+    if (!window.confirm('Dismiss this opportunity? You can restore it from the Dismissed view.')) return
+    setDismissPending(true)
+    try {
+      const res = await fetch(`/api/opportunities/${opportunityId}/dismiss`, {
+        method: 'POST',
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      router.push('/opportunities')
+    } catch {
+      alert('Could not dismiss this opportunity. Please try again.')
+      setDismissPending(false)
+    }
+  }
+
+  const handleRestore = async () => {
+    if (!opportunityId || dismissPending) return
+    setDismissPending(true)
+    try {
+      const res = await fetch(`/api/opportunities/${opportunityId}/restore`, {
+        method: 'POST',
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      router.refresh()
+    } catch {
+      alert('Could not restore this opportunity. Please try again.')
+    } finally {
+      setDismissPending(false)
+    }
+  }
+
   const [currentIndex, setCurrentIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -114,7 +156,35 @@ export default function WorkspaceLayout({
       {/* Minimal header */}
       {headerContent && (
         <div className="flex-shrink-0 border-b border-stone-200 bg-white">
-          {headerContent}
+          <div className="flex items-stretch">
+            <div className="flex-1 min-w-0">{headerContent}</div>
+            {opportunityId && (
+              <div className="flex items-center pr-3 flex-shrink-0">
+                {isDismissed ? (
+                  <button
+                    type="button"
+                    onClick={handleRestore}
+                    disabled={dismissPending}
+                    className="text-xs font-medium text-stone-500 hover:text-stone-800 px-2 py-1 rounded disabled:opacity-50"
+                    title="Restore this opportunity"
+                  >
+                    {dismissPending ? 'Restoring…' : 'Restore'}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleDismiss}
+                    disabled={dismissPending}
+                    className="text-xs font-medium text-stone-400 hover:text-stone-700 px-2 py-1 rounded disabled:opacity-50"
+                    title="Dismiss this opportunity"
+                    aria-label="Dismiss this opportunity"
+                  >
+                    {dismissPending ? 'Dismissing…' : 'Dismiss'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

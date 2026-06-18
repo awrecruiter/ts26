@@ -48,6 +48,7 @@ interface OpportunityCardProps {
     responseDeadline?: Date | null
     postedDate?: Date | null
     status: string
+    dismissedAt?: string | Date | null
     rawData?: unknown
     comparables?: ComparablesData | null
     _count?: {
@@ -71,6 +72,8 @@ interface OpportunityCardProps {
       } | null
     }>
   }
+  onDismissed?: (id: string) => void
+  onRestored?: (id: string) => void
 }
 
 function formatCompact(n: number): string {
@@ -129,14 +132,57 @@ function DataSourceIndicator({ bids }: { bids?: OpportunityCardProps['opportunit
   )
 }
 
-export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
+export default function OpportunityCard({
+  opportunity,
+  onDismissed,
+  onRestored,
+}: OpportunityCardProps) {
   const assessment = opportunity.assessment
   const comparables = opportunity.comparables
+  const isDismissed = opportunity.status === 'DISMISSED'
 
   const [expanded, setExpanded] = useState(false)
   const [awards, setAwards] = useState<ComparableAward[] | null>(null)
   const [loadingAwards, setLoadingAwards] = useState(false)
   const [awardsError, setAwardsError] = useState<string | null>(null)
+  const [dismissPending, setDismissPending] = useState(false)
+
+  const handleDismiss = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (dismissPending) return
+    setDismissPending(true)
+    try {
+      const res = await fetch(`/api/opportunities/${opportunity.id}/dismiss`, {
+        method: 'POST',
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      onDismissed?.(opportunity.id)
+    } catch {
+      // Surface a minimal alert so the user knows it failed; parent will revert.
+      alert('Could not dismiss this opportunity. Please try again.')
+    } finally {
+      setDismissPending(false)
+    }
+  }
+
+  const handleRestore = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (dismissPending) return
+    setDismissPending(true)
+    try {
+      const res = await fetch(`/api/opportunities/${opportunity.id}/restore`, {
+        method: 'POST',
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      onRestored?.(opportunity.id)
+    } catch {
+      alert('Could not restore this opportunity. Please try again.')
+    } finally {
+      setDismissPending(false)
+    }
+  }
 
   const handleToggle = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -263,6 +309,31 @@ export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
               }`}>
                 {daysUntilDeadline > 0 ? `${daysUntilDeadline}d` : daysUntilDeadline === 0 ? 'Today' : 'Expired'}
               </div>
+            )}
+            {isDismissed ? (
+              <button
+                type="button"
+                onClick={handleRestore}
+                disabled={dismissPending}
+                aria-label="Restore opportunity"
+                title="Restore"
+                className="text-xs font-medium text-stone-400 hover:text-stone-700 px-2 py-1 rounded disabled:opacity-50"
+              >
+                Restore
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleDismiss}
+                disabled={dismissPending}
+                aria-label="Dismiss opportunity"
+                title="Dismiss"
+                className="text-stone-400 hover:text-stone-700 p-1 rounded disabled:opacity-50"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             )}
           </div>
         </div>
@@ -433,6 +504,11 @@ export default function OpportunityCard({ opportunity }: OpportunityCardProps) {
           </div>
           <DataSourceIndicator bids={opportunity.bids} />
         </div>
+        {isDismissed && opportunity.dismissedAt && (
+          <p className="text-[10px] text-stone-400 mt-2">
+            Dismissed {format(new Date(opportunity.dismissedAt), 'MMM d, yyyy')}
+          </p>
+        )}
       </div>
     </Link>
   )

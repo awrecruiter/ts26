@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import OpportunityCard from '@/components/opportunities/OpportunityCard'
@@ -127,6 +127,31 @@ function DashboardContent() {
       setLoading(false)
     }
   }
+
+  // Optimistic dismiss/restore. When the row no longer matches the current
+  // status filter, drop it from local state; otherwise refetch.
+  const appliedStatus = searchParams.get('status') || 'ACTIVE'
+  const handleDismissed = useCallback(
+    (id: string) => {
+      if (appliedStatus !== 'DISMISSED') {
+        setOpportunities((prev) => prev.filter((o) => o.id !== id))
+      } else {
+        fetchOpportunities()
+      }
+    },
+    [appliedStatus]
+  )
+
+  const handleRestored = useCallback(
+    (id: string) => {
+      if (appliedStatus === 'DISMISSED') {
+        setOpportunities((prev) => prev.filter((o) => o.id !== id))
+      } else {
+        fetchOpportunities()
+      }
+    },
+    [appliedStatus]
+  )
 
   const applyFilters = () => {
     const params = buildParams()
@@ -402,6 +427,7 @@ function DashboardContent() {
                       <option value="EXPIRED">Expired</option>
                       <option value="AWARDED">Awarded</option>
                       <option value="CANCELLED">Cancelled</option>
+                      <option value="DISMISSED">Dismissed</option>
                     </select>
                   </div>
                 </div>
@@ -544,7 +570,12 @@ function DashboardContent() {
 
             <div className="grid gap-5">
               {opportunities.map((opp) => (
-                <OpportunityCard key={opp.id} opportunity={opp} />
+                <OpportunityCard
+                  key={opp.id}
+                  opportunity={opp}
+                  onDismissed={handleDismissed}
+                  onRestored={handleRestored}
+                />
               ))}
             </div>
 
