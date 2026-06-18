@@ -316,7 +316,6 @@ export default function EmailDraftPanel({
   }
 
   const totalAttachments = availableAttachments?.length ?? 0
-  const selectedCount = selectedAttachments.size
 
   return (
     <>
@@ -447,9 +446,9 @@ export default function EmailDraftPanel({
                 </div>
                 {totalAttachments > 0 && (
                   <div className="flex items-center gap-3">
-                    <span className="text-xs text-stone-400">
-                      {selectedCount} of {totalAttachments} solicitation docs selected
-                    </span>
+                    <p className="text-xs text-stone-500">
+                      {selectedAttachments.size} of {availableAttachments?.length ?? 0} selected for email & SOW
+                    </p>
                     <div className="flex gap-2">
                       <button
                         onClick={() =>

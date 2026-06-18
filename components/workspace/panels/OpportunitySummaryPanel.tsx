@@ -122,6 +122,10 @@ interface OpportunitySummaryPanelProps {
   isGeneratingBrief?: boolean
   onGenerateBrief?: () => void
   briefError?: string | null
+  /** Shared attachment selection (parent-owned, survives panel switching).
+   *  Same Set drives the email bundle and the SOW generator input. */
+  selectedAttachments: Set<string>
+  onToggleAttachment: (id: string) => void
 }
 
 export default function OpportunitySummaryPanel({
@@ -140,6 +144,8 @@ export default function OpportunitySummaryPanel({
   isGeneratingBrief = false,
   onGenerateBrief,
   briefError = null,
+  selectedAttachments,
+  onToggleAttachment,
 }: OpportunitySummaryPanelProps) {
   const [attachments, setAttachments] = useState<RichAttachment[]>([])
   const [loadingAttachments, setLoadingAttachments] = useState(false)
@@ -147,7 +153,6 @@ export default function OpportunitySummaryPanel({
   const [hasParsedContent, setHasParsedContent] = useState(false)
   const [parsedSummary, setParsedSummary] = useState<{ parsedCount: number; totalAttachments: number; sections: string[] } | null>(null)
   const [showAttachmentPicker, setShowAttachmentPicker] = useState(false)
-  const [selectedAttachments, setSelectedAttachments] = useState<Set<string>>(new Set())
   const [viewingAttachment, setViewingAttachment] = useState<RichAttachment | null>(null)
 
   // Inline rename state
@@ -515,6 +520,12 @@ export default function OpportunitySummaryPanel({
               </div>
             )}
 
+            {attachments.length > 0 && (
+              <p className="text-xs text-stone-500 mb-2">
+                {selectedAttachments.size} of {attachments.length} selected for email & SOW
+              </p>
+            )}
+
             {loadingAttachments ? (
               <div className="py-4 text-center text-stone-400 text-sm">
                 Loading attachments...
@@ -711,12 +722,7 @@ export default function OpportunitySummaryPanel({
                     <input
                       type="checkbox"
                       checked={selectedAttachments.has(att.id)}
-                      onChange={(e) => {
-                        const next = new Set(selectedAttachments)
-                        if (e.target.checked) next.add(att.id)
-                        else next.delete(att.id)
-                        setSelectedAttachments(next)
-                      }}
+                      onChange={() => onToggleAttachment(att.id)}
                       className="h-4 w-4 rounded border-stone-300 text-stone-800 focus:ring-stone-500"
                     />
                     <div className="flex-1 min-w-0">
@@ -732,13 +738,23 @@ export default function OpportunitySummaryPanel({
             <div className="px-5 py-3 border-t border-stone-200 flex items-center justify-between">
               <div className="flex gap-2">
                 <button
-                  onClick={() => setSelectedAttachments(new Set(attachments.map(a => a.id)))}
+                  onClick={() => {
+                    // Toggle every currently-unselected attachment → all selected
+                    attachments.forEach(a => {
+                      if (!selectedAttachments.has(a.id)) onToggleAttachment(a.id)
+                    })
+                  }}
                   className="text-xs text-stone-500 hover:text-stone-700"
                 >
                   Select All
                 </button>
                 <button
-                  onClick={() => setSelectedAttachments(new Set())}
+                  onClick={() => {
+                    // Toggle every currently-selected attachment → all cleared
+                    attachments.forEach(a => {
+                      if (selectedAttachments.has(a.id)) onToggleAttachment(a.id)
+                    })
+                  }}
                   className="text-xs text-stone-500 hover:text-stone-700"
                 >
                   Select None
