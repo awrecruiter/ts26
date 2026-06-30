@@ -72,6 +72,9 @@ interface SubcontractorPanelProps {
   /** Direct-send for Step 2 SOW: skips the email composer and fires the
    *  Gmail send inline. Returns success or an error string. */
   onSendSowDirect?: (sub: Subcontractor, email: string) => Promise<{ success: boolean; error?: string }>
+  /** Manual indication that the SOW was already sent off-platform — stamps
+   *  sowSentAt on the server and optimistically moves the card to Pending. */
+  onMarkSowSent?: (sub: Subcontractor) => Promise<{ success: boolean; error?: string }>
   onSubcontractorsUpdated?: () => void
   /** Apply a per-vendor patch to the parent's state without refetching the
    *  whole opportunity. Use this for save email / mark call / sowSentAt
@@ -155,6 +158,7 @@ export default function SubcontractorPanel({
   onRequestQuote,
   onSendDetails,
   onSendSowDirect,
+  onMarkSowSent,
   onSubcontractorsUpdated,
   onSubPatchOptimistic,
   expandedSubcontractorId,
@@ -522,6 +526,21 @@ export default function SubcontractorPanel({
     if (onSendDetails) onSendDetails(sub)
     sendInFlightRef.current.delete(sub.id)
   }, [emailInputs, onSendSowDirect, onSendDetails])
+
+  const handleMarkSowSent = useCallback(async (sub: Subcontractor) => {
+    if (sendInFlightRef.current.has(sub.id)) return
+    if (sub.sowSentAt) return
+    if (!onMarkSowSent) return
+    sendInFlightRef.current.add(sub.id)
+    setSendingSowId(sub.id)
+    setSendError(null)
+    const result = await onMarkSowSent(sub)
+    setSendingSowId(null)
+    sendInFlightRef.current.delete(sub.id)
+    if (!result.success) {
+      setSendError({ id: sub.id, msg: result.error || 'Mark failed' })
+    }
+  }, [onMarkSowSent])
 
   return (
     <div className="h-full overflow-auto p-4 sm:p-6">
@@ -1093,6 +1112,22 @@ export default function SubcontractorPanel({
                     </div>
                     {sendError && sendError.id === sub.id && (
                       <p className="text-xs text-red-500 mt-2">{sendError.msg}</p>
+                    )}
+                    {/* Manual indication that the SOW was sent off-platform.
+                        Shipping this lets the user qualify the opportunity for
+                        the dashboard without going through the Gmail flow. */}
+                    {onMarkSowSent && !sub.sowSentAt && (
+                      <p className="text-[11px] text-stone-500 mt-2">
+                        Already sent it off-platform?{' '}
+                        <button
+                          type="button"
+                          onClick={() => handleMarkSowSent(sub)}
+                          disabled={sendingSowId === sub.id}
+                          className="underline underline-offset-2 text-stone-500 hover:text-stone-800 disabled:opacity-40"
+                        >
+                          Mark sent
+                        </button>
+                      </p>
                     )}
 
                   </div>

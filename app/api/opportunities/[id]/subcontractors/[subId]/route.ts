@@ -59,6 +59,13 @@ export async function PATCH(
       updateData.workflowCompletedAt = body.workflowCompleted ? new Date() : null
     }
 
+    // Manual indication that an SOW was sent off-platform (lets the user
+    // qualify an opportunity for the dashboard without going through the
+    // on-platform send flow). Pass true to stamp now, false to clear.
+    if (body.sowSent !== undefined) {
+      updateData.sowSentAt = body.sowSent ? new Date() : null
+    }
+
     const subcontractor = await prisma.subcontractor.update({
       where: { id: subId },
       data: updateData,

@@ -539,6 +539,50 @@ export default function OpportunityWorkspacePage() {
               ),
             } : prev)
           }}
+          onMarkSowSent={async (sub) => {
+            if (sub.sowSentAt) return { success: true }
+            const nowIso = new Date().toISOString()
+            // Optimistic — flip the card to Pending immediately.
+            setOpportunity((prev: any) => prev ? {
+              ...prev,
+              subcontractors: prev.subcontractors?.map((s: any) =>
+                s.id === sub.id
+                  ? { ...s, sowSentAt: nowIso, callCompleted: true, callCompletedAt: nowIso }
+                  : s
+              ),
+            } : prev)
+            try {
+              const res = await fetch(`/api/opportunities/${opportunity.id}/subcontractors/${sub.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sowSent: true, callCompleted: true }),
+              })
+              if (!res.ok) {
+                const data = await res.json().catch(() => ({}))
+                // Revert.
+                setOpportunity((prev: any) => prev ? {
+                  ...prev,
+                  subcontractors: prev.subcontractors?.map((s: any) =>
+                    s.id === sub.id
+                      ? { ...s, sowSentAt: null, callCompleted: false, callCompletedAt: null }
+                      : s
+                  ),
+                } : prev)
+                return { success: false, error: data.error || `Mark failed (${res.status})` }
+              }
+              return { success: true }
+            } catch (e) {
+              setOpportunity((prev: any) => prev ? {
+                ...prev,
+                subcontractors: prev.subcontractors?.map((s: any) =>
+                  s.id === sub.id
+                    ? { ...s, sowSentAt: null, callCompleted: false, callCompletedAt: null }
+                    : s
+                ),
+              } : prev)
+              return { success: false, error: e instanceof Error ? e.message : 'Network error' }
+            }
+          }}
           onSubcontractorsUpdated={fetchData}
           expandedSubcontractorId={expandedSubcontractorId}
           onExpandedSubcontractorChange={setExpandedSubcontractorId}

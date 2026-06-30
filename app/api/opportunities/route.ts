@@ -106,17 +106,12 @@ export async function GET(req: Request) {
     }
 
     if (engaged) {
-      where.AND = [
-        {
-          OR: [
-            { sows: { some: {} } },
-            { bids: { some: {} } },
-            { subcontractors: { some: {} } },
-            { progress: { isNot: null } },
-            { assessment: { isNot: null } },
-          ],
-        },
-      ]
+      // An opportunity is dashboard-eligible only once at least one
+      // subcontractor has actually been emailed (on-platform send or manual
+      // "Mark sent" by an admin). Pure-discovery records — assessment only,
+      // SOW drafted, vendors discovered but not contacted — stay off the
+      // dashboard and live in the /opportunities library instead.
+      where.subcontractors = { some: { sowSentAt: { not: null } } }
     }
 
     const total = await prisma.opportunity.count({ where })
@@ -178,7 +173,7 @@ export async function GET(req: Request) {
           take: 1,
         },
         progress: {
-          select: { currentStage: true },
+          select: { currentStage: true, completionPct: true, nextActions: true },
         },
       },
     })

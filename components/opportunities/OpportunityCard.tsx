@@ -36,6 +36,12 @@ interface ComparablesData {
   isStale: boolean
 }
 
+interface OpportunityCardProgress {
+  currentStage: string | null
+  completionPct: number | null
+  nextActions: unknown
+}
+
 interface OpportunityCardProps {
   opportunity: {
     id: string
@@ -51,6 +57,7 @@ interface OpportunityCardProps {
     dismissedAt?: string | Date | null
     rawData?: unknown
     comparables?: ComparablesData | null
+    progress?: OpportunityCardProgress | null
     _count?: {
       bids: number
       subcontractors: number
@@ -74,6 +81,70 @@ interface OpportunityCardProps {
   }
   onDismissed?: (id: string) => void
   onRestored?: (id: string) => void
+}
+
+const STAGE_LABELS: Record<string, string> = {
+  DISCOVERY:    'Discovery',
+  ASSESSMENT:   'Assessment',
+  SOW_CREATION: 'SOW Draft',
+  SOW_REVIEW:   'SOW Review',
+  BID_ASSEMBLY: 'Bid Assembly',
+  READY:        'Ready',
+  SUBMITTED:    'Submitted',
+}
+
+function firstNextAction(raw: unknown): string | null {
+  if (!raw) return null
+  if (typeof raw === 'string') return raw
+  if (Array.isArray(raw) && raw.length > 0) {
+    const first = raw[0]
+    if (typeof first === 'string') return first
+    if (first && typeof first === 'object' && 'label' in first) {
+      const label = (first as Record<string, unknown>).label
+      if (typeof label === 'string') return label
+    }
+  }
+  if (typeof raw === 'object' && raw !== null && 'label' in raw) {
+    const label = (raw as Record<string, unknown>).label
+    if (typeof label === 'string') return label
+  }
+  return null
+}
+
+function WIPStatusTile({ progress }: { progress?: OpportunityCardProgress | null }) {
+  if (!progress || !progress.currentStage) {
+    return (
+      <div>
+        <p className="text-xs text-stone-500 mb-1">WIP Status</p>
+        <p className="text-xs text-stone-400 italic">No progress recorded yet</p>
+      </div>
+    )
+  }
+  const label = STAGE_LABELS[progress.currentStage] ?? progress.currentStage
+  const pct = Math.max(0, Math.min(100, progress.completionPct ?? 0))
+  const next = firstNextAction(progress.nextActions)
+  return (
+    <div>
+      <p className="text-xs text-stone-500 mb-1">WIP Status</p>
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <span className="px-2 py-0.5 text-xs font-medium rounded bg-stone-200 text-stone-800">
+          {label}
+        </span>
+        <span className="text-xs font-semibold text-stone-700 tabular-nums">{pct}%</span>
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-stone-100 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-stone-800 transition-all"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      {next ? (
+        <p className="text-xs text-stone-600 mt-1 line-clamp-2">{next}</p>
+      ) : (
+        <p className="text-xs text-stone-400 mt-1 italic">Awaiting next step</p>
+      )}
+    </div>
+  )
 }
 
 function formatCompact(n: number): string {
@@ -273,9 +344,11 @@ export default function OpportunityCard({
     )
   }
 
+  const oppHref = `/opportunities/${opportunity.id}`
   return (
-    <Link href={`/opportunities/${opportunity.id}`}>
-      <div className="block bg-white border border-stone-200 rounded-lg hover:border-stone-400 transition-all p-6 cursor-pointer">
+    <div className="flex flex-col sm:flex-row gap-3 sm:gap-0">
+    <Link href={oppHref} className="flex-1 min-w-0">
+      <div className="block bg-white border border-stone-200 rounded-lg sm:rounded-r-none sm:border-r-0 hover:border-stone-400 transition-all p-6 cursor-pointer h-full">
         {/* Header */}
         <div className="flex justify-between items-start mb-4 gap-2">
           <div className="flex-1 min-w-0">
@@ -345,82 +418,11 @@ export default function OpportunityCard({
           </p>
         )}
 
-        {/* Assessment Metrics — comparables lead; saved assessment + cost/margin follow */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4 p-3 bg-stone-50 rounded-lg border border-stone-100">
-          <div className="col-span-2 sm:col-span-2">
-            <p className="text-xs text-stone-500 mb-1">Comparable awards (last 5 yrs)</p>
-            {comparablesTile}
-            {showAwardsTrigger && (
-              <button
-                type="button"
-                onClick={handleToggle}
-                aria-expanded={expanded}
-                aria-controls={`awards-${opportunity.id}`}
-                className="mt-1 inline-flex items-center gap-1 text-xs text-stone-500 hover:text-stone-700"
-              >
-                <span>
-                  {expanded ? 'Hide list' : `Show all ${comparables!.count} awards`}
-                </span>
-                <svg
-                  className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-            )}
-            {expanded && (
-              <div
-                id={`awards-${opportunity.id}`}
-                role="region"
-                onClick={swallow}
-                className="mt-2 border-t border-stone-200 pt-2 max-h-[170px] overflow-y-auto"
-              >
-                {loadingAwards && (
-                  <p className="text-xs italic text-stone-400 px-2 py-1">Loading…</p>
-                )}
-                {awardsError && (
-                  <p className="text-xs text-stone-500 px-2 py-1">{awardsError}</p>
-                )}
-                {!loadingAwards && !awardsError && awards && awards.length === 0 && (
-                  <p className="text-xs text-stone-400 px-2 py-1">No awards to show</p>
-                )}
-                {!loadingAwards && !awardsError && awards && awards.length > 0 && (
-                  <ul className="divide-y divide-stone-100">
-                    {awards.map((a) => (
-                      <li
-                        key={a.id}
-                        className="flex items-center justify-between gap-3 px-2 py-1.5 text-xs"
-                      >
-                        <div className="min-w-0 flex items-center gap-2">
-                          <span className="truncate text-stone-800">{a.recipientName}</span>
-                          {a.isRecompete && (
-                            <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">
-                              Recompete
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex-shrink-0 flex items-center gap-3 tabular-nums">
-                          <span className="font-semibold text-stone-900">
-                            {formatCompact(a.awardAmount)}
-                          </span>
-                          <span className="text-stone-500 w-16 text-right">
-                            {formatMonYear(a.popStart)}
-                          </span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-            {savedEstimate !== null && (
-              <p className="text-[10px] text-stone-500 mt-1">
-                Saved estimate: {formatCompact(savedEstimate)}
-              </p>
-            )}
+        {/* Assessment Metrics — WIP status leads; cost / margin / risk follow.
+            Comparables now lives in the attached side column to the right. */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 p-3 bg-stone-50 rounded-lg border border-stone-100">
+          <div className="col-span-2 sm:col-span-1">
+            <WIPStatusTile progress={opportunity.progress} />
           </div>
           <div>
             <p className="text-xs text-stone-500 mb-1">Cost</p>
@@ -511,5 +513,83 @@ export default function OpportunityCard({
         )}
       </div>
     </Link>
+    <Link href={oppHref} className="w-full sm:w-64 flex-shrink-0">
+      <div className="block bg-white border border-stone-200 rounded-lg sm:rounded-l-none hover:border-stone-400 transition-all p-5 cursor-pointer h-full">
+        <p className="text-xs text-stone-500 mb-1">Comparable awards (last 5 yrs)</p>
+        {comparablesTile}
+        {showAwardsTrigger && (
+          <button
+            type="button"
+            onClick={handleToggle}
+            aria-expanded={expanded}
+            aria-controls={`awards-${opportunity.id}`}
+            className="mt-1 inline-flex items-center gap-1 text-xs text-stone-500 hover:text-stone-700"
+          >
+            <span>
+              {expanded ? 'Hide list' : `Show all ${comparables!.count} awards`}
+            </span>
+            <svg
+              className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        )}
+        {expanded && (
+          <div
+            id={`awards-${opportunity.id}`}
+            role="region"
+            onClick={swallow}
+            className="mt-2 border-t border-stone-200 pt-2 max-h-[170px] overflow-y-auto"
+          >
+            {loadingAwards && (
+              <p className="text-xs italic text-stone-400 px-2 py-1">Loading…</p>
+            )}
+            {awardsError && (
+              <p className="text-xs text-stone-500 px-2 py-1">{awardsError}</p>
+            )}
+            {!loadingAwards && !awardsError && awards && awards.length === 0 && (
+              <p className="text-xs text-stone-400 px-2 py-1">No awards to show</p>
+            )}
+            {!loadingAwards && !awardsError && awards && awards.length > 0 && (
+              <ul className="divide-y divide-stone-100">
+                {awards.map((a) => (
+                  <li
+                    key={a.id}
+                    className="flex items-center justify-between gap-3 px-2 py-1.5 text-xs"
+                  >
+                    <div className="min-w-0 flex items-center gap-2">
+                      <span className="truncate text-stone-800">{a.recipientName}</span>
+                      {a.isRecompete && (
+                        <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">
+                          Recompete
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-shrink-0 flex items-center gap-3 tabular-nums">
+                      <span className="font-semibold text-stone-900">
+                        {formatCompact(a.awardAmount)}
+                      </span>
+                      <span className="text-stone-500 w-16 text-right">
+                        {formatMonYear(a.popStart)}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {savedEstimate !== null && (
+          <p className="text-[10px] text-stone-500 mt-2">
+            Saved estimate: {formatCompact(savedEstimate)}
+          </p>
+        )}
+      </div>
+    </Link>
+    </div>
   )
 }
