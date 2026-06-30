@@ -2,9 +2,13 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
-export const maxDuration = 30
+export const maxDuration = 60
 
 const SAM_API_BASE = 'https://api.sam.gov/opportunities/v2/search'
+const PAGE_SIZE = 50
+const MAX_CANDIDATES = 500
+const MAX_PAGES_PER_QUERY = 10
+const OVERALL_BUDGET_MS = 45_000
 
 // Solicitation numbers are typically alphanumeric with dashes (e.g. "W912DY-25-R-0001")
 const SOL_NUMBER_PATTERN = /^[A-Z0-9][A-Z0-9-]{4,}$/i
@@ -46,7 +50,7 @@ export async function POST(req: Request) {
       url.searchParams.set('api_key', apiKey)
       url.searchParams.set('postedFrom', fmt(postedFrom))
       url.searchParams.set('postedTo', fmt(new Date()))
-      url.searchParams.set('limit', '50')
+      url.searchParams.set('limit', String(PAGE_SIZE))
       url.searchParams.set('offset', '0')
       url.searchParams.set('ptype', 'o,p,k')
       url.searchParams.set('sortBy', '-modifiedOn')
@@ -69,7 +73,11 @@ export async function POST(req: Request) {
         return { ok: false as const, status: res.status, error: msg, details: text.substring(0, 500) }
       }
       const data = await res.json()
-      return { ok: true as const, opportunities: (data.opportunitiesData || []) as any[] }
+      return {
+        ok: true as const,
+        opportunities: (data.opportunitiesData || []) as any[],
+        totalRecords: Number(data.totalRecords) || 0,
+      }
     }
 
     // Search strategy:
@@ -98,28 +106,64 @@ export async function POST(req: Request) {
       }
     }
 
+    const startedAt = Date.now()
+    const budgetExceeded = () => Date.now() - startedAt > OVERALL_BUDGET_MS
+
     const seen = new Set<string>()
-    let foundOpportunities: any[] = []
-    for (const params of fanOut) {
-      const result = await callSam(params)
-      if (!result.ok) {
-        return NextResponse.json(
-          { error: result.error, details: result.details },
-          { status: result.status === 429 ? 429 : 502 }
-        )
+    const foundOpportunities: any[] = []
+    let samgovTotal = 0
+    let pagedCount = 0
+
+    outer: for (const params of fanOut) {
+      if (budgetExceeded()) break
+      if (foundOpportunities.length >= MAX_CANDIDATES) break
+
+      // Paginate only for NAICS queries — solnum is unique, title rarely benefits.
+      const shouldPaginate = !!params.ncode
+      let offset = 0
+      let pagesForThisQuery = 0
+
+      while (pagesForThisQuery < MAX_PAGES_PER_QUERY) {
+        if (budgetExceeded()) break outer
+        if (foundOpportunities.length >= MAX_CANDIDATES) break outer
+
+        const result = await callSam({ ...params, offset: String(offset) })
+        if (!result.ok) {
+          return NextResponse.json(
+            { error: result.error, details: result.details },
+            { status: result.status === 429 ? 429 : 502 }
+          )
+        }
+        pagedCount++
+        if (pagesForThisQuery === 0) samgovTotal += result.totalRecords
+        pagesForThisQuery++
+
+        for (const opp of result.opportunities) {
+          const key = opp.noticeId || opp.solicitationNumber
+          if (!key || seen.has(key)) continue
+          seen.add(key)
+          foundOpportunities.push(opp)
+        }
+
+        if (result.opportunities.length < PAGE_SIZE) break
+        if (!shouldPaginate) break
+        offset += PAGE_SIZE
       }
-      for (const opp of result.opportunities) {
-        const key = opp.noticeId || opp.solicitationNumber
-        if (!key || seen.has(key)) continue
-        seen.add(key)
-        foundOpportunities.push(opp)
-      }
+
       // If this is a query-by-title fallback chain (no NAICS), stop on first hit
       if (naicsCodes.length === 0 && foundOpportunities.length > 0) break
     }
 
     if (foundOpportunities.length === 0) {
-      return NextResponse.json({ success: true, saved: 0, found: 0 })
+      return NextResponse.json({
+        success: true,
+        saved: 0,
+        created: 0,
+        found: 0,
+        eligible: 0,
+        samgovTotal,
+        paged: pagedCount,
+      })
     }
 
     // Apply same 14-day default cutoff as local search — exclude expired and
@@ -136,7 +180,11 @@ export async function POST(req: Request) {
       return NextResponse.json({
         success: true,
         saved: 0,
+        created: 0,
         found: foundOpportunities.length,
+        eligible: 0,
+        samgovTotal,
+        paged: pagedCount,
         filteredOut: foundOpportunities.length,
         reason: 'All matches were expired or closing within 14 days',
       })
@@ -182,15 +230,21 @@ export async function POST(req: Request) {
         }
 
         try {
-          const record = await prisma.opportunity.upsert({
+          const existing = await prisma.opportunity.findUnique({
             where: { solicitationNumber: solNum },
-            update: common,
-            create: { solicitationNumber: solNum, ...common },
+            select: { id: true },
           })
-          return { ok: true, id: record.id }
+          if (existing) {
+            await prisma.opportunity.update({ where: { id: existing.id }, data: common })
+            return { ok: true as const, id: existing.id, created: false }
+          }
+          const record = await prisma.opportunity.create({
+            data: { solicitationNumber: solNum, ...common },
+          })
+          return { ok: true as const, id: record.id, created: true }
         } catch (error) {
           return {
-            ok: false,
+            ok: false as const,
             solicitation: solNum,
             error: error instanceof Error ? error.message : 'Unknown',
           }
@@ -199,12 +253,16 @@ export async function POST(req: Request) {
     )
 
     const saved = results.filter((r) => r.ok)
+    const created = saved.filter((r) => r.created)
 
     return NextResponse.json({
       success: true,
       found: foundOpportunities.length,
       eligible: eligible.length,
       saved: saved.length,
+      created: created.length,
+      samgovTotal,
+      paged: pagedCount,
     })
   } catch (error) {
     console.error('SAM.gov live search error:', error)

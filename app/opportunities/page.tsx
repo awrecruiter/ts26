@@ -105,12 +105,18 @@ function OpportunitiesContent() {
     return params
   }
 
-  const handleLiveSamSearch = async () => {
+  const runSamSearch = async (
+    setBusy: (b: boolean) => void,
+    setMessage: (m: string | null) => void
+  ) => {
     const query = searchParams.get('search') || ''
     const naics = searchParams.get('naics') || ''
-    if (!query && !naics) return
-    setSearchingSam(true)
-    setSamSearchResult(null)
+    if (!query && !naics) {
+      setMessage('Enter a search term or NAICS code first')
+      return
+    }
+    setBusy(true)
+    setMessage(null)
     try {
       const res = await fetch('/api/opportunities/search-sam', {
         method: 'POST',
@@ -118,47 +124,43 @@ function OpportunitiesContent() {
         body: JSON.stringify({ query, naics }),
       })
       const data = await res.json()
-      if (res.ok) {
-        if (data.saved > 0) {
-          setSamSearchResult(`Found ${data.saved} on SAM.gov — added to your library`)
-          fetchOpportunities()
-        } else if (data.found > 0) {
-          setSamSearchResult(`Found ${data.found} on SAM.gov, but all were expired or closing within 14 days`)
-        } else {
-          setSamSearchResult('No matches on SAM.gov either')
-        }
+      if (!res.ok) {
+        setMessage(data.error || 'SAM.gov search failed')
+        return
+      }
+      const found: number = data.found ?? 0
+      const created: number = data.created ?? 0
+      const eligible: number = data.eligible ?? 0
+      const samgovTotal: number = data.samgovTotal ?? 0
+      const totalMatches = samgovTotal || found
+      if (created > 0) {
+        const skipped = Math.max(totalMatches - created, 0)
+        const noun = created === 1 ? 'opportunity' : 'opportunities'
+        setMessage(
+          `Fetched ${created} new ${noun} (${totalMatches} SAM.gov matches, ${skipped} already in library or closing soon)`
+        )
+        fetchOpportunities()
+      } else if (eligible > 0) {
+        setMessage(
+          `${totalMatches} SAM.gov matches — all ${eligible} eligible records were already in your library`
+        )
+        fetchOpportunities()
+      } else if (found > 0) {
+        setMessage(
+          `Found ${totalMatches} on SAM.gov, but all were closing within 14 days`
+        )
       } else {
-        setSamSearchResult(data.error || 'SAM.gov search failed')
+        setMessage('No matches on SAM.gov')
       }
     } catch {
-      setSamSearchResult('Network error — please try again')
+      setMessage('Network error — please try again')
     } finally {
-      setSearchingSam(false)
+      setBusy(false)
     }
   }
 
-  const handleFetchFromSAM = async () => {
-    setFetching(true)
-    setFetchResult(null)
-    try {
-      const res = await fetch('/api/opportunities/fetch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 50, posted_days_ago: 90 }),
-      })
-      const data = await res.json()
-      if (res.ok) {
-        setFetchResult(`Fetched ${data.saved || 0} new opportunities`)
-        fetchOpportunities()
-      } else {
-        setFetchResult(`Error: ${data.error || 'Failed to fetch'}`)
-      }
-    } catch {
-      setFetchResult('Network error — please try again')
-    } finally {
-      setFetching(false)
-    }
-  }
+  const handleLiveSamSearch = () => runSamSearch(setSearchingSam, setSamSearchResult)
+  const handleFetchFromSAM = () => runSamSearch(setFetching, setFetchResult)
 
   const refreshComparablesInBatches = useCallback(async (ids: string[]) => {
     const POOL_SIZE = 3
