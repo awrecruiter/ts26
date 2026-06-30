@@ -30,91 +30,161 @@ interface Subcontractor extends PlaceSearchResult, PlaceDetails {
   distanceKm?: number | null
 }
 
-// NAICS code to service type mapping for search queries
-const NAICS_SERVICE_MAP: Record<string, string[]> = {
-  '236220': ['Commercial Construction', 'General Contractor'],
-  '237310': ['Highway Construction', 'Road Construction'],
-  '238210': ['Electrical Contractor', 'Electrician'],
-  '238220': ['Plumbing Contractor', 'HVAC Contractor'],
-  '238910': ['Site Preparation Contractor'],
-  '334210': ['Telephone Apparatus', 'Communications Equipment'],
-  '334220': ['Communications Equipment Repair', 'Electronics Repair', 'RF Electronics'],
-  '334290': ['Communications Equipment', 'Electronic Components'],
-  '333120': ['Construction Equipment Dealer', 'Heavy Equipment Supplier'],
-  '333922': ['Material Handling Equipment', 'Conveyor Supplier'],
-  '339994': ['Broom Supplier', 'Brush Supplier', 'Industrial Sweeper Supplier', 'Janitorial Equipment Supplier'],
-  '423810': ['Construction Equipment Dealer', 'Heavy Equipment Supplier'],
-  '423830': ['Industrial Equipment Supplier', 'Industrial Machinery Supplier'],
-  '423840': ['Industrial Supplies', 'MRO Supplier'],
-  '334511': ['Radar Systems', 'Navigation Equipment'],
-  '334519': ['Measuring Instruments', 'Testing Equipment'],
-  '336411': ['Aircraft Manufacturing', 'Aerospace Contractor'],
-  '511210': ['Software Publisher', 'Software Development Company'],
-  '517311': ['Telecommunications', 'Network Services Provider'],
-  '518210': ['Data Processing', 'Cloud Services'],
-  '541310': ['Architectural Services', 'Architecture Firm'],
-  '541330': ['Engineering Services', 'Civil Engineering', 'Structural Engineering'],
-  '541380': ['Testing Laboratory', 'Inspection Services'],
-  '541511': ['Custom Software Development', 'Application Development'],
-  '541512': ['Computer Systems Design', 'IT Consulting', 'Software Development'],
-  '541513': ['Computer Facilities Management', 'IT Infrastructure'],
-  '541519': ['IT Services', 'Technology Consulting'],
-  '541611': ['Management Consulting', 'Business Consulting'],
-  '541612': ['Human Resources Consulting', 'HR Services'],
-  '541614': ['Logistics Consulting', 'Supply Chain Consulting'],
-  '541620': ['Environmental Consulting', 'Environmental Services'],
-  '541690': ['Scientific Consulting', 'Technical Consulting'],
-  '541715': ['Research and Development', 'R&D Services'],
-  '541990': ['Professional Services', 'Consulting Services'],
-  '561210': ['Facilities Support Services', 'Building Maintenance'],
-  '561320': ['Temporary Staffing Agency', 'Staffing Services'],
-  '561612': ['Security Guard Services', 'Security Services'],
-  '561720': ['Janitorial Services', 'Cleaning Services'],
-  '562910': ['Remediation Services', 'Environmental Cleanup'],
-  '611430': ['Professional Training', 'Training Services'],
-  '621999': ['Health Services', 'Medical Services'],
-  '811219': ['Electronics Repair', 'Equipment Maintenance'],
+/**
+ * Industry metadata used to tighten Places search relevance.
+ *
+ * - `queries[]` — text-search phrases (as before)
+ * - `googleType` — narrow Places `type=` parameter when one cleanly applies
+ *   (`general_contractor`, `electrician`, etc.). Falls back to `establishment`.
+ * - `typesAllow[]` — `place.types` tokens that count as in-industry. Result
+ *   must contain at least one.
+ * - `typesBlock[]` — `place.types` tokens that disqualify regardless. Unioned
+ *   with the always-on `DEFAULT_BLOCK_TYPES` list.
+ * - `nameKeywords[]` — explicit accept-tokens for the name-overlap check.
+ *   Defaults to words derived from `queries[]` if omitted.
+ */
+interface IndustryMetadata {
+  queries: string[]
+  googleType?: string
+  typesAllow?: string[]
+  typesBlock?: string[]
+  nameKeywords?: string[]
 }
 
-// Keywords from opportunity titles mapped to relevant search terms
-const TITLE_KEYWORD_MAP: Record<string, string[]> = {
-  'cybersecurity': ['Cybersecurity Services', 'Information Security'],
-  'security': ['Security Services', 'Security Consultant'],
-  'construction': ['Construction Contractor', 'General Contractor'],
-  'maintenance': ['Maintenance Services', 'Facility Maintenance'],
-  'repair': ['Equipment Repair', 'Maintenance Services'],
-  'training': ['Training Services', 'Professional Training'],
-  'medical': ['Medical Services', 'Healthcare Services'],
-  'health': ['Healthcare Services', 'Medical Supplies'],
-  'software': ['Software Development', 'IT Services'],
-  'network': ['Network Services', 'Telecommunications'],
-  'cloud': ['Cloud Services', 'IT Infrastructure'],
-  'data': ['Data Services', 'IT Consulting'],
-  'logistics': ['Logistics Services', 'Supply Chain'],
-  'transport': ['Transportation Services', 'Freight Services'],
-  'cleaning': ['Janitorial Services', 'Cleaning Services'],
-  'environmental': ['Environmental Services', 'Environmental Consulting'],
-  'engineering': ['Engineering Services', 'Engineering Firm'],
-  'consulting': ['Consulting Firm', 'Management Consulting'],
-  'staffing': ['Staffing Agency', 'Temporary Staffing'],
-  'electrical': ['Electrical Contractor', 'Electrician'],
-  'plumbing': ['Plumbing Contractor', 'Plumber'],
-  'hvac': ['HVAC Contractor', 'HVAC Services'],
-  'telecom': ['Telecommunications', 'Network Services'],
-  'research': ['Research Services', 'R&D Firm'],
-  'laboratory': ['Testing Laboratory', 'Lab Services'],
-  'inspection': ['Inspection Services', 'Quality Assurance'],
-  'architecture': ['Architectural Services', 'Architecture Firm'],
-  'survey': ['Surveying Services', 'Land Surveyor'],
-  'remediation': ['Environmental Remediation', 'Cleanup Services'],
-  'broom': ['Broom Supplier', 'Industrial Sweeper Supplier'],
-  'brush': ['Brush Supplier', 'Industrial Brush Manufacturer'],
-  'sweeper': ['Industrial Sweeper Supplier', 'Street Sweeper Dealer'],
-  'mop': ['Janitorial Equipment Supplier', 'Mop Supplier'],
-  'janitorial': ['Janitorial Equipment Supplier', 'Janitorial Supplies'],
-  'tractor': ['Tractor Dealer', 'Farm Equipment Dealer'],
-  'attachment': ['Tractor Implement Dealer', 'Equipment Attachment Supplier'],
-  'hydraulic': ['Hydraulic Equipment Dealer', 'Hydraulics Supplier'],
+/**
+ * Place types that are almost never a legitimate federal-contract subcontractor.
+ * Unioned into every search's blocklist so a `restaurant` ranking high for
+ * "Highway Construction in Anchorage" gets dropped before it reaches the UI.
+ */
+const DEFAULT_BLOCK_TYPES = [
+  'restaurant', 'food', 'bar', 'cafe', 'meal_takeaway', 'meal_delivery',
+  'lodging', 'campground', 'rv_park',
+  'school', 'university', 'primary_school', 'secondary_school',
+  'tourist_attraction', 'museum', 'park', 'amusement_park',
+  'church', 'place_of_worship', 'cemetery',
+  'beauty_salon', 'hair_care', 'spa', 'gym',
+  'clothing_store', 'shoe_store', 'jewelry_store',
+  'liquor_store', 'convenience_store',
+]
+
+const CONSTRUCTION_TYPES = ['general_contractor', 'contractor', 'roofing_contractor', 'plumber', 'electrician', 'painter']
+const SUPPLIER_TYPES = ['hardware_store', 'home_goods_store', 'electronics_store', 'store']
+const PRO_SERVICES_TYPES = ['lawyer', 'accounting', 'finance', 'insurance_agency', 'real_estate_agency', 'point_of_interest']
+
+const NAICS_INDUSTRY_MAP: Record<string, IndustryMetadata> = {
+  '236220': { queries: ['Commercial Construction', 'General Contractor'], googleType: 'general_contractor', typesAllow: CONSTRUCTION_TYPES },
+  '237310': { queries: ['Highway Construction', 'Road Construction', 'Asphalt Paving Contractor'], googleType: 'general_contractor', typesAllow: [...CONSTRUCTION_TYPES, 'roofing_contractor'] },
+  '238210': { queries: ['Electrical Contractor', 'Electrician'], googleType: 'electrician', typesAllow: ['electrician', ...CONSTRUCTION_TYPES] },
+  '238220': { queries: ['Plumbing Contractor', 'HVAC Contractor'], googleType: 'plumber', typesAllow: ['plumber', ...CONSTRUCTION_TYPES] },
+  '238910': { queries: ['Site Preparation Contractor', 'Excavating Contractor'], googleType: 'general_contractor', typesAllow: CONSTRUCTION_TYPES },
+  '334210': { queries: ['Telephone Apparatus', 'Communications Equipment'], typesAllow: [...SUPPLIER_TYPES, 'electronics_store'] },
+  '334220': { queries: ['Communications Equipment Repair', 'Electronics Repair', 'RF Electronics'], typesAllow: [...SUPPLIER_TYPES, 'electronics_store', 'electronics_repair'] },
+  '334290': { queries: ['Communications Equipment', 'Electronic Components'], typesAllow: [...SUPPLIER_TYPES, 'electronics_store'] },
+  '333120': { queries: ['Construction Equipment Dealer', 'Heavy Equipment Supplier'], typesAllow: [...SUPPLIER_TYPES, 'car_dealer'] },
+  '333922': { queries: ['Material Handling Equipment', 'Conveyor Supplier'], typesAllow: SUPPLIER_TYPES },
+  '339994': { queries: ['Broom Supplier', 'Brush Supplier', 'Industrial Sweeper Supplier', 'Janitorial Equipment Supplier'], typesAllow: SUPPLIER_TYPES },
+  '423810': { queries: ['Construction Equipment Dealer', 'Heavy Equipment Supplier'], typesAllow: [...SUPPLIER_TYPES, 'car_dealer'] },
+  '423830': { queries: ['Industrial Equipment Supplier', 'Industrial Machinery Supplier'], typesAllow: SUPPLIER_TYPES },
+  '423840': { queries: ['Industrial Supplies', 'MRO Supplier'], typesAllow: SUPPLIER_TYPES },
+  '334511': { queries: ['Radar Systems', 'Navigation Equipment'], typesAllow: [...SUPPLIER_TYPES, 'electronics_store'] },
+  '334519': { queries: ['Measuring Instruments', 'Testing Equipment'], typesAllow: SUPPLIER_TYPES },
+  '336411': { queries: ['Aircraft Manufacturing', 'Aerospace Contractor'], typesAllow: SUPPLIER_TYPES },
+  '511210': { queries: ['Software Publisher', 'Software Development Company'], typesAllow: PRO_SERVICES_TYPES },
+  '517311': { queries: ['Telecommunications', 'Network Services Provider'], typesAllow: PRO_SERVICES_TYPES },
+  '518210': { queries: ['Data Processing', 'Cloud Services'], typesAllow: PRO_SERVICES_TYPES },
+  '541310': { queries: ['Architectural Services', 'Architecture Firm'], typesAllow: PRO_SERVICES_TYPES },
+  '541330': { queries: ['Engineering Services', 'Civil Engineering', 'Structural Engineering'], typesAllow: PRO_SERVICES_TYPES },
+  '541380': { queries: ['Testing Laboratory', 'Inspection Services'], typesAllow: PRO_SERVICES_TYPES },
+  '541511': { queries: ['Custom Software Development', 'Application Development'], typesAllow: PRO_SERVICES_TYPES },
+  '541512': { queries: ['Computer Systems Design', 'IT Consulting', 'Software Development'], typesAllow: PRO_SERVICES_TYPES },
+  '541513': { queries: ['Computer Facilities Management', 'IT Infrastructure'], typesAllow: PRO_SERVICES_TYPES },
+  '541519': { queries: ['IT Services', 'Technology Consulting'], typesAllow: PRO_SERVICES_TYPES },
+  '541611': { queries: ['Management Consulting', 'Business Consulting'], typesAllow: PRO_SERVICES_TYPES },
+  '541612': { queries: ['Human Resources Consulting', 'HR Services'], typesAllow: PRO_SERVICES_TYPES },
+  '541614': { queries: ['Logistics Consulting', 'Supply Chain Consulting'], typesAllow: PRO_SERVICES_TYPES },
+  '541620': { queries: ['Environmental Consulting', 'Environmental Services'], typesAllow: PRO_SERVICES_TYPES },
+  '541690': { queries: ['Scientific Consulting', 'Technical Consulting'], typesAllow: PRO_SERVICES_TYPES },
+  '541715': { queries: ['Research and Development', 'R&D Services'], typesAllow: PRO_SERVICES_TYPES },
+  '541990': { queries: ['Professional Services', 'Consulting Services'], typesAllow: PRO_SERVICES_TYPES },
+  '561210': { queries: ['Facilities Support Services', 'Building Maintenance'], typesAllow: [...CONSTRUCTION_TYPES, 'point_of_interest'] },
+  '561320': { queries: ['Temporary Staffing Agency', 'Staffing Services'], typesAllow: [...PRO_SERVICES_TYPES, 'employment_agency'] },
+  '561612': { queries: ['Security Guard Services', 'Security Services'], typesAllow: PRO_SERVICES_TYPES, typesBlock: ['locksmith'] },
+  '561720': { queries: ['Janitorial Services', 'Cleaning Services'], typesAllow: ['point_of_interest', 'general_contractor'] },
+  '562910': { queries: ['Remediation Services', 'Environmental Cleanup'], typesAllow: [...CONSTRUCTION_TYPES, ...PRO_SERVICES_TYPES] },
+  '611430': { queries: ['Professional Training', 'Training Services'], typesAllow: PRO_SERVICES_TYPES },
+  '621999': { queries: ['Health Services', 'Medical Services'], typesAllow: ['health', 'doctor', 'hospital', 'point_of_interest'] },
+  '811219': { queries: ['Electronics Repair', 'Equipment Maintenance'], typesAllow: ['electronics_store', 'point_of_interest'] },
+}
+
+/**
+ * Title keyword → industry metadata. Lower bar than `NAICS_INDUSTRY_MAP` because
+ * a single keyword fires regardless of NAICS — used as a supplementary signal.
+ */
+const TITLE_KEYWORD_MAP: Record<string, IndustryMetadata> = {
+  'cybersecurity': { queries: ['Cybersecurity Services', 'Information Security'], typesAllow: PRO_SERVICES_TYPES },
+  'security': { queries: ['Security Services', 'Security Consultant'], typesAllow: PRO_SERVICES_TYPES, typesBlock: ['locksmith'] },
+  'construction': { queries: ['Construction Contractor', 'General Contractor'], googleType: 'general_contractor', typesAllow: CONSTRUCTION_TYPES },
+  'maintenance': { queries: ['Maintenance Services', 'Facility Maintenance'], typesAllow: [...CONSTRUCTION_TYPES, 'point_of_interest'] },
+  'repair': { queries: ['Equipment Repair', 'Maintenance Services'], typesAllow: [...CONSTRUCTION_TYPES, 'electronics_store', 'point_of_interest'] },
+  'training': { queries: ['Training Services', 'Professional Training'], typesAllow: PRO_SERVICES_TYPES },
+  'medical': { queries: ['Medical Services', 'Healthcare Services'], typesAllow: ['health', 'doctor', 'hospital'] },
+  'health': { queries: ['Healthcare Services', 'Medical Supplies'], typesAllow: ['health', 'doctor', 'hospital'] },
+  'software': { queries: ['Software Development', 'IT Services'], typesAllow: PRO_SERVICES_TYPES },
+  'network': { queries: ['Network Services', 'Telecommunications'], typesAllow: PRO_SERVICES_TYPES },
+  'cloud': { queries: ['Cloud Services', 'IT Infrastructure'], typesAllow: PRO_SERVICES_TYPES },
+  'data': { queries: ['Data Services', 'IT Consulting'], typesAllow: PRO_SERVICES_TYPES },
+  'logistics': { queries: ['Logistics Services', 'Supply Chain'], typesAllow: [...PRO_SERVICES_TYPES, 'moving_company'] },
+  'transport': { queries: ['Transportation Services', 'Freight Services'], typesAllow: [...PRO_SERVICES_TYPES, 'moving_company', 'storage'] },
+  'cleaning': { queries: ['Janitorial Services', 'Cleaning Services'], typesAllow: ['point_of_interest', 'general_contractor'] },
+  'environmental': { queries: ['Environmental Services', 'Environmental Consulting'], typesAllow: [...CONSTRUCTION_TYPES, ...PRO_SERVICES_TYPES] },
+  'engineering': { queries: ['Engineering Services', 'Engineering Firm'], typesAllow: PRO_SERVICES_TYPES },
+  'consulting': { queries: ['Consulting Firm', 'Management Consulting'], typesAllow: PRO_SERVICES_TYPES },
+  'staffing': { queries: ['Staffing Agency', 'Temporary Staffing'], typesAllow: [...PRO_SERVICES_TYPES, 'employment_agency'] },
+  'electrical': { queries: ['Electrical Contractor', 'Electrician'], googleType: 'electrician', typesAllow: ['electrician', ...CONSTRUCTION_TYPES] },
+  'plumbing': { queries: ['Plumbing Contractor', 'Plumber'], googleType: 'plumber', typesAllow: ['plumber', ...CONSTRUCTION_TYPES] },
+  'hvac': { queries: ['HVAC Contractor', 'HVAC Services'], typesAllow: CONSTRUCTION_TYPES },
+  'telecom': { queries: ['Telecommunications', 'Network Services'], typesAllow: PRO_SERVICES_TYPES },
+  'research': { queries: ['Research Services', 'R&D Firm'], typesAllow: PRO_SERVICES_TYPES },
+  'laboratory': { queries: ['Testing Laboratory', 'Lab Services'], typesAllow: PRO_SERVICES_TYPES },
+  'inspection': { queries: ['Inspection Services', 'Quality Assurance'], typesAllow: PRO_SERVICES_TYPES },
+  'architecture': { queries: ['Architectural Services', 'Architecture Firm'], typesAllow: PRO_SERVICES_TYPES },
+  'survey': { queries: ['Surveying Services', 'Land Surveyor'], typesAllow: PRO_SERVICES_TYPES },
+  'remediation': { queries: ['Environmental Remediation', 'Cleanup Services'], typesAllow: [...CONSTRUCTION_TYPES, ...PRO_SERVICES_TYPES] },
+  'broom': { queries: ['Broom Supplier', 'Industrial Sweeper Supplier'], typesAllow: SUPPLIER_TYPES },
+  'brush': { queries: ['Brush Supplier', 'Industrial Brush Manufacturer'], typesAllow: SUPPLIER_TYPES },
+  'sweeper': { queries: ['Industrial Sweeper Supplier', 'Street Sweeper Dealer'], typesAllow: [...SUPPLIER_TYPES, 'car_dealer'] },
+  'mop': { queries: ['Janitorial Equipment Supplier', 'Mop Supplier'], typesAllow: SUPPLIER_TYPES },
+  'janitorial': { queries: ['Janitorial Equipment Supplier', 'Janitorial Supplies'], typesAllow: SUPPLIER_TYPES },
+  'tractor': { queries: ['Tractor Dealer', 'Farm Equipment Dealer'], typesAllow: [...SUPPLIER_TYPES, 'car_dealer'] },
+  'attachment': { queries: ['Tractor Implement Dealer', 'Equipment Attachment Supplier'], typesAllow: [...SUPPLIER_TYPES, 'car_dealer'] },
+  'hydraulic': { queries: ['Hydraulic Equipment Dealer', 'Hydraulics Supplier'], typesAllow: SUPPLIER_TYPES },
+}
+
+const NAME_OVERLAP_STOPWORDS = new Set([
+  'the', 'and', 'of', 'for', 'a', 'an', 'services', 'service', 'company', 'co',
+  'inc', 'llc', 'corp', 'corporation', 'group', 'solutions', 'firm', 'usa', 'us',
+])
+
+function nameOverlapTokens(input: string): Set<string> {
+  return new Set(
+    input
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length >= 3 && !NAME_OVERLAP_STOPWORDS.has(t)),
+  )
+}
+
+function nameHasOverlap(name: string, keywords: string[]): boolean {
+  if (keywords.length === 0) return true
+  const nameTokens = nameOverlapTokens(name)
+  if (nameTokens.size === 0) return false
+  for (const kw of keywords) {
+    for (const t of nameOverlapTokens(kw)) {
+      if (nameTokens.has(t)) return true
+    }
+  }
+  return false
 }
 
 // Full state names keyed by 2-letter code — used to match against formatted_address
@@ -215,11 +285,24 @@ interface SearchBusinessesResult {
   apiError?: string
 }
 
+export interface BusinessSearchOptions {
+  /** Narrow Places `type=` parameter (overrides 'establishment'). */
+  googleType?: string
+  /** Result must have at least one of these in `place.types`. */
+  typesAllow?: string[]
+  /** Result must have none of these in `place.types`.
+   *  Unioned with the always-on DEFAULT_BLOCK_TYPES list. */
+  typesBlock?: string[]
+  /** Result name must share at least one non-stopword token with one of these. */
+  nameKeywords?: string[]
+}
+
 export async function searchBusinesses(
   query: string,
   location: string = 'United States',
   maxResults: number = 5,
-  stateCode?: string | null
+  stateCode?: string | null,
+  options?: BusinessSearchOptions,
 ): Promise<SearchBusinessesResult> {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY
 
@@ -234,11 +317,14 @@ export async function searchBusinesses(
     // primary signal the legacy Places API uses for geographic relevance.
     url.searchParams.set('query', `${query} ${location}`)
     url.searchParams.set('key', apiKey)
-    url.searchParams.set('type', 'establishment')
+    // Narrow Places `type=` when the caller supplies one; otherwise fall back
+    // to the broad `establishment` to stay backward-compatible with callers
+    // (like enrichWithGoogleMaps) that look up known vendors by name.
+    url.searchParams.set('type', options?.googleType || 'establishment')
     // Request more results than needed so post-filtering has enough to work with
     url.searchParams.set('maxResultCount', String(Math.min(maxResults * 4, 20)))
 
-    console.log(`[Google Places] Searching for: "${query}" in "${location}"${stateCode ? ` (state: ${stateCode})` : ''} (API key: ${apiKey.substring(0, 8)}...)`)
+    console.log(`[Google Places] Searching for: "${query}" in "${location}"${stateCode ? ` (state: ${stateCode})` : ''}${options?.googleType ? ` (type: ${options.googleType})` : ''} (API key: ${apiKey.substring(0, 8)}...)`)
 
     const response = await fetch(url.toString(), {
       method: 'GET',
@@ -269,19 +355,43 @@ export async function searchBusinesses(
       lng: place.geometry?.location?.lng ?? null,
     }))
 
-    // Post-filter by state: the legacy Places API text search does not
-    // restrict geographically — it only biases. We filter on the returned
-    // formatted_address which always contains the state code, e.g. "AK 99501".
-    let businesses: PlaceSearchResult[]
-    if (stateCode) {
-      businesses = allResults.filter(b => addressMatchesState(b.address, stateCode))
-      console.log(`[Google Places] ${allResults.length} raw results, ${businesses.length} in ${stateCode} for "${query}"`)
-      if (businesses.length === 0) {
-        // Log the addresses we rejected so it's easy to debug
-        console.log(`[Google Places] Rejected addresses: ${allResults.slice(0, 5).map(b => b.address).join(' | ')}`)
+    // Relevance post-filters — block list, allow list, name overlap. The first
+    // two operate on Google's `place.types` array (its strongest in-product
+    // category signal). The third defends against obviously off-topic
+    // businesses that happen to satisfy the type filters.
+    const blockSet = new Set([...DEFAULT_BLOCK_TYPES, ...(options?.typesBlock ?? [])])
+    const allowSet = options?.typesAllow && options.typesAllow.length > 0
+      ? new Set(options.typesAllow)
+      : null
+    const nameKeywords = options?.nameKeywords
+
+    const typesPass = allResults.filter((b) => {
+      for (const t of b.types) {
+        if (blockSet.has(t)) return false
       }
-    } else {
-      businesses = allResults
+      if (allowSet) {
+        return b.types.some((t) => allowSet.has(t))
+      }
+      return true
+    })
+
+    const namePass = nameKeywords && nameKeywords.length > 0
+      ? typesPass.filter((b) => nameHasOverlap(b.name, nameKeywords))
+      : typesPass
+
+    // State-code post-filter (legacy Places text-search only biases, doesn't
+    // restrict). Operates on the address; runs after relevance filters so the
+    // counts logged below describe the final outcome.
+    const businesses: PlaceSearchResult[] = stateCode
+      ? namePass.filter((b) => addressMatchesState(b.address, stateCode))
+      : namePass
+
+    console.log(
+      `[Google Places] q="${query}" raw=${allResults.length} typesPass=${typesPass.length} nameOverlap=${namePass.length}${stateCode ? ` state=${businesses.length}` : ''}`,
+    )
+    if (allResults.length > 0 && businesses.length === 0) {
+      // Sample the addresses we rejected so it's easy to debug
+      console.log(`[Google Places] Rejected sample: ${allResults.slice(0, 5).map((b) => `${b.name} [${b.types.slice(0, 3).join(',')}] ${b.address}`).join(' | ')}`)
     }
 
     return { results: businesses.slice(0, maxResults) }
@@ -354,39 +464,38 @@ export async function findSubcontractorsForOpportunity(opportunity: {
 }): Promise<FindSubcontractorsResult> {
   const { naicsCode, placeOfPerformance, stateCode, title, radiusMiles = 50, city, popCoords } = opportunity
 
-  // Build search queries — prioritize NAICS, then title keywords
-  let searchQueries: string[] = []
+  // Build (query, metadata) pairs — prioritize NAICS, then title keywords. Each
+  // query carries its own industry filter (Google type, allow/block, name
+  // overlap) so the search is tightened to the relevant category.
+  const searchPlan: Array<{ query: string; meta: IndustryMetadata }> = []
+  const queuedQueries = new Set<string>()
+
+  const enqueue = (meta: IndustryMetadata) => {
+    for (const q of meta.queries) {
+      if (queuedQueries.has(q)) continue
+      queuedQueries.add(q)
+      searchPlan.push({ query: q, meta })
+    }
+  }
 
   // 1. NAICS-based queries
-  if (naicsCode && NAICS_SERVICE_MAP[naicsCode]) {
-    searchQueries.push(...NAICS_SERVICE_MAP[naicsCode])
+  if (naicsCode && NAICS_INDUSTRY_MAP[naicsCode]) {
+    enqueue(NAICS_INDUSTRY_MAP[naicsCode])
   }
 
   // 2. Title keyword-based queries
   if (title) {
     const titleLower = title.toLowerCase()
-    for (const [keyword, queries] of Object.entries(TITLE_KEYWORD_MAP)) {
-      if (titleLower.includes(keyword)) {
-        for (const q of queries) {
-          if (!searchQueries.includes(q)) {
-            searchQueries.push(q)
-          }
-        }
-      }
+    for (const [keyword, meta] of Object.entries(TITLE_KEYWORD_MAP)) {
+      if (titleLower.includes(keyword)) enqueue(meta)
     }
   }
 
-  // 3. Fallback: generic NAICS or title-based search
-  if (searchQueries.length === 0) {
-    if (naicsCode) {
-      searchQueries = [`NAICS ${naicsCode} contractor`]
-    } else if (title) {
-      // Use first few meaningful words from title
-      const words = title.split(/\s+/).filter(w => w.length > 3).slice(0, 3).join(' ')
-      searchQueries = [`${words} contractor`]
-    } else {
-      searchQueries = ['government contractor']
-    }
+  // 3. No fallback: if neither NAICS nor title gave us a usable strategy, return
+  // empty rather than firing a literal "NAICS xxxx contractor" text search that
+  // tends to return uncategorized junk.
+  if (searchPlan.length === 0) {
+    return { vendors: [] }
   }
 
   // At 100+ mi: use state-level query location for broader results
@@ -401,9 +510,14 @@ export async function findSubcontractorsForOpportunity(opportunity: {
   let firstApiError: string | undefined
 
   // Search up to 3 queries, 5 results each, to get good coverage
-  for (const query of searchQueries.slice(0, 3)) {
+  for (const { query, meta } of searchPlan.slice(0, 3)) {
     // Pass stateCode so searchBusinesses can add a locationbias bounding box
-    const searchResult = await searchBusinesses(query, location, 5, stateCode)
+    const searchResult = await searchBusinesses(query, location, 5, stateCode, {
+      googleType: meta.googleType,
+      typesAllow: meta.typesAllow,
+      typesBlock: meta.typesBlock,
+      nameKeywords: meta.nameKeywords ?? meta.queries,
+    })
 
     // Capture the first API error we encounter (e.g. REQUEST_DENIED)
     if (searchResult.apiError && !firstApiError) {
