@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { format, differenceInDays } from 'date-fns'
 import type { RichAttachment } from '@/lib/types/attachment'
 import type { OpportunityBrief } from '@/lib/openai'
@@ -167,6 +167,19 @@ export default function OpportunitySummaryPanel({
 
   // Attachment filter — which subset of the list to display
   const [attachmentFilter, setAttachmentFilter] = useState<'all' | 'forms' | 'documents' | 'edited'>('all')
+
+  // Visible attachments under the active filter — drives the list,
+  // the "Select all / Clear" bulk buttons, and the empty-filter message.
+  const visibleAttachments = useMemo(
+    () =>
+      attachments.filter((att) => {
+        if (attachmentFilter === 'forms') return att.formData?.isForm === true
+        if (attachmentFilter === 'documents') return !att.formData?.isForm
+        if (attachmentFilter === 'edited') return att.isEdited === true
+        return true
+      }),
+    [attachments, attachmentFilter],
+  )
 
   // Form fill modal
   const [fillingAttachment, setFillingAttachment] = useState<RichAttachment | null>(null)
@@ -521,9 +534,35 @@ export default function OpportunitySummaryPanel({
             )}
 
             {attachments.length > 0 && (
-              <p className="text-xs text-stone-500 mb-2">
-                {selectedAttachments.size} of {attachments.length} selected for email & SOW
-              </p>
+              <div className="flex items-center gap-3 mb-2">
+                <p className="text-xs text-stone-500">
+                  {selectedAttachments.size} of {attachments.length} selected for email & SOW
+                </p>
+                <div className="flex items-center gap-2 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      visibleAttachments.forEach((a) => {
+                        if (!selectedAttachments.has(a.id)) onToggleAttachment(a.id)
+                      })
+                    }}
+                    className="text-[11px] text-stone-500 hover:text-stone-800 underline underline-offset-2"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      visibleAttachments.forEach((a) => {
+                        if (selectedAttachments.has(a.id)) onToggleAttachment(a.id)
+                      })
+                    }}
+                    className="text-[11px] text-stone-500 hover:text-stone-800 underline underline-offset-2"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
             )}
 
             {loadingAttachments ? (
@@ -531,45 +570,39 @@ export default function OpportunitySummaryPanel({
                 Loading attachments...
               </div>
             ) : attachments.length > 0 ? (
-              (() => {
-                const visible = attachments.filter((att) => {
-                  if (attachmentFilter === 'forms') return att.formData?.isForm === true
-                  if (attachmentFilter === 'documents') return !att.formData?.isForm
-                  if (attachmentFilter === 'edited') return att.isEdited === true
-                  return true
-                })
-                return visible.length > 0 ? (
-                  /* Cap visible height at ~5 rows so long attachment lists
-                     don't push the rest of the summary panel off-screen. */
-                  <div className="max-h-[26rem] overflow-y-auto pr-1 space-y-2 -mr-1">
-                    {visible.map((att) => (
-                      <AttachmentRow
-                        key={att.id}
-                        attachment={att}
-                        opportunityId={opportunity.id}
-                        isEditing={editingId === att.id}
-                        editingValue={editingValue}
-                        editError={editingId === att.id ? editError : null}
-                        saving={saving}
-                        onView={() => setViewingAttachment(att)}
-                        onStartEdit={() => startEditing(att)}
-                        onEditChange={(val) => {
-                          setEditingValue(val)
-                          setEditError(null)
-                        }}
-                        onSave={() => saveRename(att)}
-                        onCancel={cancelEditing}
-                        onUseSuggestion={() => applySuggestedName(att)}
-                        onFillForm={() => setFillingAttachment(att)}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="py-4 text-center text-sm text-stone-400">
-                    No attachments match this filter
-                  </div>
-                )
-              })()
+              visibleAttachments.length > 0 ? (
+                /* Cap visible height at ~5 rows so long attachment lists
+                   don't push the rest of the summary panel off-screen. */
+                <div className="max-h-[26rem] overflow-y-auto pr-1 space-y-2 -mr-1">
+                  {visibleAttachments.map((att) => (
+                    <AttachmentRow
+                      key={att.id}
+                      attachment={att}
+                      opportunityId={opportunity.id}
+                      isEditing={editingId === att.id}
+                      editingValue={editingValue}
+                      editError={editingId === att.id ? editError : null}
+                      saving={saving}
+                      selected={selectedAttachments.has(att.id)}
+                      onToggleSelect={() => onToggleAttachment(att.id)}
+                      onView={() => setViewingAttachment(att)}
+                      onStartEdit={() => startEditing(att)}
+                      onEditChange={(val) => {
+                        setEditingValue(val)
+                        setEditError(null)
+                      }}
+                      onSave={() => saveRename(att)}
+                      onCancel={cancelEditing}
+                      onUseSuggestion={() => applySuggestedName(att)}
+                      onFillForm={() => setFillingAttachment(att)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="py-4 text-center text-sm text-stone-400">
+                  No attachments match this filter
+                </div>
+              )
             ) : (
               <div className="py-4 text-center">
                 <p className="text-sm text-stone-500 mb-3">No attachments found in database</p>
@@ -814,6 +847,8 @@ export default function OpportunitySummaryPanel({
             if (next) setViewingAttachment(next)
           }}
           onClose={closeViewer}
+          selected={selectedAttachments.has(viewingAttachment.id)}
+          onToggleSelect={() => onToggleAttachment(viewingAttachment.id)}
         />
       )}
     </div>
@@ -829,6 +864,8 @@ interface AttachmentRowProps {
   editingValue: string
   editError: string | null
   saving: boolean
+  selected: boolean
+  onToggleSelect: () => void
   onView: () => void
   onStartEdit: () => void
   onEditChange: (val: string) => void
@@ -845,6 +882,8 @@ function AttachmentRow({
   editingValue,
   editError,
   saving,
+  selected,
+  onToggleSelect,
   onView,
   onStartEdit,
   onEditChange,
@@ -863,6 +902,16 @@ function AttachmentRow({
   return (
     <div className="rounded-lg border border-stone-100 bg-stone-50 overflow-hidden hover:border-stone-300 hover:bg-stone-100/50 transition-colors">
       <div className="flex items-center gap-2 p-3">
+        {/* Include-in-email checkbox */}
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggleSelect}
+          disabled={isEditing}
+          onClick={(e) => e.stopPropagation()}
+          className="h-4 w-4 rounded border-stone-300 text-stone-800 focus:ring-stone-500 flex-shrink-0 disabled:opacity-40"
+          title={selected ? 'Selected for email & SOW' : 'Add to email & SOW'}
+        />
         {/* File icon — clickable to view */}
         <button
           type="button"

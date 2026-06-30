@@ -11,6 +11,8 @@ interface AttachmentPreviewModalProps {
   opportunityId: string
   onChange: (id: string) => void
   onClose: () => void
+  selected?: boolean
+  onToggleSelect?: () => void
 }
 
 export default function AttachmentPreviewModal({
@@ -19,6 +21,8 @@ export default function AttachmentPreviewModal({
   opportunityId,
   onChange,
   onClose,
+  selected,
+  onToggleSelect,
 }: AttachmentPreviewModalProps) {
   // Portal to document.body so the modal escapes any ancestor with a CSS
   // transform — the workspace panel-slide container uses translateX which
@@ -86,6 +90,17 @@ export default function AttachmentPreviewModal({
             <p className="text-sm font-medium text-stone-800 truncate">{current.currentName}</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+            {onToggleSelect && (
+              <label className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-stone-700 bg-white border border-stone-300 rounded cursor-pointer hover:bg-stone-50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={!!selected}
+                  onChange={onToggleSelect}
+                  className="h-3.5 w-3.5 rounded border-stone-300 text-stone-800 focus:ring-stone-500"
+                />
+                Include in email
+              </label>
+            )}
             <a
               href={downloadUrl}
               download
