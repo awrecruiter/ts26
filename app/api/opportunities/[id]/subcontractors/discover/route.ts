@@ -10,6 +10,7 @@ import {
   extractCity,
   suggestSearchRadius,
 } from '@/lib/opportunity-classification'
+import type { ResourcePlan, ResourceLine } from '@/lib/types/resource-plan'
 
 /**
  * Normalize phone to digits only for comparison.
@@ -175,51 +176,189 @@ export async function POST(
     const googleCreateData: any[] = []
     const samCreateData: any[] = []
 
+    // Resolve resource-plan mode. Modes:
+    //   A) scoped   — body.resourceLineId → search only that role, skip SAM
+    //   B) fan-out  — no resourceLineId + resourcePlan present → one search per line
+    //   C) legacy   — no resourceLineId + no resourcePlan → existing NAICS-map path
+    const resourcePlan = (opportunity.resourcePlan ?? null) as ResourcePlan | null
+    const requestedLineId: string | undefined = typeof body.resourceLineId === 'string' ? body.resourceLineId : undefined
+
+    let scopedLine: ResourceLine | null = null
+    if (requestedLineId) {
+      const line = resourcePlan?.lines?.find(l => l.id === requestedLineId) ?? null
+      if (!line) {
+        return NextResponse.json(
+          { error: 'Resource line not found on this opportunity' },
+          { status: 400 }
+        )
+      }
+      if (line.category !== 'professional' && line.category !== 'subcontracted_trade') {
+        return NextResponse.json(
+          { error: 'Vendor discovery is only supported for professional or subcontracted_trade lines' },
+          { status: 400 }
+        )
+      }
+      scopedLine = line
+    }
+
+    const isScopedMode = !!scopedLine
+    const isFanoutMode = !isScopedMode && !!resourcePlan?.lines?.length
+    const perLineBreakdown: Array<{ resourceLineId: string; label: string; added: number }> = []
+
     // === Source 1: Google Places ===
     let googlePlacesApiError: string | undefined
     if (isApiConfigured) {
-      console.log(`[Discover] Searching Google Places: NAICS=${opportunity.naicsCode}, location="${searchLocation}", radius=${radiusMiles}mi, title="${opportunity.title?.substring(0, 50)}"`)
-      const { vendors, apiError } = await findSubcontractorsForOpportunity({
-        naicsCode: opportunity.naicsCode,
-        placeOfPerformance: isNational ? null : placeOfPerformance,
-        stateCode: isNational ? null : stateCode,
-        title: opportunity.title,
-        radiusMiles,
-        city: isNational ? null : city,
-        popCoords: isNational ? null : popCoords,
-      })
-
-      if (apiError) {
-        googlePlacesApiError = apiError
-        console.warn(`[Discover] Google Places API error: ${apiError}`)
-      }
-
-      for (const vendor of vendors) {
-        if (isDuplicate(vendor)) continue
-        markAdded(vendor)
-        googleCreateData.push({
-          opportunityId,
-          name: vendor.name,
-          phone: vendor.phone || null,
-          email: null,
-          website: vendor.website || null,
-          address: vendor.address || null,
-          service: vendor.service || null,
-          rating: vendor.rating || null,
-          totalRatings: vendor.totalRatings || null,
-          businessStatus: vendor.businessStatus || null,
-          placeId: vendor.placeId || null,
-          location: vendor.location || null,
-          distanceKm: vendor.distanceKm ?? null,
-          source: 'google_places',
+      if (isScopedMode && scopedLine) {
+        // Mode A — single-line scoped search
+        console.log(`[Discover] Scoped search for line ${scopedLine.id} "${scopedLine.label}": queries=${JSON.stringify(scopedLine.searchQueries ?? [])}, location="${searchLocation}", radius=${radiusMiles}mi`)
+        const { vendors, apiError } = await findSubcontractorsForOpportunity({
+          naicsCode: scopedLine.suggestedNaics ?? opportunity.naicsCode,
+          placeOfPerformance: isNational ? null : placeOfPerformance,
+          stateCode: isNational ? null : stateCode,
+          title: opportunity.title,
+          radiusMiles,
+          city: isNational ? null : city,
+          popCoords: isNational ? null : popCoords,
+          searchQueries: scopedLine.searchQueries ?? [],
         })
+
+        if (apiError) {
+          googlePlacesApiError = apiError
+          console.warn(`[Discover] Google Places API error: ${apiError}`)
+        }
+
+        for (const vendor of vendors) {
+          if (googleCreateData.length >= GOOGLE_CAP) break
+          if (isDuplicate(vendor)) continue
+          markAdded(vendor)
+          googleCreateData.push({
+            opportunityId,
+            resourceLineId: scopedLine.id,
+            name: vendor.name,
+            phone: vendor.phone || null,
+            email: null,
+            website: vendor.website || null,
+            address: vendor.address || null,
+            service: vendor.service || null,
+            rating: vendor.rating || null,
+            totalRatings: vendor.totalRatings || null,
+            businessStatus: vendor.businessStatus || null,
+            placeId: vendor.placeId || null,
+            location: vendor.location || null,
+            distanceKm: vendor.distanceKm ?? null,
+            source: 'google_places',
+          })
+        }
+        console.log(`[Discover] Scoped Google Places: ${googleCreateData.length} new vendors after dedup`)
+      } else if (isFanoutMode && resourcePlan) {
+        // Mode B — fan out across the first 5 professional/trade lines
+        const eligibleLines = resourcePlan.lines
+          .filter(l => l.category === 'professional' || l.category === 'subcontracted_trade')
+          .slice(0, 5)
+        console.log(`[Discover] Fan-out across ${eligibleLines.length} resource line(s)`)
+
+        for (const line of eligibleLines) {
+          if (googleCreateData.length >= TOTAL_CAP) {
+            console.log(`[Discover] TOTAL_CAP=${TOTAL_CAP} reached mid-fanout, stopping`)
+            break
+          }
+          const queries = line.searchQueries ?? []
+          if (queries.length === 0) {
+            console.log(`[Discover] Skipping line ${line.id} "${line.label}" — no searchQueries`)
+            perLineBreakdown.push({ resourceLineId: line.id, label: line.label, added: 0 })
+            continue
+          }
+          console.log(`[Discover] Fan-out line ${line.id} "${line.label}": queries=${JSON.stringify(queries)}`)
+          const { vendors, apiError } = await findSubcontractorsForOpportunity({
+            naicsCode: line.suggestedNaics ?? opportunity.naicsCode,
+            placeOfPerformance: isNational ? null : placeOfPerformance,
+            stateCode: isNational ? null : stateCode,
+            title: opportunity.title,
+            radiusMiles,
+            city: isNational ? null : city,
+            popCoords: isNational ? null : popCoords,
+            searchQueries: queries,
+          })
+
+          if (apiError && !googlePlacesApiError) {
+            googlePlacesApiError = apiError
+            console.warn(`[Discover] Google Places API error: ${apiError}`)
+          }
+
+          let lineAdded = 0
+          for (const vendor of vendors) {
+            if (googleCreateData.length >= TOTAL_CAP) break
+            if (isDuplicate(vendor)) continue
+            markAdded(vendor)
+            googleCreateData.push({
+              opportunityId,
+              resourceLineId: line.id,
+              name: vendor.name,
+              phone: vendor.phone || null,
+              email: null,
+              website: vendor.website || null,
+              address: vendor.address || null,
+              service: vendor.service || null,
+              rating: vendor.rating || null,
+              totalRatings: vendor.totalRatings || null,
+              businessStatus: vendor.businessStatus || null,
+              placeId: vendor.placeId || null,
+              location: vendor.location || null,
+              distanceKm: vendor.distanceKm ?? null,
+              source: 'google_places',
+            })
+            lineAdded++
+          }
+          perLineBreakdown.push({ resourceLineId: line.id, label: line.label, added: lineAdded })
+          console.log(`[Discover] Fan-out line ${line.id}: ${lineAdded} added`)
+        }
+        console.log(`[Discover] Fan-out Google Places: ${googleCreateData.length} new vendors total after dedup`)
+      } else {
+        // Mode C — legacy NAICS-map path (unchanged behavior)
+        console.log(`[Discover] Searching Google Places: NAICS=${opportunity.naicsCode}, location="${searchLocation}", radius=${radiusMiles}mi, title="${opportunity.title?.substring(0, 50)}"`)
+        const { vendors, apiError } = await findSubcontractorsForOpportunity({
+          naicsCode: opportunity.naicsCode,
+          placeOfPerformance: isNational ? null : placeOfPerformance,
+          stateCode: isNational ? null : stateCode,
+          title: opportunity.title,
+          radiusMiles,
+          city: isNational ? null : city,
+          popCoords: isNational ? null : popCoords,
+        })
+
+        if (apiError) {
+          googlePlacesApiError = apiError
+          console.warn(`[Discover] Google Places API error: ${apiError}`)
+        }
+
+        for (const vendor of vendors) {
+          if (isDuplicate(vendor)) continue
+          markAdded(vendor)
+          googleCreateData.push({
+            opportunityId,
+            name: vendor.name,
+            phone: vendor.phone || null,
+            email: null,
+            website: vendor.website || null,
+            address: vendor.address || null,
+            service: vendor.service || null,
+            rating: vendor.rating || null,
+            totalRatings: vendor.totalRatings || null,
+            businessStatus: vendor.businessStatus || null,
+            placeId: vendor.placeId || null,
+            location: vendor.location || null,
+            distanceKm: vendor.distanceKm ?? null,
+            source: 'google_places',
+          })
+        }
+        console.log(`[Discover] Google Places: ${googleCreateData.length} new vendors after dedup`)
       }
-      console.log(`[Discover] Google Places: ${googleCreateData.length} new vendors after dedup`)
     } else {
       console.log('[Discover] Google Places API not configured, skipping')
     }
 
     // === Source 2: SAM.gov Entity Search ===
+    // Skipped in scoped mode — single-role focus, no opportunity-wide sweep.
     const samParams: { naicsCode?: string; stateCode?: string } = {}
     if (opportunity.naicsCode) samParams.naicsCode = opportunity.naicsCode
     if (!isNational && stateCode) samParams.stateCode = stateCode
@@ -228,7 +367,9 @@ export async function POST(
     let samTotalRecords = 0
     let samSearched = false
     let samAdded = 0
-    if (samParams.naicsCode || samParams.stateCode) {
+    if (isScopedMode) {
+      console.log('[Discover] Scoped mode: skipping SAM.gov entity search')
+    } else if (samParams.naicsCode || samParams.stateCode) {
       samSearched = true
       console.log(`[Discover] Searching SAM.gov entities: NAICS=${samParams.naicsCode}, state=${samParams.stateCode}`)
       const samResult = await searchSamEntities(samParams)
@@ -280,6 +421,7 @@ export async function POST(
         sources: { google: 0, sam: 0 },
         sam: { searched: samSearched, totalRecords: samTotalRecords, added: 0, error: samWarning ?? null },
         geography: { city, state: stateCode, radiusMiles, suggestedRadius },
+        ...(isFanoutMode && { perLineBreakdown }),
         ...(googlePlacesApiError && {
           googlePlacesStatus: googlePlacesApiError,
           hint: googlePlacesApiError === 'REQUEST_DENIED'
@@ -304,6 +446,7 @@ export async function POST(
       sources: { google: googleCount, sam: samCount },
       sam: { searched: samSearched, totalRecords: samTotalRecords, added: samAdded, error: samWarning ?? null },
       geography: { city, state: stateCode, radiusMiles, suggestedRadius },
+      ...(isFanoutMode && { perLineBreakdown }),
       ...(samWarning && { samWarning }),
     })
   } catch (error) {

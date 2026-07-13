@@ -9,21 +9,25 @@ import {
 import { extractAttachmentsFromRawData } from '@/lib/samgov'
 import type { ParsedAttachment } from '@/lib/attachment-parser'
 import { format, addDays } from 'date-fns'
+import { nextBusinessDay, previousBusinessDay } from '@/lib/business-days'
 
 const VALID_ARTIFACTS: ArtifactKey[] = ['brief', 'callChecklist', 'scopeOverview', 'agentBriefing', 'attachmentRelevance']
 
 /**
  * Compute the quote-to-prime deadline for context (matches sows/route.ts policy:
- * target = today+5, floor = today+2, buffer = federalDeadline-5).
+ * target = today+5, floor = today+2, buffer = federalDeadline-5). Snaps the
+ * result backward to a business day so the deadline never lands on a weekend
+ * or observed US federal holiday.
  */
 function computeQuoteDeadline(responseDeadline: Date | null): Date {
   const today = new Date()
   const target = addDays(today, 5)
-  const floor = addDays(today, 2)
-  if (!responseDeadline) return target
+  const floor = nextBusinessDay(addDays(today, 2))
+  if (!responseDeadline) return previousBusinessDay(target)
   const buffered = addDays(responseDeadline, -5)
   const earliest = buffered < target ? buffered : target
-  return earliest < floor ? floor : earliest
+  const snapped = previousBusinessDay(earliest)
+  return snapped < floor ? floor : snapped
 }
 
 export async function POST(

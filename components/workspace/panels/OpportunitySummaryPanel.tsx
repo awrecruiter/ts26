@@ -4,7 +4,17 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { format, differenceInDays } from 'date-fns'
 import type { RichAttachment } from '@/lib/types/attachment'
 import type { OpportunityBrief } from '@/lib/openai'
+import type {
+  JobDescription,
+  MarginBands,
+  ResourceCategory,
+  ResourceLine,
+  ResourcePlan,
+  PricingSheet,
+} from '@/lib/types/resource-plan'
 import OpportunityBriefCard from './OpportunityBriefCard'
+import ResourcePlanCard from './ResourcePlanCard'
+import PricingSheetCard from './PricingSheetCard'
 import FormFillModal from './FormFillModal'
 import AttachmentPreviewModal from '@/components/shared/AttachmentPreviewModal'
 
@@ -126,6 +136,21 @@ interface OpportunitySummaryPanelProps {
    *  Same Set drives the email bundle and the SOW generator input. */
   selectedAttachments: Set<string>
   onToggleAttachment: (id: string) => void
+  // Resource Plan + Pricing Sheet
+  resourcePlan?: ResourcePlan | null
+  pricingSheet?: PricingSheet | null
+  isProcessing?: boolean
+  onProcessOpportunity?: () => void
+  isGeneratingResourcePlan?: boolean
+  onGenerateResourcePlan?: () => void
+  onEditResourceLine?: (lineId: string, patch: Partial<ResourceLine>) => void
+  onAddResourceLine?: (category: ResourceCategory) => void
+  onRemoveResourceLine?: (lineId: string) => void
+  onOpenVendorSearchForLine?: (lineId: string) => void
+  onUpdateJobDescription?: (lineId: string, patch: Partial<JobDescription>) => void
+  onRegenerateJobDescription?: (lineId: string) => void
+  regeneratingJdFor?: string | null
+  onUpdatePricingSheet?: (patch: { userOverrideMarginPct?: number | null; marginBands?: MarginBands }) => void
 }
 
 export default function OpportunitySummaryPanel({
@@ -146,6 +171,20 @@ export default function OpportunitySummaryPanel({
   briefError = null,
   selectedAttachments,
   onToggleAttachment,
+  resourcePlan = null,
+  pricingSheet = null,
+  isProcessing = false,
+  onProcessOpportunity,
+  isGeneratingResourcePlan = false,
+  onGenerateResourcePlan,
+  onEditResourceLine,
+  onAddResourceLine,
+  onRemoveResourceLine,
+  onOpenVendorSearchForLine,
+  onUpdateJobDescription,
+  onRegenerateJobDescription,
+  regeneratingJdFor = null,
+  onUpdatePricingSheet,
 }: OpportunitySummaryPanelProps) {
   const [attachments, setAttachments] = useState<RichAttachment[]>([])
   const [loadingAttachments, setLoadingAttachments] = useState(false)
@@ -402,7 +441,7 @@ export default function OpportunitySummaryPanel({
     <div className="h-full overflow-auto">
       {/* OPPORTUNITY BRIEF */}
       <div className="p-6 bg-white border-b border-stone-200">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-4xl mx-auto space-y-4">
           <OpportunityBriefCard
             brief={brief}
             isGenerating={isGeneratingBrief}
@@ -410,6 +449,53 @@ export default function OpportunitySummaryPanel({
             opportunityTitle={opportunity.title}
             agency={opportunity.agency}
             error={briefError}
+          />
+          {onProcessOpportunity && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-stone-200 bg-stone-50 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-stone-800">Process opportunity</p>
+                <p className="text-xs text-stone-500 mt-0.5">
+                  Parse attachments, generate the brief, decompose the team + pricing, and pick attachments for the master email.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onProcessOpportunity}
+                disabled={isProcessing}
+                className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium text-white bg-stone-800 rounded hover:bg-stone-700 disabled:opacity-50 flex-shrink-0"
+              >
+                {isProcessing && (
+                  <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                )}
+                {isProcessing ? 'Processing…' : 'Process opportunity'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* RESOURCE PLAN + PRICING SHEET */}
+      <div className="p-6 bg-stone-50 border-b border-stone-200">
+        <div className="max-w-4xl mx-auto space-y-4">
+          <ResourcePlanCard
+            plan={resourcePlan}
+            isGenerating={isGeneratingResourcePlan}
+            onGenerate={onGenerateResourcePlan ?? (() => {})}
+            onEditLine={onEditResourceLine ?? (() => {})}
+            onAddLine={onAddResourceLine ?? (() => {})}
+            onRemoveLine={onRemoveResourceLine ?? (() => {})}
+            onOpenVendorSearch={onOpenVendorSearchForLine ?? (() => {})}
+            onUpdateJobDescription={onUpdateJobDescription ?? (() => {})}
+            onRegenerateJobDescription={onRegenerateJobDescription ?? (() => {})}
+            regeneratingJdFor={regeneratingJdFor}
+          />
+          <PricingSheetCard
+            sheet={pricingSheet}
+            plan={resourcePlan}
+            onUpdate={onUpdatePricingSheet ?? (() => {})}
           />
         </div>
       </div>

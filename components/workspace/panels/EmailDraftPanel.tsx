@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { format } from 'date-fns'
+import { previousBusinessDay } from '@/lib/business-days'
 import type { RichAttachment } from '@/lib/types/attachment'
 import type { OpportunityBrief, AttachmentRelevanceMap } from '@/lib/openai'
 import AttachmentPreviewModal from '@/components/shared/AttachmentPreviewModal'
@@ -12,20 +13,16 @@ interface EmailDraftPanelProps {
   opportunityTitle: string
   solicitationNumber: string
   bidAmount?: number
-  sowSynopsis?: string
   deadline?: Date | null
   agency?: string
-  templateType?: 'quote_request' | 'sow_delivery' | 'follow_up' | 'custom'
+  templateType?: 'quote_request' | 'follow_up' | 'custom'
   onSend?: (email: {
     to: string
     subject: string
     body: string
     attachmentIds: string[]
-    sowId?: string
   }) => Promise<{ success: boolean; error?: string }>
   availableAttachments?: RichAttachment[]
-  sowFileName?: string
-  sowId?: string
   opportunityId?: string
   /** IDs of pre-selected attachments (parent-controlled, survives panel switching) */
   selectedAttachmentIds?: Set<string>
@@ -68,33 +65,6 @@ A few quick screening questions:
 {{screening_questions}}
 
 The full SOW and supporting docs are attached for reference.
-
-Thanks,
-[Your Name]`,
-  },
-  sow_delivery: {
-    subject: 'Statement of Work — {{title}} ({{agency}})',
-    body: `Hello {{name}},
-
-Per our conversation, here is the Statement of Work for the {{title}} opportunity. The SOW and the supporting solicitation documents you'll need are attached.
-
-THE WORK
-{{what_we_need}}
-
-KEY DELIVERABLES
-{{deliverables_block}}
-
-QUALIFICATION GATES
-{{qualifications_block}}
-
-NEXT STEPS — please return by {{quote_due}}
-• Firm fixed-price quote (all-inclusive)
-• Lead time / delivery schedule from receipt of order
-• Capability statement (past performance + certifications + key personnel)
-• Any exceptions, assumptions, or clarifying questions
-• Your point of contact
-
-Let me know if anything in the attached SOW needs clarification before you price.
 
 Thanks,
 [Your Name]`,
@@ -161,14 +131,11 @@ export default function EmailDraftPanel({
   opportunityTitle,
   solicitationNumber,
   bidAmount,
-  sowSynopsis,
   deadline,
   agency,
   templateType = 'quote_request',
   onSend,
   availableAttachments,
-  sowFileName,
-  sowId,
   opportunityId,
   selectedAttachmentIds,
   onSelectionChange,
@@ -227,8 +194,14 @@ export default function EmailDraftPanel({
     }
   }
 
+  // Fallback quote-due when the parent didn't pass an explicit quoteDeadline.
+  // Snap 3 days before the federal deadline backward to the previous business
+  // day so it never lands on a weekend or observed US federal holiday.
   const responseNeeded = deadline
-    ? format(new Date(deadline.getTime() - 3 * 24 * 60 * 60 * 1000), 'EEEE, MMMM d')
+    ? format(
+        previousBusinessDay(new Date(deadline.getTime() - 3 * 24 * 60 * 60 * 1000)),
+        'EEEE, MMMM d',
+      )
     : 'end of week'
 
   useEffect(() => {
@@ -244,9 +217,6 @@ export default function EmailDraftPanel({
     if (!template) return
 
     const briefCtx = buildBriefContext(brief, callChecklist)
-    const formattedSynopsis = sowSynopsis
-      ? `KEY DELIVERABLES:\n• ${sowSynopsis}`
-      : '(SOW synopsis will appear here once generated)'
 
     const replacements: Record<string, string> = {
       '{{name}}': recipientName || '[Recipient Name]',
@@ -257,7 +227,6 @@ export default function EmailDraftPanel({
       '{{deadline}}': deadline ? format(deadline, 'MMMM d, yyyy') : '[Deadline]',
       '{{response_needed}}': responseNeeded,
       '{{quote_due}}': quoteDeadline || responseNeeded,
-      '{{synopsis}}': formattedSynopsis,
       '{{what_we_need}}': briefCtx.what_we_need,
       '{{deliverables_block}}': briefCtx.deliverables_block,
       '{{qualifications_block}}': briefCtx.qualifications_block,
@@ -274,7 +243,7 @@ export default function EmailDraftPanel({
 
     setSubject(newSubject)
     setBody(newBody)
-  }, [selectedTemplate, recipientName, opportunityTitle, solicitationNumber, bidAmount, sowSynopsis, deadline, agency, responseNeeded, brief, callChecklist, quoteDeadline])
+  }, [selectedTemplate, recipientName, opportunityTitle, solicitationNumber, bidAmount, deadline, agency, responseNeeded, brief, callChecklist, quoteDeadline])
 
   const handleSend = async () => {
     if (!to || !subject || !body) return
@@ -301,7 +270,6 @@ export default function EmailDraftPanel({
         subject,
         body,
         attachmentIds: Array.from(selectedAttachments),
-        sowId,
       })
       if (result?.success) {
         setSendSuccess(`Email sent to ${to.trim()}.`)
@@ -344,53 +312,10 @@ export default function EmailDraftPanel({
               className="text-sm text-stone-600 bg-stone-100 border-0 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-stone-300"
             >
               <option value="quote_request">Quote Request</option>
-              <option value="sow_delivery">SOW Delivery</option>
               <option value="follow_up">Follow Up</option>
               <option value="custom">Custom</option>
             </select>
           </div>
-
-          {/* Send SOW quick action — only shown when SOW exists */}
-          {sowId && (
-            <div className="p-3 bg-stone-50 border border-stone-200 rounded-lg flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <svg className="h-4 w-4 text-stone-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-stone-700 truncate">Send SOW to subcontractor</p>
-                  <p className="text-[11px] text-stone-400">Pre-fills subject and body with SOW delivery template</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedTemplate('sow_delivery')
-                  setSubject(`SOW — ${opportunityTitle}`)
-                }}
-                className="shrink-0 px-3 py-1.5 text-xs font-medium text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors"
-              >
-                Use template
-              </button>
-            </div>
-          )}
-
-          {/* SOW Synopsis Preview */}
-          {sowSynopsis && (
-            <div className="p-4 bg-stone-50 border border-stone-200 rounded-lg">
-              <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">
-                SOW Synopsis (included in email)
-              </h3>
-              <div className="text-sm text-stone-700 space-y-1">
-                {sowSynopsis.split('\n• ').map((line, idx) => (
-                  <div key={idx} className="flex items-start gap-2">
-                    <span className="text-stone-400">•</span>
-                    <span>{line.replace(/^• /, '')}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Email form */}
           <div className={`bg-white border rounded-lg overflow-hidden ${toError ? 'border-red-300' : 'border-stone-200'}`}>
@@ -431,8 +356,8 @@ export default function EmailDraftPanel({
             </div>
           </div>
 
-          {/* ── Attachment Bundle — only shown when SOW exists ── */}
-          {sowFileName && (
+          {/* ── Attachment Bundle ── */}
+          {availableAttachments && availableAttachments.length > 0 && (
             <div className="border border-stone-200 rounded-lg overflow-hidden">
               {/* Bundle header */}
               <div className="px-4 py-3 bg-stone-50 border-b border-stone-200 flex items-center justify-between">
@@ -447,7 +372,7 @@ export default function EmailDraftPanel({
                 {totalAttachments > 0 && (
                   <div className="flex items-center gap-3">
                     <p className="text-xs text-stone-500">
-                      {selectedAttachments.size} of {availableAttachments?.length ?? 0} selected for email & SOW
+                      {selectedAttachments.size} of {availableAttachments?.length ?? 0} selected
                     </p>
                     <div className="flex gap-2">
                       <button
@@ -470,102 +395,69 @@ export default function EmailDraftPanel({
               </div>
 
               <div className="divide-y divide-stone-100">
-                {/* SOW — always required, first in bundle */}
-                <div className="px-4 py-3 flex items-center gap-3 bg-white">
-                  {/* Locked checkbox */}
-                  <div className="w-4 h-4 rounded border border-stone-300 bg-stone-100 flex items-center justify-center flex-shrink-0">
-                    <svg className="h-3 w-3 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <svg className="h-3.5 w-3.5 text-stone-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <span className="flex-1 text-sm text-stone-800 truncate font-medium">{sowFileName}</span>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <span className="text-[10px] text-stone-400 font-medium uppercase tracking-wide">SOW</span>
-                    <span title="SOW is always included">
-                      <svg
-                        className="h-3 w-3 text-stone-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        aria-label="SOW is always included"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                    </span>
-                  </div>
+                {/* Divider label */}
+                <div className="px-4 py-2 bg-stone-50">
+                  <p className="text-[11px] font-medium text-stone-400 uppercase tracking-wide">
+                    Solicitation Documents
+                  </p>
                 </div>
 
-                {/* Solicitation documents — optional */}
-                {availableAttachments && availableAttachments.length > 0 && (
-                  <>
-                    {/* Divider label */}
-                    <div className="px-4 py-2 bg-stone-50">
-                      <p className="text-[11px] font-medium text-stone-400 uppercase tracking-wide">
-                        Solicitation Documents
-                      </p>
+                {availableAttachments.map((att) => (
+                  <div key={att.id} className="px-4 py-3 flex items-center gap-3 bg-white hover:bg-stone-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={selectedAttachments.has(att.id)}
+                      onChange={(e) => {
+                        const next = new Set(selectedAttachments)
+                        if (e.target.checked) next.add(att.id)
+                        else next.delete(att.id)
+                        setSelectedAttachments(next)
+                      }}
+                      className="w-4 h-4 rounded border-stone-300 text-stone-600 focus:ring-stone-300 flex-shrink-0"
+                    />
+
+                    {/* Eyeball preview button */}
+                    <button
+                      onClick={() => setPreviewAttachment(att)}
+                      className="p-0.5 text-stone-300 hover:text-stone-600 transition-colors flex-shrink-0"
+                      title={`Preview ${att.originalName}`}
+                      aria-label="Preview attachment"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </button>
+
+                    <div className="flex-1 min-w-0">
+                      {/* Original SAM.gov filename — primary identifier */}
+                      <p className="text-sm text-stone-800 truncate">{att.originalName}</p>
+                      {/* Working name if renamed */}
+                      {att.isEdited && (
+                        <p className="text-[11px] text-stone-400 truncate">
+                          renamed → {att.currentName}
+                        </p>
+                      )}
+                      {/* AI relevance verdict */}
+                      {attachmentRelevance?.[att.id] && (
+                        <p
+                          className={`text-[11px] truncate mt-0.5 ${
+                            attachmentRelevance[att.id].include ? 'text-stone-500' : 'text-stone-400'
+                          }`}
+                          title={attachmentRelevance[att.id].reason}
+                        >
+                          {attachmentRelevance[att.id].include ? '✓ Auto-included' : '○ Skipped'} — {attachmentRelevance[att.id].reason}
+                        </p>
+                      )}
                     </div>
 
-                    {availableAttachments.map((att) => (
-                      <div key={att.id} className="px-4 py-3 flex items-center gap-3 bg-white hover:bg-stone-50 transition-colors">
-                        <input
-                          type="checkbox"
-                          checked={selectedAttachments.has(att.id)}
-                          onChange={(e) => {
-                            const next = new Set(selectedAttachments)
-                            if (e.target.checked) next.add(att.id)
-                            else next.delete(att.id)
-                            setSelectedAttachments(next)
-                          }}
-                          className="w-4 h-4 rounded border-stone-300 text-stone-600 focus:ring-stone-300 flex-shrink-0"
-                        />
-
-                        {/* Eyeball preview button */}
-                        <button
-                          onClick={() => setPreviewAttachment(att)}
-                          className="p-0.5 text-stone-300 hover:text-stone-600 transition-colors flex-shrink-0"
-                          title={`Preview ${att.originalName}`}
-                          aria-label="Preview attachment"
-                        >
-                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                        </button>
-
-                        <div className="flex-1 min-w-0">
-                          {/* Original SAM.gov filename — primary identifier */}
-                          <p className="text-sm text-stone-800 truncate">{att.originalName}</p>
-                          {/* Working name if renamed */}
-                          {att.isEdited && (
-                            <p className="text-[11px] text-stone-400 truncate">
-                              renamed → {att.currentName}
-                            </p>
-                          )}
-                          {/* AI relevance verdict */}
-                          {attachmentRelevance?.[att.id] && (
-                            <p
-                              className={`text-[11px] truncate mt-0.5 ${
-                                attachmentRelevance[att.id].include ? 'text-stone-500' : 'text-stone-400'
-                              }`}
-                              title={attachmentRelevance[att.id].reason}
-                            >
-                              {attachmentRelevance[att.id].include ? '✓ Auto-included' : '○ Skipped'} — {attachmentRelevance[att.id].reason}
-                            </p>
-                          )}
-                        </div>
-
-                        {att.size && (
-                          <span className="text-[11px] text-stone-400 flex-shrink-0">
-                            {(att.size / 1024).toFixed(0)} KB
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </>
-                )}
+                    {att.size && (
+                      <span className="text-[11px] text-stone-400 flex-shrink-0">
+                        {(att.size / 1024).toFixed(0)} KB
+                      </span>
+                    )}
+                  </div>
+                ))}
               </div>
 
               <div className="px-4 py-2.5 bg-stone-50 border-t border-stone-100">
@@ -573,15 +465,6 @@ export default function EmailDraftPanel({
                   Attach selected documents manually if using your mail client.
                 </p>
               </div>
-            </div>
-          )}
-
-          {/* No SOW yet — gentle prompt */}
-          {!sowFileName && (
-            <div className="p-4 border border-stone-200 rounded-lg bg-stone-50 text-center">
-              <p className="text-xs text-stone-400">
-                Generate a SOW first to build your attachment bundle.
-              </p>
             </div>
           )}
 

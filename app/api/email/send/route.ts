@@ -1,11 +1,8 @@
 import { NextResponse } from 'next/server'
-import React from 'react'
-import { renderToBuffer } from '@react-pdf/renderer'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { sendEmail, type EmailAttachment } from '@/lib/email'
 import { extractAttachmentsFromRawData } from '@/lib/samgov'
-import { SOWPDF } from '@/components/sows/SOWPDF'
 
 interface SendRequestBody {
   to: string
@@ -17,8 +14,6 @@ interface SendRequestBody {
   subcontractorId?: string
   /** Attachment IDs to bundle from the opportunity's SAM.gov rawData. */
   attachmentIds?: string[]
-  /** SOW id — when present, the PDF is rendered server-side and prepended to attachments. */
-  sowId?: string
 }
 
 /** Fetch one SAM.gov attachment server-side and return it as an EmailAttachment.
@@ -82,7 +77,7 @@ export async function POST(req: Request) {
     }
 
     const body = (await req.json()) as SendRequestBody
-    const { to, subject, attachmentIds = [], opportunityId, subcontractorId, sowId } = body
+    const { to, subject, attachmentIds = [], opportunityId, subcontractorId } = body
 
     // Substitute the literal "[Your Name]" placeholder with the sender's identity
     // so signatures don't go out reading "Thanks,\n[Your Name]". Prefer display
@@ -133,48 +128,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // Render the SOW PDF server-side and prepend so the "always-included" SOW
-    // badge in the UI is actually true. Mirrors GET /api/sows/[id]/download.
-    if (sowId) {
-      try {
-        const sow = await prisma.sOW.findUnique({
-          where: { id: sowId },
-          include: {
-            opportunity: { select: { solicitationNumber: true } },
-          },
-        })
-        if (sow?.content) {
-          const preparerCompany =
-            session.user.organization ||
-            session.user.name ||
-            session.user.email?.split('@')[0] ||
-            undefined
-          const element = React.createElement(SOWPDF, {
-            content: sow.content as any,
-            sowFileName: sow.fileName ?? undefined,
-            preparerCompany,
-            preparerName: session.user.organization ? session.user.name ?? undefined : undefined,
-            preparerTitle: session.user.title ?? undefined,
-            status: sow.status,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          }) as any
-          const pdfBuffer = await renderToBuffer(element)
-          const solNum = sow.opportunity?.solicitationNumber || sowId
-          const filename = `SOW_${solNum}.pdf`.replace(/[^\w.\-\s]/g, '_')
-          resolvedAttachments.unshift({
-            filename,
-            content: Buffer.from(pdfBuffer),
-            contentType: 'application/pdf',
-          })
-        } else {
-          attachmentFailures.push(`sow:${sowId}`)
-        }
-      } catch (e) {
-        console.error('[email/send] SOW PDF render failed:', e)
-        attachmentFailures.push(`sow:${sowId}`)
-      }
-    }
-
     // When EMAIL_PROVIDER=gmail, sendEmail() needs the user's Google OAuth tokens.
     // These are captured at sign-in by NextAuth and exposed on the session.
     const provider = process.env.EMAIL_PROVIDER?.toLowerCase()
@@ -209,9 +162,10 @@ export async function POST(req: Request) {
       )
     }
 
-    // Stamp the subcontractor as "quote requested" when the send carried a SOW.
-    // Wrapped in try/catch so a failed stamp never fails the user's email.
-    if (subcontractorId && sowId) {
+    // Stamp the subcontractor as "quote requested" whenever a send goes out
+    // against a subcontractor id. Wrapped in try/catch so a failed stamp never
+    // fails the user's email.
+    if (subcontractorId) {
       try {
         await prisma.subcontractor.update({
           where: { id: subcontractorId },

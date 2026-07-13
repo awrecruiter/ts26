@@ -11,286 +11,6 @@ function getOpenAI(): OpenAI {
   return _openai
 }
 
-export interface SOWSection {
-  title: string
-  summary: string
-  /** Narrative paragraph (2–4 sentences) that synthesizes what this section
-   *  means for the sub. Renders ABOVE bullets in the PDF and editor. */
-  overview?: string
-  bullets: string[]
-  /** Legacy field kept for back-compat with older stored SOWs. New AI output
-   *  uses `overview` instead. The renderers fall back to details when
-   *  overview is missing. */
-  details?: string
-}
-
-interface SOWGenerationInput {
-  title: string
-  solicitationNumber: string
-  agency: string
-  naicsCode?: string | null
-  setAside?: string | null
-  quoteDeadline: string // Internal deadline for the sub to send quote to the prime (NOT the federal response date)
-  placeOfPerformance: string
-  description?: string | null
-  parsedScope?: string[]
-  parsedDeliverables?: string[]
-  parsedCompliance?: string[]
-  parsedPeriodOfPerformance?: string[]
-  /** Targeted facts extracted by the parser via regex — clearance levels,
-   *  CMMC/FedRAMP/NIST citations, FAR/DFARS clause numbers, locations,
-   *  contract types. These are high-signal and worth surfacing distinctly so
-   *  the AI doesn't need to find them in the raw paragraph excerpts. */
-  keyFacts?: {
-    clearances?: string[]
-    certifications?: string[]
-    farClauses?: string[]
-    locations?: string[]
-    contractTypes?: string[]
-  }
-  subcontractorName?: string | null
-  primeCompany?: string | null
-}
-
-/**
- * Use OpenAI to generate professional SOW section copy.
- * Returns sections 1–6 with summary, bullets, and full details.
- */
-export async function generateSOWSections(input: SOWGenerationInput): Promise<SOWSection[]> {
-  const {
-    title,
-    solicitationNumber,
-    agency,
-    naicsCode,
-    setAside,
-    quoteDeadline,
-    placeOfPerformance,
-    description,
-    parsedScope,
-    parsedDeliverables,
-    parsedCompliance,
-    parsedPeriodOfPerformance,
-    keyFacts,
-    subcontractorName,
-    primeCompany,
-  } = input
-  const primeName = primeCompany || 'the prime contractor'
-
-  const hasParsed = !!(
-    (parsedScope && parsedScope.length > 0) ||
-    (parsedDeliverables && parsedDeliverables.length > 0) ||
-    (parsedCompliance && parsedCompliance.length > 0)
-  )
-
-  // Determine agency type for tone and deliverable format guidance
-  const agencyUpper = agency.toUpperCase()
-  const isDoD = /\b(DOD|ARMY|NAVY|MARINE|AIR FORCE|SPACE FORCE|DEFENSE|DLA|DCMA|DARPA|SOCOM|CENTCOM|INDOPACOM|NORTHCOM|EUCOM|TRANSCOM|JSOC|NAVSEA|NAVAIR|SPAWAR|PEO|AMC|USMC|USAF|DISA|MDA|NRO|DIA|NSA|PENTAGON|AFRL|ARL|ERDC|CERL|USACE|CORPS OF ENGINEERS)\b/i.test(agencyUpper)
-  const isDHS = /\b(DHS|HOMELAND|FEMA|CBP|ICE|TSA|USCG|SECRET SERVICE|CISA)\b/i.test(agencyUpper)
-  const isVA = /\b(VA\b|VETERANS AFFAIRS|VETERANS HEALTH|VHA|VBA)\b/i.test(agencyUpper)
-  const isHealthAgency = /\b(HHS|NIH|CDC|FDA|CMS|HRSA|SAMHSA|AHRQ)\b/i.test(agencyUpper)
-
-  // Agency tone is for VOICE only — formality, terminology preferences. It does
-  // NOT authorize inventing standards, clearances, or clauses. Every specific
-  // citation must still be grounded in the source content above.
-  let agencyToneGuidance: string
-  let deliverablesGuidance: string
-
-  if (isDoD) {
-    agencyToneGuidance = `This is a Department of Defense (DoD) contract. Voice: formal, precise, compliance-conscious. You MAY use the acronyms COR, CDRL, QASP, GFE, GFP if they fit the section. You may NOT cite specific MIL-STD/MIL-SPEC numbers, DFARS clauses, security clearance levels, or CMMC levels unless they appear in the source content above.`
-    deliverablesGuidance = `When deliverables are listed in the source, format each one with name + frequency + submission format if those are available. If frequency/format are not in the source, omit them rather than inventing.`
-  } else if (isDHS) {
-    agencyToneGuidance = `This is a Department of Homeland Security (DHS) contract. Voice: security-conscious, operational. You may use COR; you may NOT cite specific HSAR clauses or clearance levels unless they appear in the source content above.`
-    deliverablesGuidance = `When deliverables are listed in the source, format each one with name + due date + submission method if those are available. Omit fields not in source.`
-  } else if (isVA) {
-    agencyToneGuidance = `This is a Department of Veterans Affairs (VA) contract. Voice: Veteran-centered, compliance-focused. You may use COR. You may NOT cite HIPAA/PHI/VAAR specifics unless the source mentions Veteran data or healthcare work.`
-    deliverablesGuidance = `When deliverables are listed in the source, name them concretely. Omit submission specifics not in source.`
-  } else if (isHealthAgency) {
-    agencyToneGuidance = `This is a civilian health agency (HHS/NIH/CDC/FDA) contract. Voice: technically precise. You may use COR. You may NOT cite specific health data standards (HL7, FHIR, HIPAA) unless they appear in the source content above.`
-    deliverablesGuidance = `When deliverables are listed in the source, name them concretely with format/frequency only if stated. No invented timelines.`
-  } else {
-    agencyToneGuidance = `This is a civilian federal agency contract. Voice: professional, action-oriented for a small business subcontractor. You may use COR/PWS/QASP if they fit. You may NOT cite specific FAR clauses unless they appear in the source content above.`
-    deliverablesGuidance = `When deliverables are listed in the source, name them concretely with format/frequency only if stated. No invented timelines.`
-  }
-
-  const contextBlock = [
-    `Prime contractor: ${primeName}`,
-    `Solicitation reference: ${solicitationNumber} — "${title}"`,
-    `End customer: ${agency}`,
-    naicsCode ? `NAICS Code: ${naicsCode}` : null,
-    setAside ? `Set-Aside (informational only): ${setAside}` : null,
-    `Quote-to-prime deadline: ${quoteDeadline}`,
-    `Place of performance / delivery: ${placeOfPerformance}`,
-    subcontractorName ? `Subcontractor being addressed: ${subcontractorName}` : null,
-  ]
-    .filter(Boolean)
-    .join('\n')
-
-  // Give the AI enough source material to synthesize from. Previously trimmed
-  // to 250 chars × 5 items per category — too thin to write a narrative
-  // about. Now: 400 chars × 8 items, so the AI has ~13K chars of parsed
-  // content to ground itself in. Plenty of room in GPT-4o's context.
-  const trim = (s: string, max = 400) => {
-    const cleaned = s.replace(/\s+/g, ' ').trim()
-    return cleaned.length > max ? cleaned.slice(0, max) + '…' : cleaned
-  }
-  // High-signal facts pulled by regex from the full attachment text. Keep
-  // this block FIRST so it leads the model — these are explicit verified
-  // citations (a clearance level appears in the source iff it's listed here).
-  const keyFactsBlock = keyFacts && (
-    (keyFacts.clearances?.length ?? 0) > 0 ||
-    (keyFacts.certifications?.length ?? 0) > 0 ||
-    (keyFacts.farClauses?.length ?? 0) > 0 ||
-    (keyFacts.locations?.length ?? 0) > 0 ||
-    (keyFacts.contractTypes?.length ?? 0) > 0
-  )
-    ? `\n\nVERIFIED FACTS (extracted directly from attachment text — these strings appear in the source verbatim, so cite them with confidence):\n` +
-      (keyFacts.clearances?.length ? `- Security clearances mentioned: ${keyFacts.clearances.join(', ')}\n` : '') +
-      (keyFacts.certifications?.length ? `- Certifications / frameworks mentioned: ${keyFacts.certifications.join(', ')}\n` : '') +
-      (keyFacts.farClauses?.length ? `- FAR/DFARS clauses named: ${keyFacts.farClauses.slice(0, 6).join(', ')}\n` : '') +
-      (keyFacts.locations?.length ? `- Place-of-performance locations: ${keyFacts.locations.join(', ')}\n` : '') +
-      (keyFacts.contractTypes?.length ? `- Contract types mentioned: ${keyFacts.contractTypes.join(', ')}\n` : '')
-    : ''
-
-  const parsedBlock = hasParsed
-    ? `\n\nPARSED SOLICITATION CONTENT (excerpts from attachments — use to synthesize a narrative):\n` +
-      (parsedScope?.length ? `Scope excerpts:\n${parsedScope.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
-      (parsedDeliverables?.length ? `Deliverable excerpts:\n${parsedDeliverables.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
-      (parsedCompliance?.length ? `Compliance excerpts:\n${parsedCompliance.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
-      (parsedPeriodOfPerformance?.length ? `Period of performance excerpts:\n${parsedPeriodOfPerformance.slice(0, 4).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
-      keyFactsBlock
-    : description
-    ? `\n\nSOLICITATION DESCRIPTION:\n${description.slice(0, 3000)}${keyFactsBlock}`
-    : keyFactsBlock
-
-  const prompt = `You are writing a Statement of Work (SOW) FROM a prime contractor TO a potential subcontractor. The goal: both parties walk away with confidence — the sub understands what they'd be supplying and whether they qualify; the prime gets a useful quote back.
-
-Your job is to SYNTHESIZE the parsed solicitation excerpts below into a coherent narrative the sub can act on. Read the excerpts, infer the program's purpose, who the end customer is, what kind of work is needed, and what would qualify a sub for it. Then write each section so it tells part of that story.
-
-THE NARRATIVE STANDARD:
-A well-written section has TWO parts:
-1. A short "overview" paragraph (2–4 plain-English sentences) that synthesizes WHAT this section means for the sub — context, why this matters, the lay of the land
-2. A short list of "bullets" (2–4 items, ≤100 chars each) with the concrete, specific facts pulled from the source
-
-The overview is the synthesis. The bullets are the receipts.
-
-EXAMPLE — for a section about scope:
-✅ GOOD overview: "NGA is contracting for ongoing sustainment of FS3i — a software platform that supports geospatial intelligence operations. The prime needs subs who can handle modernization work in a classified DoD environment, including cloud migration support and software updates against existing baselines."
-❌ BAD overview: "Section 2.0 covers the scope of work."
-❌ BAD overview: "" (empty)
-✅ GOOD bullets: ["Modernize and sustain WebDVOF cloud architecture", "Develop against existing NGA software baselines", "Support transition from on-prem to AWS GovCloud"]
-❌ BAD bullets: ["the work scope on contract.", "work completed.", "subcontractor effort."]
-
-GROUNDING (still important — don't invent):
-- Synthesize from what's in the parsed excerpts. Infer reasonable connections (if excerpts mention "AWS GovCloud" + "NGA" + "FS3i", you can write "cloud migration in a classified NGA environment").
-- Do NOT invent specific standards, clause numbers, dollar amounts, or clearance levels that aren't in the excerpts.
-- If you can see a pattern but lack a specific fact (e.g. excerpts mention security but no clearance level), write the pattern without the missing fact: "Work occurs in a classified environment — confirm clearance requirements with the prime."
-- When source is genuinely too thin for a real bullet, use one bullet: "[NEEDS DETAIL: <what's missing>]" rather than a fabricated specific.
-
-WHAT TO AVOID:
-- Mid-sentence fragments yanked from PDFs ("the work scope on contract.")
-- Glossary-list dumps ("SRB Service Registry Board SPID Security Plan...")
-- Restatements of obvious facts ("The Government typically must manage...")
-- Generic filler ("All applicable FAR clauses", "Per the solicitation")
-- Invented standards (MIL-STD-498, ISO 9001 for software, Buy American for services)
-
-AUDIENCE:
-- The sub is quoting parts/services TO THE PRIME, not bidding on the federal contract.
-- Don't mention SAM.gov registration, federal response deadlines, SF-1449 forms, or anything procedural between the prime and the government.
-- The ONE deadline that matters: quote-to-prime deadline ${quoteDeadline}.
-
-AGENCY TONE (voice only, doesn't authorize inventing facts):
-${agencyToneGuidance}
-
-OPPORTUNITY DETAILS:
-${contextBlock}${parsedBlock}
-
-DELIVERABLES GUIDANCE:
-${deliverablesGuidance}
-
-OUTPUT FORMAT — exactly this JSON shape:
-{
-  "sections": [
-    {
-      "title": "1.0 Program Overview",
-      "summary": "one-line headline, ≤80 chars",
-      "overview": "narrative paragraph, 2–4 sentences, synthesizing what this section means for the sub",
-      "bullets": ["concrete fact 1", "concrete fact 2", "concrete fact 3"]
-    },
-    ... 5 more sections
-  ]
-}
-
-Generate exactly 6 sections in this order:
-
-1. **1.0 Program Overview** — Narrative: what is this contract, who is the customer, what's their mission, why does it exist. Bullets: program/system name, end customer, contract type if known, base period if known, scale indicators (multi-year, AWS migration, etc.).
-
-2. **2.0 What We Need From You** — Narrative: what the prime needs the sub to supply, in plain language. Bullets: concrete supply items / services / specs the sub would provide.
-
-3. **3.0 Place of Performance & Travel** — Narrative: where work happens (on-site/remote/hybrid), security context, any travel expectations. Bullets: specific locations from source, on-site requirements, travel cadence if stated.
-
-4. **4.0 Critical Requirements** — Narrative: the gate-keeper requirements that determine if a sub even qualifies. Bullets: security clearance level (if stated), required certifications (CMMC level, ISO, etc., only if in source), required past performance domain, key technical standards.
-
-5. **5.0 Deliverables** — Narrative: what the sub produces and how it integrates with the prime's deliverables to the government. Bullets: specific deliverable items with format/frequency if stated.
-
-6. **6.0 Quote Submission** — Narrative: explain WHY the prime needs each item (capability statement → fit assessment before the prime spends time on your quote; firm price + lead time → pricing into the federal bid; exceptions → no surprises). Anchor on the quote-to-prime deadline. Bullets MUST include all five with specificity (these are non-negotiable for the sub's response):
-   - Capability statement (1–2 pages — past performance + competencies + certifications + key personnel)
-   - Firm fixed-price quote (all-inclusive: materials, labor, shipping, taxes, fees)
-   - Lead time / delivery schedule from receipt of order
-   - Any exceptions, assumptions, or clarifying questions
-   - Point of contact (name, title, email, direct phone)
-   No "What to Send Back" appendix follows this section — Quote Submission IS the close. End strong.
-
-Return ONLY valid JSON in the shape above. No markdown, no explanation.`
-
-  const response = await getOpenAI().chat.completions.create({
-    model: 'gpt-4o',
-    messages: [{ role: 'user', content: prompt }],
-    temperature: 0.3,
-    max_tokens: 4000,
-    response_format: { type: 'json_object' },
-  })
-
-  const raw = response.choices[0]?.message?.content || '{}'
-
-  try {
-    const parsed = JSON.parse(raw)
-    // Accept three shapes the model has been observed to produce:
-    //   1. { sections: [s1, s2, ...] }  (the requested shape)
-    //   2. [s1, s2, ...]                (bare array)
-    //   3. { title, summary, bullets } (a single section — model collapses when
-    //      it thinks there's not enough source. We treat this as an AI failure
-    //      since we asked for 6 sections.)
-    let sections: SOWSection[]
-    if (Array.isArray(parsed)) {
-      sections = parsed
-    } else if (Array.isArray(parsed.sections)) {
-      sections = parsed.sections
-    } else if (parsed.title && Array.isArray(parsed.bullets)) {
-      // Single-section response — AI gave up. Treat as failure so caller
-      // falls back to rule-based builders, which at least produce 6 sections.
-      throw new Error(`AI collapsed to single section (likely thin-input refusal): ${parsed.title}`)
-    } else {
-      throw new Error(`Unexpected JSON shape: ${raw.slice(0, 150)}`)
-    }
-
-    if (!sections.length) {
-      throw new Error('OpenAI returned empty sections array')
-    }
-
-    // Normalize: ensure each section has overview (prefer new field, fall
-    // back to legacy details). Stored SOWs may go through this path again.
-    return sections.map((s) => ({
-      ...s,
-      overview: s.overview || s.details || '',
-      bullets: Array.isArray(s.bullets) ? s.bullets : [],
-    }))
-  } catch (parseErr) {
-    if (parseErr instanceof Error && parseErr.message.startsWith('AI collapsed')) {
-      throw parseErr
-    }
-    throw new Error(`Failed to parse OpenAI SOW response: ${raw.slice(0, 200)}`)
-  }
-}
 
 // ─── Opportunity Brief ────────────────────────────────────────────────────────
 
@@ -1207,6 +927,332 @@ export async function generateOpportunityArtifacts(
     attachmentRelevance,
     generatedAt: new Date().toISOString(),
     partial: Object.keys(partial).length ? partial : undefined,
+  }
+}
+
+// ─── Resource Plan ────────────────────────────────────────────────────────────
+
+import type {
+  ResourcePlan,
+  ResourceLine,
+  JobDescription,
+} from '@/lib/types/resource-plan'
+
+export interface ResourcePlanInput {
+  title: string
+  agency: string
+  solicitationNumber: string
+  naicsCode?: string | null
+  setAside?: string | null
+  description?: string | null
+  rawData?: Record<string, unknown> | null
+  parsedAttachments?: {
+    structured?: {
+      scope?: string[]
+      deliverables?: string[]
+      compliance?: string[]
+      periodOfPerformance?: string[]
+      qualifications?: string[]
+      placeOfPerformance?: string
+      keyFacts?: {
+        clearances?: string[]
+        certifications?: string[]
+        farClauses?: string[]
+        locations?: string[]
+        contractTypes?: string[]
+      }
+    }
+  } | null
+  brief?: OpportunityBrief | null
+}
+
+/**
+ * Decompose a federal contract into the full resource line-up a small business
+ * prime would need to orchestrate execution — professional roles, subcontracted
+ * trades, materials, equipment, and prime-side overhead. Every `professional`
+ * line comes back with a complete Job Description so the prime can hire the
+ * individual without a second AI call. Cached to opportunity.resourcePlan.
+ */
+export async function generateResourcePlan(input: ResourcePlanInput): Promise<ResourcePlan> {
+  const {
+    title,
+    agency,
+    solicitationNumber,
+    naicsCode,
+    setAside,
+    description,
+    rawData,
+    parsedAttachments,
+    brief,
+  } = input
+
+  const structured = parsedAttachments?.structured
+
+  const contextBlock = [
+    `Title: ${title}`,
+    `Agency: ${agency}`,
+    `Solicitation Number: ${solicitationNumber}`,
+    naicsCode ? `NAICS Code: ${naicsCode}` : null,
+    setAside ? `Set-Aside: ${setAside}` : null,
+    rawData?.placeOfPerformance ? `Place of Performance: ${JSON.stringify(rawData.placeOfPerformance)}` : null,
+    rawData?.contractType ? `Contract Type: ${rawData.contractType}` : null,
+    rawData?.awardAmount ? `Estimated Value: ${rawData.awardAmount}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  const trim = (s: string, max = 350) => {
+    const cleaned = s.replace(/\s+/g, ' ').trim()
+    return cleaned.length > max ? cleaned.slice(0, max) + '…' : cleaned
+  }
+
+  const parsedBlock = structured
+    ? '\n\nPARSED SOLICITATION CONTENT:\n' +
+      (structured.scope?.length ? `Scope:\n${structured.scope.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (structured.deliverables?.length ? `Deliverables:\n${structured.deliverables.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (structured.compliance?.length ? `Compliance:\n${structured.compliance.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (structured.qualifications?.length ? `Qualifications:\n${structured.qualifications.slice(0, 8).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (structured.periodOfPerformance?.length ? `Period of Performance:\n${structured.periodOfPerformance.slice(0, 4).map(s => `- ${trim(s)}`).join('\n')}\n` : '') +
+      (structured.placeOfPerformance ? `Place of Performance Detail: ${structured.placeOfPerformance}\n` : '')
+    : description
+    ? `\n\nSOLICITATION DESCRIPTION:\n${description.slice(0, 4000)}`
+    : ''
+
+  const briefBlock = brief
+    ? `\n\nOPPORTUNITY BRIEF (already generated — use as ground truth):
+- What they're buying: ${brief.whatTheyAreBuying}
+- Place of performance: ${brief.placeOfPerformance?.location || 'unknown'} (${brief.placeOfPerformance?.siteType || 'unknown'})
+- Estimated value: ${brief.estimatedValue || 'not stated'}
+- Contract type: ${brief.contractType || 'not stated'}
+- Set-aside: ${brief.whoQualifies?.setAside || 'none'}
+- Clearances: ${(brief.whoQualifies?.clearances || []).join(', ') || 'none'}
+- Certifications: ${(brief.whoQualifies?.certifications || []).join(', ') || 'none'}
+- Heads-up flags: ${(brief.headsUp || []).map(h => `${h.type}: ${h.message}`).join(' | ') || 'none'}`
+    : ''
+
+  const prompt = `You are decomposing a federal contract into every role, business, material, and prime-side overhead line a small business prime would need to orchestrate execution. For each line, describe its value to the operation in one sentence, choose a risk level (low|medium|high) with a one-line rationale, and (for professional/subcontracted_trade lines) give 1–3 Google search queries that would surface qualified vendors. For every \`professional\` line, also produce a complete Job Description.
+
+OPPORTUNITY CONTEXT:
+${contextBlock}${briefBlock}${parsedBlock}
+
+CATEGORIES (use these exact strings):
+- "professional" — an individual role the prime would hire or contract-to-hire (e.g. HVAC technician, project manager, cybersecurity analyst). MUST include a full Job Description.
+- "subcontracted_trade" — a whole business the prime would sub work to (e.g. an HVAC company, a landscaping firm, a moving company). NO Job Description.
+- "material" — consumables, supplies, parts. NO Job Description.
+- "equipment" — rental or purchase of gear. NO Job Description.
+- "prime_overhead" — bonding, insurance, PM time, mobilization, coordination overhead the prime absorbs. NO Job Description.
+
+HARD RULES (non-negotiable):
+- Always include at least one \`prime_overhead\` line for the prime's own coordination/PM time.
+- Always include a \`prime_overhead\` line for performance bonding if bonding_required is true (based on brief.headsUp or estimated value >$150K).
+- Always include a \`prime_overhead\` line for general liability + auto insurance.
+- Never populate \`jobDescription\` on non-professional lines.
+- Every \`professional\` line must have a fully-populated \`jobDescription\`.
+- Cap total lines at 20. Consolidate if more.
+- Every line needs a stable id — generate with \`crypto.randomUUID()\`-style short ids (or the model can emit \`line_1\`, \`line_2\` — the client will keep them stable).
+
+JOB DESCRIPTION SHAPE (populate every field on every professional line):
+- roleTitle: specific job title including required credential (e.g. "HVAC Technician, EPA 608 Certified")
+- seniority: "Journeyman" | "Senior" | "Lead" | "Entry" | etc.
+- summary: 2–3 sentences on what this person does and why we need them
+- responsibilities: 4–8 bulleted day-to-day duties, action-verb led
+- requiredQualifications: licenses, clearances, certs, experience thresholds — every item comes from the solicitation or is the industry-standard baseline for this role
+- preferredQualifications: 2–4 nice-to-haves
+- placeOfWork: the POP from the solicitation (on-site at X / remote / hybrid)
+- schedule: "M-F 0700-1530", "on-call", "swing shift", or omit if unknown
+- compensationBasis: "hourly" | "salaried" | "day rate" | "per-visit"
+- reportingLine: "Reports to Prime Project Manager." (unless the solicitation dictates otherwise)
+
+RISK RUBRIC:
+- low: commodity work, deep vendor pool, no gate-keeping credentials, prime has done it before
+- medium: some specialization, moderate vendor pool, standard certifications required
+- high: rare credential (Top Secret clearance, CMMC L3), thin vendor pool, tight timeline, high consequence of failure
+
+SEARCH QUERIES (professional + subcontracted_trade only):
+- 1–3 short Google queries a person would actually type to find qualified vendors near the POP
+- Include the trade + location + any gate-keeping credential (e.g. "EPA 608 HVAC technicians Fort Knox KY", "CMMC Level 2 IT services Northern Virginia")
+
+OUTPUT FORMAT — return ONLY valid JSON matching this shape exactly:
+{
+  "lines": [
+    {
+      "id": "line_1",
+      "category": "professional",
+      "label": "HVAC Technician (EPA 608)",
+      "valueDescription": "One sentence — what they add to the operation.",
+      "quantity": "2 techs",
+      "basis": "per month",
+      "estimatedUnitCost": null,
+      "estimatedTotalCost": null,
+      "costSource": "estimate — replace before bid",
+      "riskLevel": "medium",
+      "riskRationale": "One line — why this risk level.",
+      "searchQueries": ["EPA 608 HVAC technicians Fort Knox KY"],
+      "suggestedNaics": "238220",
+      "jobDescription": {
+        "roleTitle": "HVAC Technician, EPA 608 Certified",
+        "seniority": "Journeyman",
+        "summary": "2–3 sentences.",
+        "responsibilities": ["duty 1", "duty 2", "duty 3", "duty 4"],
+        "requiredQualifications": ["EPA 608 Universal", "5+ years commercial HVAC"],
+        "preferredQualifications": ["OSHA 30"],
+        "placeOfWork": "On-site at Fort Knox, KY",
+        "schedule": "M-F 0700-1530",
+        "compensationBasis": "hourly",
+        "reportingLine": "Reports to Prime Project Manager.",
+        "generatedAt": "${new Date().toISOString()}"
+      }
+    }
+  ],
+  "primeCoordinationHours": 80,
+  "bondingRequired": true,
+  "insuranceMinimums": ["$1M GL", "$500K auto"],
+  "generatedAt": "${new Date().toISOString()}",
+  "modelVersion": "gpt-4o"
+}
+
+Return ONLY valid JSON. No markdown, no explanation.`
+
+  const response = await getOpenAI().chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.2,
+    max_tokens: 4500,
+    response_format: { type: 'json_object' },
+  })
+
+  const raw = response.choices[0]?.message?.content || '{}'
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<ResourcePlan>
+
+    if (!Array.isArray(parsed.lines)) {
+      throw new Error(`Invalid resource plan: lines is not an array`)
+    }
+
+    for (const line of parsed.lines as ResourceLine[]) {
+      if (line.category === 'professional') {
+        const jd = line.jobDescription
+        if (!jd || typeof jd !== 'object') {
+          throw new Error(`Invalid resource plan: professional line "${line.label}" is missing jobDescription`)
+        }
+        if (!jd.roleTitle || typeof jd.roleTitle !== 'string') {
+          throw new Error(`Invalid resource plan: professional line "${line.label}" JD missing roleTitle`)
+        }
+        if (!jd.summary || typeof jd.summary !== 'string') {
+          throw new Error(`Invalid resource plan: professional line "${line.label}" JD missing summary`)
+        }
+        if (!Array.isArray(jd.responsibilities) || jd.responsibilities.length === 0) {
+          throw new Error(`Invalid resource plan: professional line "${line.label}" JD missing responsibilities[]`)
+        }
+        if (!Array.isArray(jd.requiredQualifications) || jd.requiredQualifications.length === 0) {
+          throw new Error(`Invalid resource plan: professional line "${line.label}" JD missing requiredQualifications[]`)
+        }
+      } else if (line.jobDescription) {
+        // Strip JDs that were incorrectly attached to non-professional lines.
+        line.jobDescription = null
+      }
+    }
+
+    return {
+      lines: parsed.lines as ResourceLine[],
+      primeCoordinationHours: parsed.primeCoordinationHours ?? null,
+      bondingRequired: parsed.bondingRequired === true,
+      insuranceMinimums: Array.isArray(parsed.insuranceMinimums) ? parsed.insuranceMinimums : undefined,
+      generatedAt: new Date().toISOString(),
+      modelVersion: 'gpt-4o',
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Invalid resource plan')) {
+      throw err
+    }
+    throw new Error(`Invalid resource plan: failed to parse response — ${raw.slice(0, 200)}`)
+  }
+}
+
+// ─── Job Description (single-line regen) ─────────────────────────────────────
+
+export interface JobDescriptionInput {
+  brief?: OpportunityBrief | null
+  line: ResourceLine
+  placeOfPerformance?: string
+}
+
+/**
+ * Regenerate a single Job Description for a professional resource line. Used
+ * by the "Regenerate" affordance on the ResourcePlanCard when the initial JD
+ * needs a rewrite. Keeps the role label + valueDescription + risk as anchor.
+ */
+export async function generateJobDescription(input: JobDescriptionInput): Promise<JobDescription> {
+  const { brief, line, placeOfPerformance } = input
+
+  const pop =
+    placeOfPerformance ||
+    brief?.placeOfPerformance?.location ||
+    'the contract place of performance'
+
+  const briefBlock = brief
+    ? `\n\nOPPORTUNITY BRIEF (context):
+- What they're buying: ${brief.whatTheyAreBuying}
+- Place of performance: ${brief.placeOfPerformance?.location || 'unknown'} (${brief.placeOfPerformance?.siteType || 'unknown'})
+- Set-aside: ${brief.whoQualifies?.setAside || 'none'}
+- Clearances required: ${(brief.whoQualifies?.clearances || []).join(', ') || 'none'}
+- Certifications required: ${(brief.whoQualifies?.certifications || []).join(', ') || 'none'}`
+    : ''
+
+  const prompt = `You are writing a complete Job Description for a single role on a federal contract. Use the role label, one-sentence value description, risk level, and opportunity context below to produce a JD that a recruiter or HR partner could hand to a candidate as-is.
+
+ROLE:
+- Label: ${line.label}
+- Value description: ${line.valueDescription}
+- Category: ${line.category}
+- Risk level: ${line.riskLevel}${line.riskRationale ? ` (${line.riskRationale})` : ''}
+- Quantity/basis: ${line.quantity || 'not specified'}${line.basis ? ` — ${line.basis}` : ''}${briefBlock}
+
+Reporting line: default to "Reports to Prime Project Manager." unless the solicitation dictates otherwise.
+Place of work: default to "${pop}" unless the solicitation dictates otherwise.
+
+OUTPUT — return ONLY valid JSON matching this shape exactly:
+{
+  "roleTitle": "Specific job title including required credential",
+  "seniority": "Journeyman | Senior | Lead | Entry | etc.",
+  "summary": "2–3 sentences on what this person does and why we need them",
+  "responsibilities": ["duty 1", "duty 2", "duty 3", "duty 4"],
+  "requiredQualifications": ["licenses, clearances, certs, experience thresholds"],
+  "preferredQualifications": ["nice-to-haves"],
+  "placeOfWork": "on-site at X / remote / hybrid",
+  "schedule": "M-F 0700-1530 or omit if unknown",
+  "compensationBasis": "hourly | salaried | day rate | per-visit",
+  "reportingLine": "Reports to Prime Project Manager.",
+  "generatedAt": "${new Date().toISOString()}"
+}
+
+Return ONLY valid JSON. No markdown, no explanation.`
+
+  const response = await getOpenAI().chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.3,
+    max_tokens: 1500,
+    response_format: { type: 'json_object' },
+  })
+
+  const raw = response.choices[0]?.message?.content || '{}'
+
+  try {
+    const parsed = JSON.parse(raw) as JobDescription
+    if (!parsed.roleTitle || !parsed.summary || !Array.isArray(parsed.responsibilities) || !Array.isArray(parsed.requiredQualifications)) {
+      throw new Error(`Invalid job description: missing required fields`)
+    }
+    return {
+      ...parsed,
+      generatedAt: new Date().toISOString(),
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Invalid job description')) {
+      throw err
+    }
+    throw new Error(`Failed to parse job description response: ${raw.slice(0, 200)}`)
   }
 }
 

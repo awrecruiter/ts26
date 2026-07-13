@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
@@ -9,18 +9,6 @@ export default function AdminDashboard() {
   const router = useRouter()
   const { data: session, status } = useSession()
 
-  const [backfilling, setBackfilling] = useState(false)
-  const [backfillResult, setBackfillResult] = useState<{
-    success: boolean
-    message: string
-    stats?: {
-      total_found: number
-      updated: number
-      errors: number
-    }
-    errors?: Array<{ sowId: string; error: string }>
-  } | null>(null)
-
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login')
@@ -28,40 +16,6 @@ export default function AdminDashboard() {
       router.push('/dashboard')
     }
   }, [status, session])
-
-  const handleBackfillSOWs = async () => {
-    if (!confirm('This will update all SOWs without structured content. Continue?')) {
-      return
-    }
-
-    setBackfilling(true)
-    setBackfillResult(null)
-
-    try {
-      const response = await fetch('/api/sows/backfill-content', {
-        method: 'POST',
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        setBackfillResult(data)
-      } else {
-        setBackfillResult({
-          success: false,
-          message: data.error || 'Failed to backfill SOWs',
-        })
-      }
-    } catch (error) {
-      console.error('Error backfilling SOWs:', error)
-      setBackfillResult({
-        success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
-      })
-    } finally {
-      setBackfilling(false)
-    }
-  }
 
   if (status === 'loading') {
     return (
@@ -107,64 +61,6 @@ export default function AdminDashboard() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Quick Actions Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          {/* Backfill SOWs Card */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-start">
-              <div className="flex-shrink-0 bg-stone-100 rounded-md p-3">
-                <svg
-                  className="h-6 w-6 text-stone-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                  />
-                </svg>
-              </div>
-              <div className="ml-4 flex-1">
-                <h3 className="text-lg font-semibold text-stone-900 mb-2">
-                  Backfill SOWs
-                </h3>
-                <p className="text-sm text-stone-600 mb-4">
-                  Update all SOWs without structured content to the new format
-                </p>
-                <button
-                  onClick={handleBackfillSOWs}
-                  disabled={backfilling}
-                  className="w-full px-4 py-2 bg-stone-800 text-white rounded-md hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {backfilling ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <svg
-                        className="h-5 w-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                        />
-                      </svg>
-                      Run Backfill
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-
           {/* User Management Card */}
           <Link
             href="/admin/users"
@@ -318,138 +214,6 @@ export default function AdminDashboard() {
           </Link>
         </div>
 
-        {/* Backfill Result Display */}
-        {backfillResult && (
-          <div
-            className={`rounded-lg border-2 p-6 mb-8 ${
-              backfillResult.success
-                ? 'bg-stone-50 border-stone-300'
-                : 'bg-stone-100 border-stone-400'
-            }`}
-          >
-            <div className="flex items-start">
-              <div className="flex-shrink-0">
-                {backfillResult.success ? (
-                  <svg
-                    className="h-6 w-6 text-stone-700"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                ) : (
-                  <svg
-                    className="h-6 w-6 text-stone-900"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                )}
-              </div>
-              <div className="ml-4 flex-1">
-                <h3 className="text-lg font-semibold mb-2 text-stone-900">
-                  {backfillResult.success ? 'Backfill Successful' : 'Backfill Failed'}
-                </h3>
-                <p className="text-sm mb-4 text-stone-700">
-                  {backfillResult.message}
-                </p>
-
-                {backfillResult.stats && (
-                  <div className="grid grid-cols-3 gap-4 mb-4">
-                    <div className="bg-white rounded-lg p-3 border border-stone-200">
-                      <p className="text-xs text-stone-500">Found</p>
-                      <p className="text-2xl font-bold text-stone-900">
-                        {backfillResult.stats.total_found}
-                      </p>
-                    </div>
-                    <div className="bg-white rounded-lg p-3 border border-stone-200">
-                      <p className="text-xs text-stone-500">Updated</p>
-                      <p className="text-2xl font-bold text-stone-900">
-                        {backfillResult.stats.updated}
-                      </p>
-                    </div>
-                    <div className="bg-white rounded-lg p-3 border border-stone-200">
-                      <p className="text-xs text-stone-500">Errors</p>
-                      <p className="text-2xl font-bold text-stone-900">
-                        {backfillResult.stats.errors}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {backfillResult.errors && backfillResult.errors.length > 0 && (
-                  <details className="mt-4">
-                    <summary className="cursor-pointer text-sm font-semibold text-stone-900 hover:text-stone-700">
-                      View Errors ({backfillResult.errors.length})
-                    </summary>
-                    <div className="mt-2 space-y-2">
-                      {backfillResult.errors.map((error, index) => (
-                        <div key={index} className="bg-white rounded p-2 text-sm border border-stone-200">
-                          <p className="font-mono text-xs text-stone-600">
-                            SOW ID: {error.sowId}
-                          </p>
-                          <p className="text-stone-800">{error.error}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                )}
-
-                <button
-                  onClick={() => setBackfillResult(null)}
-                  className="mt-4 text-sm font-medium text-stone-600 hover:text-stone-900"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Info Section */}
-        <div className="bg-stone-50 border border-stone-200 rounded-lg p-6">
-          <div className="flex items-start">
-            <div className="flex-shrink-0">
-              <svg
-                className="h-6 w-6 text-stone-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-            </div>
-            <div className="ml-4">
-              <h3 className="text-sm font-semibold text-stone-900 mb-2">
-                About the Backfill Tool
-              </h3>
-              <p className="text-sm text-stone-700">
-                The backfill tool updates all SOWs that were created before the structured
-                content feature was added. It will generate standardized content for each
-                SOW based on its opportunity data, making them viewable and editable in the
-                new format.
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   )

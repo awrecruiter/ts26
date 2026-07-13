@@ -18,7 +18,6 @@ interface ReviewRequest {
     title: string
     agency: string | null
     responseDeadline: string | null
-    sows: Array<{ id: string; status: string }>
   }
   bid: {
     id: string
@@ -107,7 +106,6 @@ export default function BidApprovalDetailPage() {
     )
   }
 
-  const sow = request.opportunity.sows?.[0]
   const isPending = request.status === 'PENDING'
 
   return (
@@ -216,30 +214,6 @@ export default function BidApprovalDetailPage() {
             <div className="bg-white border border-stone-200 rounded-xl p-6">
               <h2 className="text-xs font-semibold uppercase tracking-widest text-stone-400 mb-3">Agent Note</h2>
               <p className="text-sm text-stone-700">&ldquo;{request.agentNote}&rdquo;</p>
-            </div>
-          )}
-
-          {/* SOW link */}
-          {sow && (
-            <div className="bg-white border border-stone-200 rounded-xl p-6">
-              <h2 className="text-xs font-semibold uppercase tracking-widest text-stone-400 mb-3">Statement of Work</h2>
-              <div className="flex items-center gap-3">
-                <Link
-                  href={`/opportunities/${request.opportunity.id}?panel=sow`}
-                  className="text-sm font-medium text-stone-700 hover:text-stone-900 underline underline-offset-2"
-                  target="_blank"
-                >
-                  View SOW in workspace
-                </Link>
-                <a
-                  href={`/api/sows/${sow.id}/download`}
-                  className="text-sm text-stone-400 hover:text-stone-700 underline underline-offset-2"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Download PDF
-                </a>
-              </div>
             </div>
           )}
 

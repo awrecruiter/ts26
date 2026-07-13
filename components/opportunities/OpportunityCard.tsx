@@ -418,43 +418,11 @@ export default function OpportunityCard({
           </p>
         )}
 
-        {/* Assessment Metrics — WIP status leads; cost / margin / risk follow.
-            Comparables now lives in the attached side column to the right. */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 p-3 bg-stone-50 rounded-lg border border-stone-100">
-          <div className="col-span-2 sm:col-span-1">
-            <WIPStatusTile progress={opportunity.progress} />
-          </div>
-          <div>
-            <p className="text-xs text-stone-500 mb-1">Cost</p>
-            <p className="text-base font-bold text-stone-900">
-              {costVal > 0 ? `$${costVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
-            </p>
-            {costVal === 0 && (
-              <p className="text-[10px] text-stone-400 mt-0.5">Open to estimate</p>
-            )}
-          </div>
-          <div>
-            <p className="text-xs text-stone-500 mb-1">Margin</p>
-            <p className={`text-base font-bold ${hasMargin ? marginColor : 'text-stone-400'}`}>
-              {hasMargin ? `${marginPercent!.toFixed(1)}%` : '—'}
-            </p>
-            <p className={`text-xs ${hasMargin ? marginColor : 'text-stone-400'}`}>
-              {hasMargin && marginDollar !== null
-                ? `$${marginDollar.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-                : 'Run assessment'}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-stone-500 mb-1">Risk / Strategic</p>
-            <div className="flex gap-1 flex-wrap">
-              <span className="text-xs px-2 py-0.5 rounded font-medium bg-stone-200 text-stone-700">
-                {assessment?.riskLevel || '—'}
-              </span>
-              <span className="text-xs px-2 py-0.5 rounded font-medium bg-stone-100 text-stone-600">
-                {assessment?.strategicValue || '—'}
-              </span>
-            </div>
-          </div>
+        {/* WIP status bar — full-width so the workflow state is the primary
+            scan target on the card. Margin / cost / risk moved to the aside
+            with comparables so financial metrics live together. */}
+        <div className="mb-4 p-3 bg-stone-50 rounded-lg border border-stone-100">
+          <WIPStatusTile progress={opportunity.progress} />
         </div>
 
         {/* Meta Information */}
@@ -513,81 +481,131 @@ export default function OpportunityCard({
         )}
       </div>
     </Link>
-    <Link href={oppHref} className="w-full sm:w-64 flex-shrink-0">
-      <div className="block bg-white border border-stone-200 rounded-lg sm:rounded-l-none hover:border-stone-400 transition-all p-5 cursor-pointer h-full">
-        <p className="text-xs text-stone-500 mb-1">Comparable awards (last 5 yrs)</p>
-        {comparablesTile}
-        {showAwardsTrigger && (
-          <button
-            type="button"
-            onClick={handleToggle}
-            aria-expanded={expanded}
-            aria-controls={`awards-${opportunity.id}`}
-            className="mt-1 inline-flex items-center gap-1 text-xs text-stone-500 hover:text-stone-700"
-          >
-            <span>
-              {expanded ? 'Hide list' : `Show all ${comparables!.count} awards`}
-            </span>
-            <svg
-              className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-        )}
-        {expanded && (
-          <div
-            id={`awards-${opportunity.id}`}
-            role="region"
-            onClick={swallow}
-            className="mt-2 border-t border-stone-200 pt-2 max-h-[170px] overflow-y-auto"
-          >
-            {loadingAwards && (
-              <p className="text-xs italic text-stone-400 px-2 py-1">Loading…</p>
+    <Link href={oppHref} className="w-full sm:w-72 flex-shrink-0">
+      <div className="block bg-white border border-stone-200 rounded-lg sm:rounded-l-none hover:border-stone-400 transition-all cursor-pointer h-full p-3">
+        {/* Grouped panel — financials + past-award comparables share the
+            same stone-50 surface with divider lines so the whole aside
+            reads as one scannable module. */}
+        <div className="bg-stone-50 rounded-lg border border-stone-100 divide-y divide-stone-200/70">
+          {/* Financials — Cost / Margin / Risk */}
+          <div className="p-3 space-y-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">
+              Financials
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs text-stone-500 mb-0.5">Cost</p>
+                <p className="text-sm font-bold text-stone-900 tabular-nums">
+                  {costVal > 0 ? `$${costVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
+                </p>
+                {costVal === 0 && (
+                  <p className="text-[10px] text-stone-400 mt-0.5">Open to estimate</p>
+                )}
+              </div>
+              <div>
+                <p className="text-xs text-stone-500 mb-0.5">Margin</p>
+                <p className={`text-sm font-bold tabular-nums ${hasMargin ? marginColor : 'text-stone-400'}`}>
+                  {hasMargin ? `${marginPercent!.toFixed(1)}%` : '—'}
+                </p>
+                <p className={`text-[11px] tabular-nums ${hasMargin ? marginColor : 'text-stone-400'}`}>
+                  {hasMargin && marginDollar !== null
+                    ? `$${marginDollar.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                    : 'Run assessment'}
+                </p>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-stone-500 mb-1">Risk / Strategic</p>
+              <div className="flex gap-1 flex-wrap">
+                <span className="text-[11px] px-2 py-0.5 rounded font-medium bg-stone-200 text-stone-700">
+                  {assessment?.riskLevel || '—'}
+                </span>
+                <span className="text-[11px] px-2 py-0.5 rounded font-medium bg-stone-100 text-stone-600">
+                  {assessment?.strategicValue || '—'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Past awards — comparables + expand + saved estimate */}
+          <div className="p-3 space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">
+              Comparable awards · last 5 yrs
+            </p>
+            {comparablesTile}
+            {showAwardsTrigger && (
+              <button
+                type="button"
+                onClick={handleToggle}
+                aria-expanded={expanded}
+                aria-controls={`awards-${opportunity.id}`}
+                className="inline-flex items-center gap-1 text-xs text-stone-500 hover:text-stone-700"
+              >
+                <span>
+                  {expanded ? 'Hide list' : `Show all ${comparables!.count} awards`}
+                </span>
+                <svg
+                  className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
             )}
-            {awardsError && (
-              <p className="text-xs text-stone-500 px-2 py-1">{awardsError}</p>
+            {expanded && (
+              <div
+                id={`awards-${opportunity.id}`}
+                role="region"
+                onClick={swallow}
+                className="border-t border-stone-200 pt-2 max-h-[170px] overflow-y-auto"
+              >
+                {loadingAwards && (
+                  <p className="text-xs italic text-stone-400 px-2 py-1">Loading…</p>
+                )}
+                {awardsError && (
+                  <p className="text-xs text-stone-500 px-2 py-1">{awardsError}</p>
+                )}
+                {!loadingAwards && !awardsError && awards && awards.length === 0 && (
+                  <p className="text-xs text-stone-400 px-2 py-1">No awards to show</p>
+                )}
+                {!loadingAwards && !awardsError && awards && awards.length > 0 && (
+                  <ul className="divide-y divide-stone-100">
+                    {awards.map((a) => (
+                      <li
+                        key={a.id}
+                        className="flex items-center justify-between gap-3 px-2 py-1.5 text-xs"
+                      >
+                        <div className="min-w-0 flex items-center gap-2">
+                          <span className="truncate text-stone-800">{a.recipientName}</span>
+                          {a.isRecompete && (
+                            <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">
+                              Recompete
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex-shrink-0 flex items-center gap-3 tabular-nums">
+                          <span className="font-semibold text-stone-900">
+                            {formatCompact(a.awardAmount)}
+                          </span>
+                          <span className="text-stone-500 w-16 text-right">
+                            {formatMonYear(a.popStart)}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
-            {!loadingAwards && !awardsError && awards && awards.length === 0 && (
-              <p className="text-xs text-stone-400 px-2 py-1">No awards to show</p>
-            )}
-            {!loadingAwards && !awardsError && awards && awards.length > 0 && (
-              <ul className="divide-y divide-stone-100">
-                {awards.map((a) => (
-                  <li
-                    key={a.id}
-                    className="flex items-center justify-between gap-3 px-2 py-1.5 text-xs"
-                  >
-                    <div className="min-w-0 flex items-center gap-2">
-                      <span className="truncate text-stone-800">{a.recipientName}</span>
-                      {a.isRecompete && (
-                        <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">
-                          Recompete
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex-shrink-0 flex items-center gap-3 tabular-nums">
-                      <span className="font-semibold text-stone-900">
-                        {formatCompact(a.awardAmount)}
-                      </span>
-                      <span className="text-stone-500 w-16 text-right">
-                        {formatMonYear(a.popStart)}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+            {savedEstimate !== null && (
+              <p className="text-[10px] text-stone-500 pt-1">
+                Saved estimate: {formatCompact(savedEstimate)}
+              </p>
             )}
           </div>
-        )}
-        {savedEstimate !== null && (
-          <p className="text-[10px] text-stone-500 mt-2">
-            Saved estimate: {formatCompact(savedEstimate)}
-          </p>
-        )}
+        </div>
       </div>
     </Link>
     </div>

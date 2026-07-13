@@ -461,8 +461,22 @@ export async function findSubcontractorsForOpportunity(opportunity: {
   /** Pre-geocoded POP coordinates — computed once by the caller to avoid
    * repeated Geocoding API calls per search query. Pass null to skip distance. */
   popCoords?: { lat: number; lng: number } | null
+  /** When provided and non-empty, bypass the NAICS + title-keyword maps entirely
+   * and drive the search from these queries. Feeds the per-resource-line search
+   * pivot introduced with the Resource Plan. Capped at 3 queries × 5 results. */
+  searchQueries?: string[]
+  /** Optional industry filter to apply when `searchQueries` is used. When absent,
+   * a permissive default is applied (no allow/block types, name keywords fall
+   * back to the provided `searchQueries`). Ignored when `searchQueries` is
+   * absent/empty (the NAICS-map path supplies its own metadata per query). */
+  industryHint?: {
+    googleType?: string
+    typesAllow?: string[]
+    typesBlock?: string[]
+    nameKeywords?: string[]
+  }
 }): Promise<FindSubcontractorsResult> {
-  const { naicsCode, placeOfPerformance, stateCode, title, radiusMiles = 50, city, popCoords } = opportunity
+  const { naicsCode, placeOfPerformance, stateCode, title, radiusMiles = 50, city, popCoords, searchQueries, industryHint } = opportunity
 
   // Build (query, metadata) pairs — prioritize NAICS, then title keywords. Each
   // query carries its own industry filter (Google type, allow/block, name
@@ -478,16 +492,38 @@ export async function findSubcontractorsForOpportunity(opportunity: {
     }
   }
 
-  // 1. NAICS-based queries
-  if (naicsCode && NAICS_INDUSTRY_MAP[naicsCode]) {
-    enqueue(NAICS_INDUSTRY_MAP[naicsCode])
-  }
+  // Override path: caller supplied per-role search queries (e.g. from a
+  // Resource Plan line). Skip the NAICS + title-keyword maps and build the
+  // plan directly from the queries, one entry per query.
+  const trimmedQueries = (searchQueries ?? [])
+    .map(q => q?.trim())
+    .filter((q): q is string => !!q)
+    .slice(0, 3)
 
-  // 2. Title keyword-based queries
-  if (title) {
-    const titleLower = title.toLowerCase()
-    for (const [keyword, meta] of Object.entries(TITLE_KEYWORD_MAP)) {
-      if (titleLower.includes(keyword)) enqueue(meta)
+  if (trimmedQueries.length > 0) {
+    const meta: IndustryMetadata = {
+      queries: trimmedQueries,
+      googleType: industryHint?.googleType,
+      typesAllow: industryHint?.typesAllow ?? [],
+      typesBlock: industryHint?.typesBlock ?? [],
+      nameKeywords: industryHint?.nameKeywords ?? trimmedQueries,
+    }
+    for (const q of trimmedQueries) {
+      queuedQueries.add(q)
+      searchPlan.push({ query: q, meta })
+    }
+  } else {
+    // 1. NAICS-based queries
+    if (naicsCode && NAICS_INDUSTRY_MAP[naicsCode]) {
+      enqueue(NAICS_INDUSTRY_MAP[naicsCode])
+    }
+
+    // 2. Title keyword-based queries
+    if (title) {
+      const titleLower = title.toLowerCase()
+      for (const [keyword, meta] of Object.entries(TITLE_KEYWORD_MAP)) {
+        if (titleLower.includes(keyword)) enqueue(meta)
+      }
     }
   }
 

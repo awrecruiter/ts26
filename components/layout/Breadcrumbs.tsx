@@ -49,18 +49,6 @@ export default function Breadcrumbs() {
           }
         }
 
-        // If this is an ID after "sows"
-        if (prevSegment === 'sows' && segment.length > 15) {
-          try {
-            const res = await fetch(`/api/sows/${segment}`)
-            if (res.ok) {
-              const data = await res.json()
-              titles[segment] = data.sow?.opportunity?.title || `SOW v${data.sow?.version}` || segment
-            }
-          } catch (err) {
-            console.error('Failed to fetch SOW title:', err)
-          }
-        }
       }
 
       setDynamicTitles(titles)
@@ -99,9 +87,6 @@ export default function Breadcrumbs() {
         case 'opportunities':
           label = 'Opportunities'
           break
-        case 'sows':
-          label = 'SOWs'
-          break
         case 'bids':
           label = 'Bids'
           break
@@ -116,9 +101,6 @@ export default function Breadcrumbs() {
           break
         case 'settings':
           label = 'Settings'
-          break
-        case 'backfill':
-          label = 'Backfill SOWs'
           break
         case 'logs':
           label = 'System Logs'

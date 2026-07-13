@@ -19,7 +19,6 @@ export async function GET(
     const opportunity = await prisma.opportunity.findUnique({
       where: { id },
       include: {
-        sows: { select: { id: true, status: true } },
         bids: { select: { id: true, status: true } },
         assessment: { select: { id: true } },
       },
@@ -36,10 +35,6 @@ export async function GET(
     const completedStages = {
       discovered: true, // Always complete if opportunity exists
       assessed: !!opportunity.assessment,
-      sowCreated: opportunity.sows.length > 0,
-      sowApproved: opportunity.sows.some(
-        (s) => s.status === 'APPROVED' || s.status === 'SENT' || s.status === 'VIEWED' || s.status === 'ACCEPTED'
-      ),
       bidCreated: opportunity.bids.length > 0,
       bidSubmitted: opportunity.bids.some((b) => b.status === 'SUBMITTED' || b.status === 'AWARDED'),
     }

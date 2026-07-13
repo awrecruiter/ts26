@@ -41,15 +41,6 @@ export default function Navigation() {
       ],
     },
     {
-      label: 'SOWs',
-      items: [
-        { label: 'All SOWs', href: '/sows' },
-        { label: 'Pending Approval', href: '/sows?status=PENDING_REVIEW' },
-        { label: 'Approved', href: '/sows?status=APPROVED' },
-        { label: 'Sent', href: '/sows?status=SENT' },
-      ],
-    },
-    {
       label: 'Bids',
       items: [
         { label: 'All Bids', href: '/bids' },

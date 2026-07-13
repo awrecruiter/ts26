@@ -12,7 +12,6 @@ interface WorkspacePanel {
 
 interface WorkspaceProgress {
   bidCreated?: boolean
-  sowCreated?: boolean
   subcontractorsFound?: boolean
   quotesReceived?: boolean
   bidSubmitted?: boolean
@@ -142,7 +141,6 @@ export default function WorkspaceLayout({
   // Calculate progress percentage — denominator drops to 4 for non-admins
   // since they can't reach the Submit stage.
   const progressSteps = progress ? [
-    progress.sowCreated,
     progress.subcontractorsFound,
     progress.quotesReceived,
     progress.bidCreated,
@@ -200,11 +198,10 @@ export default function WorkspaceLayout({
           {/* Progress steps indicator */}
           <div className="px-3 py-2 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto">
-              <ProgressStep n={1} label="SOW" completed={progress.sowCreated} />
-              <ProgressStep n={2} label="Subs" completed={progress.subcontractorsFound} />
-              <ProgressStep n={3} label="Quotes" completed={progress.quotesReceived} />
-              <ProgressStep n={4} label="Bid" completed={progress.bidCreated} />
-              {isAdmin && <ProgressStep n={5} label="Submit" completed={progress.bidSubmitted} />}
+              <ProgressStep n={1} label="Subs" completed={progress.subcontractorsFound} />
+              <ProgressStep n={2} label="Quotes" completed={progress.quotesReceived} />
+              <ProgressStep n={3} label="Bid" completed={progress.bidCreated} />
+              {isAdmin && <ProgressStep n={4} label="Submit" completed={progress.bidSubmitted} />}
             </div>
             {nextAction && (
               <p className="text-xs text-stone-500 flex-shrink-0 hidden sm:block">

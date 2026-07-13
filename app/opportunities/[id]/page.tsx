@@ -8,13 +8,12 @@ import WorkspaceLayout from '@/components/workspace/WorkspaceLayout'
 import OpportunitySummaryPanel from '@/components/workspace/panels/OpportunitySummaryPanel'
 import BidEditorPanel from '@/components/workspace/panels/BidEditorPanel'
 import SubcontractorPanel from '@/components/workspace/panels/SubcontractorPanel'
-import SOWPanel from '@/components/workspace/panels/SOWPanel'
 import EmailDraftPanel from '@/components/workspace/panels/EmailDraftPanel'
 import ScopeOverviewPanel from '@/components/workspace/panels/ScopeOverviewPanel'
 import AgentActivityPanel from '@/components/workspace/panels/AgentActivityPanel'
 import type { RichAttachment } from '@/lib/types/attachment'
+import type { JobDescription, ResourceCategory, ResourceLine, MarginBands } from '@/lib/types/resource-plan'
 import { extractCity, extractStateCode } from '@/lib/opportunity-classification'
-import { buildSowDeliveryEmail } from '@/lib/email-templates'
 
 export default function OpportunityWorkspacePage() {
   const params = useParams()
@@ -27,15 +26,16 @@ export default function OpportunityWorkspacePage() {
   const [activePanel, setActivePanel] = useState('summary')
   const [selectedSubcontractor, setSelectedSubcontractor] = useState<any>(null)
   const [expandedSubcontractorId, setExpandedSubcontractorId] = useState<string | null>(null)
-  const [emailContext, setEmailContext] = useState<{ sowSynopsis?: string }>({})
-  const [emailTemplateType, setEmailTemplateType] = useState<'quote_request' | 'sow_delivery' | 'follow_up' | 'custom'>('quote_request')
-  const [generatingSOW, setGeneratingSOW] = useState(false)
+  const [emailTemplateType, setEmailTemplateType] = useState<'quote_request' | 'follow_up' | 'custom'>('quote_request')
   const [generatingBrief, setGeneratingBrief] = useState(false)
   const [briefError, setBriefError] = useState<string | null>(null)
   const [discoveringSubcontractors, setDiscoveringSubcontractors] = useState(false)
   const [solicitationAttachments, setSolicitationAttachments] = useState<RichAttachment[]>([])
   const [selectedAttachments, setSelectedAttachments] = useState<Set<string>>(new Set())
   const [generatingArtifacts, setGeneratingArtifacts] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [isGeneratingResourcePlan, setIsGeneratingResourcePlan] = useState(false)
+  const [regeneratingJdFor, setRegeneratingJdFor] = useState<string | null>(null)
   const artifactsRequestedRef = useRef(false)
 
   const fetchData = useCallback(async () => {
@@ -170,27 +170,167 @@ export default function OpportunityWorkspacePage() {
     }
   }
 
-  const handleGenerateSOW = async (explicitSelected?: string[]) => {
+  const handleProcessOpportunity = useCallback(async () => {
+    if (!opportunity?.id) return
+    setIsProcessing(true)
     try {
-      setGeneratingSOW(true)
-      // Prefer explicit arg if a caller passes one; otherwise source from the
-      // shared parent-owned Set (Summary checkboxes / Email bundle).
-      const selected = explicitSelected ?? Array.from(selectedAttachments)
-      const res = await fetch('/api/sows', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ opportunityId: opportunity.id, selectedAttachments: selected }),
-      })
-      if (res.ok) {
-        await fetchData()
-        setActivePanel('sow')
+      const res = await fetch(`/api/opportunities/${opportunity.id}/process`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data?.opportunity) {
+        setOpportunity(data.opportunity)
       }
     } catch (err) {
-      console.error('Failed to generate SOW:', err)
+      console.error('Failed to process opportunity:', err)
     } finally {
-      setGeneratingSOW(false)
+      setIsProcessing(false)
     }
-  }
+  }, [opportunity?.id])
+
+  const handleGenerateResourcePlan = useCallback(async () => {
+    if (!opportunity?.id) return
+    setIsGeneratingResourcePlan(true)
+    try {
+      const res = await fetch(`/api/opportunities/${opportunity.id}/resource-plan`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok) {
+        setOpportunity((prev: any) => prev
+          ? { ...prev, resourcePlan: data.resourcePlan, pricingSheet: data.pricingSheet }
+          : prev)
+      }
+    } catch (err) {
+      console.error('Failed to generate resource plan:', err)
+    } finally {
+      setIsGeneratingResourcePlan(false)
+    }
+  }, [opportunity?.id])
+
+  const patchResourcePlan = useCallback(async (patch: {
+    lines?: ResourceLine[]
+    primeCoordinationHours?: number | null
+    bondingRequired?: boolean
+    insuranceMinimums?: string[]
+  }) => {
+    if (!opportunity?.id) return
+    // Optimistic update
+    setOpportunity((prev: any) => prev
+      ? { ...prev, resourcePlan: { ...(prev.resourcePlan || {}), ...patch } }
+      : prev)
+    try {
+      const res = await fetch(`/api/opportunities/${opportunity.id}/resource-plan`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok) {
+        setOpportunity((prev: any) => prev
+          ? { ...prev, resourcePlan: data.resourcePlan, pricingSheet: data.pricingSheet }
+          : prev)
+      }
+    } catch (err) {
+      console.error('Failed to patch resource plan:', err)
+    }
+  }, [opportunity?.id])
+
+  const handleEditResourceLine = useCallback((lineId: string, patch: Partial<ResourceLine>) => {
+    const current = opportunity?.resourcePlan?.lines as ResourceLine[] | undefined
+    if (!current) return
+    const nextLines = current.map(line => line.id === lineId ? { ...line, ...patch } : line)
+    void patchResourcePlan({ lines: nextLines })
+  }, [opportunity?.resourcePlan, patchResourcePlan])
+
+  const handleAddResourceLine = useCallback((category: ResourceCategory) => {
+    const current = (opportunity?.resourcePlan?.lines as ResourceLine[] | undefined) ?? []
+    const id = `line_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
+    const blank: ResourceLine = {
+      id,
+      category,
+      label: 'New line',
+      valueDescription: '',
+      riskLevel: 'medium',
+    }
+    void patchResourcePlan({ lines: [...current, blank] })
+  }, [opportunity?.resourcePlan, patchResourcePlan])
+
+  const handleRemoveResourceLine = useCallback((lineId: string) => {
+    const current = opportunity?.resourcePlan?.lines as ResourceLine[] | undefined
+    if (!current) return
+    void patchResourcePlan({ lines: current.filter(line => line.id !== lineId) })
+  }, [opportunity?.resourcePlan, patchResourcePlan])
+
+  const handleUpdateJobDescription = useCallback((lineId: string, patch: Partial<JobDescription>) => {
+    const current = opportunity?.resourcePlan?.lines as ResourceLine[] | undefined
+    if (!current) return
+    const nextLines = current.map(line => {
+      if (line.id !== lineId) return line
+      const jd = line.jobDescription ?? {
+        roleTitle: line.label,
+        summary: line.valueDescription,
+        responsibilities: [],
+        requiredQualifications: [],
+        placeOfWork: '',
+        compensationBasis: '',
+        reportingLine: 'Reports to Prime Project Manager.',
+        generatedAt: new Date().toISOString(),
+      }
+      return { ...line, jobDescription: { ...jd, ...patch } }
+    })
+    void patchResourcePlan({ lines: nextLines })
+  }, [opportunity?.resourcePlan, patchResourcePlan])
+
+  const handleRegenerateJobDescription = useCallback(async (lineId: string) => {
+    if (!opportunity?.id) return
+    setRegeneratingJdFor(lineId)
+    try {
+      const res = await fetch(
+        `/api/opportunities/${opportunity.id}/resource-plan/lines/${lineId}/job-description`,
+        { method: 'POST' },
+      )
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data?.jobDescription) {
+        handleUpdateJobDescription(lineId, data.jobDescription)
+      }
+    } catch (err) {
+      console.error('Failed to regenerate JD:', err)
+    } finally {
+      setRegeneratingJdFor(null)
+    }
+  }, [opportunity?.id, handleUpdateJobDescription])
+
+  const handleUpdatePricingSheet = useCallback(async (patch: {
+    userOverrideMarginPct?: number | null
+    marginBands?: MarginBands
+  }) => {
+    if (!opportunity?.id) return
+    try {
+      const res = await fetch(`/api/opportunities/${opportunity.id}/pricing-sheet`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data?.pricingSheet) {
+        setOpportunity((prev: any) => prev ? { ...prev, pricingSheet: data.pricingSheet } : prev)
+      }
+    } catch (err) {
+      console.error('Failed to update pricing sheet:', err)
+    }
+  }, [opportunity?.id])
+
+  const handleOpenVendorSearchForLine = useCallback(async (lineId: string) => {
+    if (!opportunity?.id) return
+    setActivePanel('subcontractors')
+    try {
+      await fetch(`/api/opportunities/${opportunity.id}/subcontractors/discover`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resourceLineId: lineId }),
+      })
+      await fetchData()
+    } catch (err) {
+      console.error('Failed to discover for line:', err)
+    }
+  }, [opportunity?.id, fetchData])
 
   // Discover subcontractors for this opportunity
   const handleDiscoverSubcontractors = async () => {
@@ -235,39 +375,6 @@ export default function OpportunityWorkspacePage() {
     await fetchData()
   }
 
-  // Silent save — used for auto-save on blur (no re-render of parent)
-  const handleSaveSOW = async (content: any) => {
-    const sow = opportunity?.sows?.[0]
-    if (!sow) return
-
-    await fetch(`/api/sows/${sow.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
-    })
-  }
-
-  // Save + full refresh
-  const handleSaveSOWAndRefresh = async (content: any) => {
-    await handleSaveSOW(content)
-    await fetchData()
-  }
-
-  const handleSOWStatusChange = async (status: string) => {
-    const sow = opportunity?.sows?.[0]
-    if (!sow) return
-
-    await fetch(`/api/sows/${sow.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    })
-    await fetchData()
-  }
-
-  // Generate SOW synopsis for emails - must be before early returns to maintain hooks order
-  const currentSOW = opportunity?.sows?.[0]
-
   // Extract place of performance for SubcontractorPanel geo-radius UI
   const placeOfPerformanceData = useMemo(() => ({
     city: opportunity?.rawData ? extractCity(opportunity.rawData) : null,
@@ -275,29 +382,6 @@ export default function OpportunityWorkspacePage() {
       ? (extractStateCode(opportunity.rawData) || opportunity?.state || null)
       : (opportunity?.state || null),
   }), [opportunity?.rawData, opportunity?.state])
-
-  const sowSynopsis = useMemo(() => {
-    if (!currentSOW?.content) return undefined
-    const content = currentSOW.content
-    const bullets: string[] = []
-
-    // Extract key info from SOW content
-    if (content.opportunity?.title) {
-      bullets.push(`Project: ${content.opportunity.title}`)
-    }
-    if (content.scope?.overview) {
-      bullets.push(`Scope: ${content.scope.overview.substring(0, 150)}${content.scope.overview.length > 150 ? '...' : ''}`)
-    }
-    if (content.deliverables && Array.isArray(content.deliverables)) {
-      const deliverableList = content.deliverables.slice(0, 3).map((d: any) => d.title || d).join(', ')
-      bullets.push(`Key deliverables: ${deliverableList}`)
-    }
-    if (content.period_of_performance) {
-      bullets.push(`Timeline: ${content.period_of_performance}`)
-    }
-
-    return bullets.length > 0 ? bullets.join('\n• ') : undefined
-  }, [currentSOW])
 
   if (loading) {
     return (
@@ -332,12 +416,11 @@ export default function OpportunityWorkspacePage() {
   const hasSubcontractors = (opportunity.subcontractors?.length || 0) > 0
   const hasQuotedSubcontractors = opportunity.subcontractors?.some((s: any) => s.quotedAmount != null)
 
-  // Workflow order: SOW → Subcontractors → Bid (bid is LAST)
+  // Workflow order: Subcontractors → Bid → Review & Submit
   const getWorkflowState = () => {
-    if (!currentSOW) return { step: 1, action: 'Generate SOW', panel: 'sow' as const }
-    if (!hasSubcontractors) return { step: 2, action: 'Find Subcontractors', panel: 'subcontractors' as const }
-    if (!currentBid) return { step: 3, action: 'Create Bid', panel: 'bid' as const }
-    return { step: 4, action: 'Review & Submit', panel: 'bid' as const }
+    if (!hasSubcontractors) return { step: 1, action: 'Find Subcontractors', panel: 'subcontractors' as const }
+    if (!currentBid) return { step: 2, action: 'Create Bid', panel: 'bid' as const }
+    return { step: 3, action: 'Review & Submit', panel: 'bid' as const }
   }
   const workflowState = getWorkflowState()
 
@@ -345,17 +428,15 @@ export default function OpportunityWorkspacePage() {
   const handleProceed = async () => {
     const state = getWorkflowState()
     if (state.step === 1) {
-      await handleGenerateSOW()
-    } else if (state.step === 2) {
       await handleDiscoverSubcontractors()
-    } else if (state.step === 3) {
+    } else if (state.step === 2) {
       await handleCreateBid()
     } else {
       setActivePanel('bid')
     }
   }
 
-  // Determine next action (Workflow: SOW → Subs → Bid)
+  // Determine next action (Workflow: Subs → Bid → Submit)
   let nextAction = workflowState.action
   if (currentBid?.status === 'DRAFT') {
     nextAction = 'Review bid'
@@ -363,9 +444,8 @@ export default function OpportunityWorkspacePage() {
     nextAction = 'Submit bid'
   }
 
-  // Progress tracking (workflow order: SOW → Subs → Bid)
+  // Progress tracking (workflow order: Subs → Bid → Submit)
   const progress = {
-    sowCreated: !!currentSOW,
     subcontractorsFound: hasSubcontractors,
     quotesReceived: hasQuotedSubcontractors,
     bidCreated: !!currentBid,
@@ -387,11 +467,8 @@ export default function OpportunityWorkspacePage() {
           opportunity={opportunity}
           assessment={assessment}
           hasBid={!!currentBid}
-          hasSOW={!!currentSOW}
           hasSubcontractors={hasSubcontractors}
           onCreateBid={handleCreateBid}
-          onGenerateSOW={handleGenerateSOW}
-          isGeneratingSOW={generatingSOW}
           onFindSubcontractors={handleDiscoverSubcontractors}
           onProceed={handleProceed}
           nextStep={workflowState.action}
@@ -401,6 +478,20 @@ export default function OpportunityWorkspacePage() {
           briefError={briefError}
           selectedAttachments={selectedAttachments}
           onToggleAttachment={handleToggleAttachment}
+          resourcePlan={opportunity?.resourcePlan ?? null}
+          pricingSheet={opportunity?.pricingSheet ?? null}
+          isProcessing={isProcessing}
+          onProcessOpportunity={handleProcessOpportunity}
+          isGeneratingResourcePlan={isGeneratingResourcePlan}
+          onGenerateResourcePlan={handleGenerateResourcePlan}
+          onEditResourceLine={handleEditResourceLine}
+          onAddResourceLine={handleAddResourceLine}
+          onRemoveResourceLine={handleRemoveResourceLine}
+          onOpenVendorSearchForLine={handleOpenVendorSearchForLine}
+          onUpdateJobDescription={handleUpdateJobDescription}
+          onRegenerateJobDescription={handleRegenerateJobDescription}
+          regeneratingJdFor={regeneratingJdFor}
+          onUpdatePricingSheet={handleUpdatePricingSheet}
         />
       ),
     },
@@ -418,26 +509,6 @@ export default function OpportunityWorkspacePage() {
           assessment={assessment}
           brief={opportunity?.aiArtifacts?.brief ?? opportunity?.opportunityBrief ?? null}
           aiScope={opportunity?.aiArtifacts?.scopeOverview ?? null}
-        />
-      ),
-    },
-    {
-      id: 'sow',
-      label: 'SOW',
-      icon: (
-        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-        </svg>
-      ),
-      content: (
-        <SOWPanel
-          sow={currentSOW}
-          opportunity={{ ...opportunity, attachments: solicitationAttachments }}
-          onGenerate={handleGenerateSOW}
-          isGenerating={generatingSOW}
-          onSave={handleSaveSOW}
-          onSaveAndRefresh={handleSaveSOWAndRefresh}
-          onStatusChange={handleSOWStatusChange}
         />
       ),
     },
@@ -469,67 +540,8 @@ export default function OpportunityWorkspacePage() {
           }}
           onSendDetails={(sub) => {
             setSelectedSubcontractor(sub)
-            setEmailTemplateType('sow_delivery')
+            setEmailTemplateType('follow_up')
             setActivePanel('email')
-          }}
-          onSendSowDirect={async (sub, email) => {
-            if (!email) return { success: false, error: 'Vendor has no email saved' }
-            if (!currentSOW?.id) return { success: false, error: 'No SOW available to attach' }
-
-            const { subject, body } = buildSowDeliveryEmail({
-              vendorName: sub.contactName || sub.name,
-              opportunityTitle: opportunity.title,
-              solicitationNumber: opportunity.solicitationNumber,
-              agency: opportunity.agency,
-              quoteDeadline:
-                (currentSOW?.content as any)?.opportunity?.quoteDeadline || null,
-              brief:
-                opportunity.aiArtifacts?.brief ??
-                opportunity.opportunityBrief ??
-                null,
-              callChecklist: opportunity.aiArtifacts?.callChecklist,
-            })
-
-            try {
-              const res = await fetch('/api/email/send', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  to: email,
-                  subject,
-                  body,
-                  opportunityId: opportunity.id,
-                  subcontractorId: sub.id,
-                  sowId: currentSOW.id,
-                  attachmentIds: [],
-                }),
-              })
-              const data = await res.json().catch(() => ({}))
-              if (!res.ok || !data.success) {
-                return { success: false, error: data.error || `Send failed (${res.status})` }
-              }
-              // Send is the single trigger: stamp sowSentAt AND callCompleted
-              // so the vendor moves below the Pending divider immediately.
-              const nowIso = new Date().toISOString()
-              setOpportunity((prev: any) => prev ? {
-                ...prev,
-                subcontractors: prev.subcontractors?.map((s: any) =>
-                  s.id === sub.id
-                    ? { ...s, sowSentAt: nowIso, callCompleted: true, callCompletedAt: nowIso }
-                    : s
-                ),
-              } : prev)
-              // Persist callCompleted in the background (sowSentAt was stamped
-              // by /api/email/send already). Fire and forget — UI is optimistic.
-              fetch(`/api/opportunities/${opportunity.id}/subcontractors/${sub.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ callCompleted: true }),
-              }).catch(() => {})
-              return { success: true }
-            } catch (e) {
-              return { success: false, error: e instanceof Error ? e.message : 'Network error' }
-            }
           }}
           onSubPatchOptimistic={(subId, patch) => {
             setOpportunity((prev: any) => prev ? {
@@ -604,21 +616,18 @@ export default function OpportunityWorkspacePage() {
           opportunityTitle={opportunity.title}
           solicitationNumber={opportunity.solicitationNumber}
           bidAmount={currentBid?.recommendedPrice}
-          sowSynopsis={sowSynopsis}
           deadline={deadline}
           agency={opportunity.agency}
           templateType={emailTemplateType}
           availableAttachments={solicitationAttachments}
-          sowFileName={currentSOW?.fileName}
-          sowId={currentSOW?.id}
           opportunityId={opportunity.id}
           selectedAttachmentIds={selectedAttachments}
           onSelectionChange={handleSetAttachmentSelection}
           brief={opportunity?.aiArtifacts?.brief ?? opportunity?.opportunityBrief ?? null}
           attachmentRelevance={opportunity?.aiArtifacts?.attachmentRelevance ?? null}
           callChecklist={opportunity?.aiArtifacts?.callChecklist ?? undefined}
-          quoteDeadline={currentSOW?.content?.opportunity?.quoteDeadline ?? null}
-          onSend={async ({ to, subject, body, attachmentIds, sowId }) => {
+          quoteDeadline={null}
+          onSend={async ({ to, subject, body, attachmentIds }) => {
             try {
               const res = await fetch('/api/email/send', {
                 method: 'POST',
@@ -628,7 +637,6 @@ export default function OpportunityWorkspacePage() {
                   subject,
                   body,
                   attachmentIds,
-                  sowId,
                   opportunityId: opportunity.id,
                   subcontractorId: selectedSubcontractor?.id,
                 }),
@@ -740,12 +748,8 @@ export default function OpportunityWorkspacePage() {
           opportunity={opportunity}
           assessment={assessment}
           currentBid={currentBid}
-          currentSOW={currentSOW}
           hasSubcontractors={hasSubcontractors}
-          generatingSOW={generatingSOW}
           discoveringSubcontractors={discoveringSubcontractors}
-          onGenerateSOW={handleGenerateSOW}
-          onSeeSOW={() => setActivePanel('sow')}
           onFindSubcontractors={handleDiscoverSubcontractors}
           onSeeSubcontractors={() => setActivePanel('subcontractors')}
           onCreateBid={handleCreateBid}
@@ -762,12 +766,8 @@ function OpportunitySidebar({
   opportunity,
   assessment,
   currentBid,
-  currentSOW,
   hasSubcontractors,
-  generatingSOW,
   discoveringSubcontractors,
-  onGenerateSOW,
-  onSeeSOW,
   onFindSubcontractors,
   onSeeSubcontractors,
   onCreateBid,
@@ -776,12 +776,8 @@ function OpportunitySidebar({
   opportunity: any
   assessment: any
   currentBid: any
-  currentSOW: any
   hasSubcontractors: boolean
-  generatingSOW: boolean
   discoveringSubcontractors: boolean
-  onGenerateSOW: () => void
-  onSeeSOW: () => void
   onFindSubcontractors: () => void
   onSeeSubcontractors: () => void
   onCreateBid: () => void
@@ -805,24 +801,6 @@ function OpportunitySidebar({
       {/* Workflow quick actions */}
       <div className="space-y-2">
         <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Actions</p>
-        {currentSOW ? (
-          <button onClick={onSeeSOW} className="w-full text-left px-3 py-2 text-xs font-medium text-stone-700 bg-stone-50 border border-stone-200 rounded hover:bg-stone-100 flex items-center gap-2 transition-colors">
-            <span className="w-2 h-2 rounded-full bg-stone-500 flex-shrink-0" />
-            View SOW
-          </button>
-        ) : (
-          <button onClick={() => onGenerateSOW()} disabled={generatingSOW} className="w-full text-left px-3 py-2 text-xs font-medium text-stone-700 bg-stone-50 border border-stone-200 rounded hover:bg-stone-100 flex items-center gap-2 transition-colors disabled:opacity-50">
-            {generatingSOW ? (
-              <svg className="animate-spin w-2 h-2 flex-shrink-0" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            ) : (
-              <span className="w-2 h-2 rounded-full bg-stone-300 flex-shrink-0" />
-            )}
-            {generatingSOW ? 'Generating SOW…' : 'Generate SOW'}
-          </button>
-        )}
         {hasSubcontractors ? (
           <button onClick={onSeeSubcontractors} className="w-full text-left px-3 py-2 text-xs font-medium text-stone-700 bg-stone-50 border border-stone-200 rounded hover:bg-stone-100 flex items-center gap-2 transition-colors">
             <span className="w-2 h-2 rounded-full bg-stone-500 flex-shrink-0" />
@@ -840,7 +818,7 @@ function OpportunitySidebar({
             View Bid — ${currentBid.recommendedPrice?.toLocaleString()}
           </button>
         ) : (
-          <button onClick={onCreateBid} disabled={!currentSOW || !hasSubcontractors} className="w-full text-left px-3 py-2 text-xs font-medium text-stone-400 bg-stone-50 border border-stone-100 rounded flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" title={!currentSOW ? 'Generate SOW first' : 'Find subcontractors first'}>
+          <button onClick={onCreateBid} disabled={!hasSubcontractors} className="w-full text-left px-3 py-2 text-xs font-medium text-stone-400 bg-stone-50 border border-stone-100 rounded flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" title="Find subcontractors first">
             <span className="w-2 h-2 rounded-full bg-stone-200 flex-shrink-0" />
             Create Bid
           </button>

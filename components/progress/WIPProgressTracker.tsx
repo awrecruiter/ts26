@@ -27,8 +27,6 @@ interface NextAction {
 interface CompletedStages {
   discovered?: boolean
   assessed?: boolean
-  sowCreated?: boolean
-  sowApproved?: boolean
   bidCreated?: boolean
   bidSubmitted?: boolean
 }
@@ -53,8 +51,8 @@ interface WIPProgressTrackerProps {
 const STAGE_COMPLETION_MAP: Record<Stage, keyof CompletedStages | null> = {
   DISCOVERY: 'discovered',
   ASSESSMENT: 'assessed',
-  SOW_CREATION: 'sowCreated',
-  SOW_REVIEW: 'sowApproved',
+  SOW_CREATION: null,
+  SOW_REVIEW: null,
   BID_ASSEMBLY: 'bidCreated',
   READY: 'bidCreated',
   SUBMITTED: 'bidSubmitted',

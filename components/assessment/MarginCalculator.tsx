@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import type { PricingSheet } from '@/lib/types/resource-plan'
 
 interface HistoricalContract {
   award_id: string
@@ -37,6 +38,8 @@ interface MarginCalculatorProps {
   opportunityValue?: number | null
   /** Source label shown beneath the pre-seeded value */
   opportunityValueSource?: string
+  /** When present, seeds cost from costBasisTotal and value from recommendedBidPrice — existingAssessment still wins */
+  pricingSheet?: PricingSheet | null
   onSave: (assessment: Assessment) => Promise<void>
 }
 
@@ -87,18 +90,27 @@ export default function MarginCalculator({
   existingAssessment,
   opportunityValue,
   opportunityValueSource,
+  pricingSheet,
   onSave,
 }: MarginCalculatorProps) {
+  const pricingBidPrice =
+    pricingSheet && pricingSheet.recommendedBidPrice > 0 ? pricingSheet.recommendedBidPrice : null
+  const pricingCostBasis =
+    pricingSheet && pricingSheet.costBasisTotal > 0 ? pricingSheet.costBasisTotal : null
+
   const seedValue =
     existingAssessment?.estimatedValue?.toString() ||
+    (pricingBidPrice ? pricingBidPrice.toString() : '') ||
     (opportunityValue && opportunityValue > 0 ? opportunityValue.toString() : '')
 
-  const [estimatedValue, setEstimatedValue] = useState<string>(seedValue)
-  const [estimatedCost, setEstimatedCost] = useState<string>(
-    existingAssessment?.estimatedCost && existingAssessment.estimatedCost > 0
+  const seedCost =
+    (existingAssessment?.estimatedCost && existingAssessment.estimatedCost > 0
       ? existingAssessment.estimatedCost.toString()
-      : ''
-  )
+      : '') ||
+    (pricingCostBasis ? pricingCostBasis.toString() : '')
+
+  const [estimatedValue, setEstimatedValue] = useState<string>(seedValue)
+  const [estimatedCost, setEstimatedCost] = useState<string>(seedCost)
   const [strategicValue, setStrategicValue] = useState<string>(
     existingAssessment?.strategicValue || 'MEDIUM'
   )
@@ -147,17 +159,26 @@ export default function MarginCalculator({
 
   const rec = recommendationStyle[marginTier]
 
+  const valueFromPricing =
+    !existingAssessment?.estimatedValue &&
+    pricingBidPrice !== null &&
+    estimatedValue === pricingBidPrice.toString()
+
+  const costFromPricing =
+    !(existingAssessment?.estimatedCost && existingAssessment.estimatedCost > 0) &&
+    pricingCostBasis !== null &&
+    estimatedCost === pricingCostBasis.toString()
+
   const valueWasSeeded =
     !existingAssessment?.estimatedValue &&
+    !valueFromPricing &&
     !!opportunityValue &&
     opportunityValue > 0 &&
     estimatedValue === opportunityValue.toString()
 
   const isDirty =
     estimatedValue !== seedValue ||
-    estimatedCost !== (existingAssessment?.estimatedCost && existingAssessment.estimatedCost > 0
-      ? existingAssessment.estimatedCost.toString()
-      : '') ||
+    estimatedCost !== seedCost ||
     strategicValue !== (existingAssessment?.strategicValue || 'MEDIUM') ||
     riskLevel !== (existingAssessment?.riskLevel || 'MEDIUM') ||
     notes !== (existingAssessment?.notes || '')
@@ -231,7 +252,11 @@ export default function MarginCalculator({
                 className="w-full pl-7 pr-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-transparent"
               />
             </div>
-            {valueWasSeeded ? (
+            {valueFromPricing ? (
+              <p className="text-[10px] text-stone-500 mt-1">
+                Based on Resource Plan — confirm or adjust
+              </p>
+            ) : valueWasSeeded ? (
               <p className="text-[10px] text-stone-500 mt-1">
                 Pre-filled from {opportunityValueSource || 'SAM.gov'} — confirm or adjust
               </p>
@@ -256,7 +281,13 @@ export default function MarginCalculator({
                 className="w-full pl-7 pr-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-stone-400 focus:border-transparent"
               />
             </div>
-            <p className="text-[10px] text-stone-400 mt-1">Labor + materials + subs + overhead</p>
+            {costFromPricing ? (
+              <p className="text-[10px] text-stone-500 mt-1">
+                Based on Resource Plan — confirm or adjust
+              </p>
+            ) : (
+              <p className="text-[10px] text-stone-400 mt-1">Labor + materials + subs + overhead</p>
+            )}
           </div>
         </div>
 

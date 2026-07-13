@@ -139,6 +139,8 @@ model Opportunity {
   opportunityBrief   Json? // [Legacy] Cached AI-generated opportunity brief (OpportunityBrief) — superseded by aiArtifacts.brief
   agentBriefing      Json? // [Legacy] Cached AI-generated agent briefing (AgentBriefing) — superseded by aiArtifacts.agentBriefing
   aiArtifacts        Json? // Unified AI artifacts blob: { brief, callChecklist, scopeOverview, agentBriefing, generatedAt, partial }
+  resourcePlan       Json? // AI-decomposed team plan: roles, trades, materials, equipment, prime overhead — with per-professional JDs
+  pricingSheet       Json? // Derived from resourcePlan: cost basis, risk score, target margin, recommended bid (see lib/pricing.ts)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -358,6 +360,10 @@ model Subcontractor {
   naicsCode  String?
   source     String?  // 'sam_gov', 'google_places', 'manual'
   distanceKm Float?   // straight-line km from place of performance (null = unknown)
+
+  // Resource plan link: which line of the AI-generated resource plan this
+  // vendor was discovered / assigned for. Null for legacy or manually added.
+  resourceLineId String?
 
   // Vendor Workflow
   callCompleted   Boolean   @default(false)
