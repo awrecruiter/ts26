@@ -819,15 +819,10 @@ function OpportunitySidebar({
       {/* Workflow quick actions */}
       <div className="space-y-2">
         <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider">Actions</p>
-        {hasSubcontractors ? (
+        {hasSubcontractors && (
           <button onClick={onSeeSubcontractors} className="w-full text-left px-3 py-2 text-xs font-medium text-stone-700 bg-stone-50 border border-stone-200 rounded hover:bg-stone-100 flex items-center gap-2 transition-colors">
             <span className="w-2 h-2 rounded-full bg-stone-500 flex-shrink-0" />
             View Subcontractors
-          </button>
-        ) : (
-          <button onClick={onFindSubcontractors} disabled={discoveringSubcontractors} className="w-full text-left px-3 py-2 text-xs font-medium text-stone-700 bg-stone-50 border border-stone-200 rounded hover:bg-stone-100 flex items-center gap-2 transition-colors disabled:opacity-50">
-            <span className="w-2 h-2 rounded-full bg-stone-300 flex-shrink-0" />
-            {discoveringSubcontractors ? 'Finding subs…' : 'Find Subcontractors'}
           </button>
         )}
         {currentBid ? (
