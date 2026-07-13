@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
+  ContractType,
   JobDescription,
   ResourceCategory,
   ResourceLine,
@@ -20,12 +21,21 @@ interface ResourcePlanCardProps {
   onUpdateJobDescription: (lineId: string, patch: Partial<JobDescription>) => void
   onRegenerateJobDescription: (lineId: string) => void
   regeneratingJdFor?: string | null
+  contractType?: ContractType
 }
 
-const CATEGORY_ORDER: ResourceCategory[] = [
+const SERVICES_CATEGORY_ORDER: ResourceCategory[] = [
   'professional',
   'subcontracted_trade',
   'material',
+  'equipment',
+  'prime_overhead',
+]
+
+const PRODUCT_CATEGORY_ORDER: ResourceCategory[] = [
+  'product',
+  'logistics_shipping',
+  'warranty_support',
   'prime_overhead',
 ]
 
@@ -35,6 +45,9 @@ const CATEGORY_LABELS: Record<ResourceCategory, string> = {
   material: 'Materials & Equipment',
   equipment: 'Materials & Equipment',
   prime_overhead: 'Prime Overhead',
+  product: 'Products',
+  logistics_shipping: 'Logistics & Shipping',
+  warranty_support: 'Warranty & Support',
 }
 
 const CATEGORY_SHORT: Record<ResourceCategory, string> = {
@@ -43,6 +56,9 @@ const CATEGORY_SHORT: Record<ResourceCategory, string> = {
   material: 'materials',
   equipment: 'materials',
   prime_overhead: 'overhead',
+  product: 'products',
+  logistics_shipping: 'logistics',
+  warranty_support: 'warranty',
 }
 
 const RISK_ORDER: RiskLevel[] = ['low', 'medium', 'high']
@@ -95,6 +111,31 @@ function CategoryIcon({ category }: { category: ResourceCategory }) {
         <svg className={base} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
           <circle cx="12" cy="12" r="8" />
           <path d="M12 8v4l2.5 2.5" />
+        </svg>
+      )
+    case 'product':
+      return (
+        <svg className={base} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M3 7h8v6H3z" />
+          <path d="M13 11h8v6h-8z" />
+          <path d="M7 13v4" />
+          <path d="M17 7v4" />
+        </svg>
+      )
+    case 'logistics_shipping':
+      return (
+        <svg className={base} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M3 7h11v9H3z" />
+          <path d="M14 10h4l3 3v3h-7z" />
+          <circle cx="7" cy="18" r="1.5" />
+          <circle cx="17" cy="18" r="1.5" />
+        </svg>
+      )
+    case 'warranty_support':
+      return (
+        <svg className={base} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3z" />
+          <path d="M9 12l2 2 4-4" />
         </svg>
       )
   }
@@ -805,6 +846,7 @@ export default function ResourcePlanCard({
   onUpdateJobDescription,
   onRegenerateJobDescription,
   regeneratingJdFor = null,
+  contractType = 'SERVICES',
 }: ResourcePlanCardProps) {
   const grouped = useMemo(() => {
     const map: Record<ResourceCategory, ResourceLine[]> = {
@@ -813,6 +855,9 @@ export default function ResourcePlanCard({
       material: [],
       equipment: [],
       prime_overhead: [],
+      product: [],
+      logistics_shipping: [],
+      warranty_support: [],
     }
     if (!plan) return map
     for (const line of plan.lines) {
@@ -823,6 +868,8 @@ export default function ResourcePlanCard({
     return map
   }, [plan])
 
+  const categoryOrder = contractType === 'PRODUCT' ? PRODUCT_CATEGORY_ORDER : SERVICES_CATEGORY_ORDER
+
   // For "Materials & Equipment" merged section
   const materialsMerged = useMemo(
     () => [...grouped.material, ...grouped.equipment],
@@ -831,7 +878,18 @@ export default function ResourcePlanCard({
 
   const totals = useMemo(() => {
     if (!plan) {
-      return { total: 0, byCat: { professional: 0, trades: 0, materials: 0, overhead: 0 } }
+      return {
+        total: 0,
+        byCat: {
+          professional: 0,
+          trades: 0,
+          materials: 0,
+          overhead: 0,
+          products: 0,
+          logistics: 0,
+          warranty: 0,
+        },
+      }
     }
     return {
       total: plan.lines.length,
@@ -840,6 +898,9 @@ export default function ResourcePlanCard({
         trades: grouped.subcontracted_trade.length,
         materials: materialsMerged.length,
         overhead: grouped.prime_overhead.length,
+        products: grouped.product.length,
+        logistics: grouped.logistics_shipping.length,
+        warranty: grouped.warranty_support.length,
       },
     }
   }, [plan, grouped, materialsMerged])
@@ -942,20 +1003,35 @@ export default function ResourcePlanCard({
       </div>
 
       <div className="space-y-4">
-        {CATEGORY_ORDER.map((cat) => {
+        {categoryOrder.map((cat) => {
           if (cat === 'material') {
+            if (materialsMerged.length === 0) return null
             return renderSection('materials', CATEGORY_LABELS.material, 'material', materialsMerged)
           }
-          return renderSection(cat, CATEGORY_LABELS[cat], cat, grouped[cat])
+          if (cat === 'equipment') return null
+          const lines = grouped[cat]
+          if (lines.length === 0) return null
+          return renderSection(cat, CATEGORY_LABELS[cat], cat, lines)
         })}
       </div>
 
       <div className="mt-5 pt-3 border-t border-stone-100 text-xs text-stone-500">
-        {totals.total} {totals.total === 1 ? 'line' : 'lines'} ·{' '}
-        {totals.byCat.professional} {CATEGORY_SHORT.professional} ·{' '}
-        {totals.byCat.trades} {CATEGORY_SHORT.subcontracted_trade} ·{' '}
-        {totals.byCat.materials} {CATEGORY_SHORT.material} ·{' '}
-        {totals.byCat.overhead} {CATEGORY_SHORT.prime_overhead}
+        {totals.total} {totals.total === 1 ? 'line' : 'lines'}
+        {contractType === 'PRODUCT' ? (
+          <>
+            {' '}·{' '}{totals.byCat.products} {CATEGORY_SHORT.product} ·{' '}
+            {totals.byCat.logistics} {CATEGORY_SHORT.logistics_shipping} ·{' '}
+            {totals.byCat.warranty} {CATEGORY_SHORT.warranty_support} ·{' '}
+            {totals.byCat.overhead} {CATEGORY_SHORT.prime_overhead}
+          </>
+        ) : (
+          <>
+            {' '}·{' '}{totals.byCat.professional} {CATEGORY_SHORT.professional} ·{' '}
+            {totals.byCat.trades} {CATEGORY_SHORT.subcontracted_trade} ·{' '}
+            {totals.byCat.materials} {CATEGORY_SHORT.material} ·{' '}
+            {totals.byCat.overhead} {CATEGORY_SHORT.prime_overhead}
+          </>
+        )}
       </div>
     </div>
   )

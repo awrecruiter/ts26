@@ -8,6 +8,7 @@ import type {
   ResourcePlan,
   PricingSheet,
   MarginBands,
+  ContractType,
 } from '@/lib/types/resource-plan'
 import { DEFAULT_MARGIN_BANDS } from '@/lib/types/resource-plan'
 import type { OpportunityArtifacts } from '@/lib/openai'
@@ -61,6 +62,7 @@ export async function POST(
         parsedAttachments: true,
         opportunityBrief: true,
         aiArtifacts: true,
+        contractType: true,
       },
     })
 
@@ -92,6 +94,7 @@ export async function POST(
       title: opportunity.title,
       agency: opportunity.agency || 'Unknown Agency',
       solicitationNumber: opportunity.solicitationNumber,
+      contractType: (opportunity.contractType as ContractType) || 'SERVICES',
       naicsCode: opportunity.naicsCode,
       setAside,
       description: opportunity.description,

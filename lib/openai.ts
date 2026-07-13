@@ -935,13 +935,17 @@ export async function generateOpportunityArtifacts(
 import type {
   ResourcePlan,
   ResourceLine,
+  ResourceCategory,
+  ContractType,
   JobDescription,
 } from '@/lib/types/resource-plan'
+import { SERVICES_CATEGORIES, PRODUCT_CATEGORIES } from '@/lib/types/resource-plan'
 
 export interface ResourcePlanInput {
   title: string
   agency: string
   solicitationNumber: string
+  contractType: ContractType
   naicsCode?: string | null
   setAside?: string | null
   description?: string | null
@@ -978,6 +982,7 @@ export async function generateResourcePlan(input: ResourcePlanInput): Promise<Re
     title,
     agency,
     solicitationNumber,
+    contractType,
     naicsCode,
     setAside,
     description,
@@ -1030,26 +1035,50 @@ export async function generateResourcePlan(input: ResourcePlanInput): Promise<Re
 - Heads-up flags: ${(brief.headsUp || []).map(h => `${h.type}: ${h.message}`).join(' | ') || 'none'}`
     : ''
 
-  const prompt = `You are decomposing a federal contract into every role, business, material, and prime-side overhead line a small business prime would need to orchestrate execution. For each line, describe its value to the operation in one sentence, choose a risk level (low|medium|high) with a one-line rationale, and (for professional/subcontracted_trade lines) give 1–3 Google search queries that would surface qualified vendors. For every \`professional\` line, also produce a complete Job Description.
+  const categoriesBlock =
+    contractType === 'PRODUCT'
+      ? `CATEGORIES (use these exact strings — this is a product/supply procurement):
+- "product" — the goods being procured (line per SKU family or bundle)
+- "logistics_shipping" — freight, delivery, packaging, HAZMAT handling
+- "warranty_support" — extended warranty, replacement parts stock, post-delivery obligations
+- "prime_overhead" — procurement PM time, cash-flow for advance orders, freight insurance
 
-OPPORTUNITY CONTEXT:
-${contextBlock}${briefBlock}${parsedBlock}
-
-CATEGORIES (use these exact strings):
+DO NOT emit "professional", "subcontracted_trade", "material", or "equipment" for product procurements.
+Vendor search queries on product lines MUST target distributors, wholesalers, or manufacturers — not local service businesses.
+Do NOT produce Job Descriptions on any line (product procurements don't hire individuals).`
+      : `CATEGORIES (use these exact strings):
 - "professional" — an individual role the prime would hire or contract-to-hire (e.g. HVAC technician, project manager, cybersecurity analyst). MUST include a full Job Description.
 - "subcontracted_trade" — a whole business the prime would sub work to (e.g. an HVAC company, a landscaping firm, a moving company). NO Job Description.
 - "material" — consumables, supplies, parts. NO Job Description.
 - "equipment" — rental or purchase of gear. NO Job Description.
-- "prime_overhead" — bonding, insurance, PM time, mobilization, coordination overhead the prime absorbs. NO Job Description.
+- "prime_overhead" — bonding, insurance, PM time, mobilization, coordination overhead the prime absorbs. NO Job Description.`
 
-HARD RULES (non-negotiable):
+  const hardRulesBlock =
+    contractType === 'PRODUCT'
+      ? `HARD RULES (non-negotiable):
+- Always include at least one \`prime_overhead\` line for the prime's own procurement/PM time.
+- Always include a \`prime_overhead\` line for freight insurance and cash-flow float on advance orders.
+- Always include a \`prime_overhead\` line for performance bonding if bonding_required is true (based on brief.headsUp or estimated value >$150K).
+- Never populate \`jobDescription\` on any line — product procurements do not hire individuals.
+- Cap total lines at 20. Consolidate if more.
+- Every line needs a stable id — generate with \`crypto.randomUUID()\`-style short ids (or the model can emit \`line_1\`, \`line_2\` — the client will keep them stable).`
+      : `HARD RULES (non-negotiable):
 - Always include at least one \`prime_overhead\` line for the prime's own coordination/PM time.
 - Always include a \`prime_overhead\` line for performance bonding if bonding_required is true (based on brief.headsUp or estimated value >$150K).
 - Always include a \`prime_overhead\` line for general liability + auto insurance.
 - Never populate \`jobDescription\` on non-professional lines.
 - Every \`professional\` line must have a fully-populated \`jobDescription\`.
 - Cap total lines at 20. Consolidate if more.
-- Every line needs a stable id — generate with \`crypto.randomUUID()\`-style short ids (or the model can emit \`line_1\`, \`line_2\` — the client will keep them stable).
+- Every line needs a stable id — generate with \`crypto.randomUUID()\`-style short ids (or the model can emit \`line_1\`, \`line_2\` — the client will keep them stable).`
+
+  const prompt = `You are decomposing a federal contract into every role, business, material, and prime-side overhead line a small business prime would need to orchestrate execution. For each line, describe its value to the operation in one sentence, choose a risk level (low|medium|high) with a one-line rationale, and (for professional/subcontracted_trade lines) give 1–3 Google search queries that would surface qualified vendors. For every \`professional\` line, also produce a complete Job Description.
+
+OPPORTUNITY CONTEXT:
+${contextBlock}${briefBlock}${parsedBlock}
+
+${categoriesBlock}
+
+${hardRulesBlock}
 
 JOB DESCRIPTION SHAPE (populate every field on every professional line):
 - roleTitle: specific job title including required credential (e.g. "HVAC Technician, EPA 608 Certified")
@@ -1129,6 +1158,30 @@ Return ONLY valid JSON. No markdown, no explanation.`
     if (!Array.isArray(parsed.lines)) {
       throw new Error(`Invalid resource plan: lines is not an array`)
     }
+
+    const disallowed: ResourceCategory[] =
+      contractType === 'PRODUCT'
+        ? SERVICES_CATEGORIES.filter((c) => c !== 'prime_overhead')
+        : PRODUCT_CATEGORIES.filter((c) => c !== 'prime_overhead')
+
+    const rawLines = parsed.lines as ResourceLine[]
+    const filteredLines: ResourceLine[] = []
+    for (const line of rawLines) {
+      if (disallowed.includes(line.category)) {
+        console.warn(
+          `[ResourcePlan] Dropping ${contractType} plan line with cross-type category "${line.category}" — label: "${line.label}"`
+        )
+        continue
+      }
+      if (contractType === 'PRODUCT' && line.jobDescription) {
+        console.warn(
+          `[ResourcePlan] Stripping jobDescription from PRODUCT plan line — label: "${line.label}"`
+        )
+        line.jobDescription = null
+      }
+      filteredLines.push(line)
+    }
+    parsed.lines = filteredLines
 
     for (const line of parsed.lines as ResourceLine[]) {
       if (line.category === 'professional') {

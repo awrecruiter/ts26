@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { format, differenceInDays } from 'date-fns'
 import type { RichAttachment } from '@/lib/types/attachment'
 import type { OpportunityBrief } from '@/lib/openai'
 import type {
+  ContractType,
   JobDescription,
   MarginBands,
   ResourceCategory,
@@ -151,6 +152,10 @@ interface OpportunitySummaryPanelProps {
   onRegenerateJobDescription?: (lineId: string) => void
   regeneratingJdFor?: string | null
   onUpdatePricingSheet?: (patch: { userOverrideMarginPct?: number | null; marginBands?: MarginBands }) => void
+  contractType?: ContractType
+  contractTypeSource?: string | null
+  contractTypeOverride?: boolean
+  onUpdateContractType?: (nextType: ContractType) => void
 }
 
 export default function OpportunitySummaryPanel({
@@ -185,6 +190,10 @@ export default function OpportunitySummaryPanel({
   onRegenerateJobDescription,
   regeneratingJdFor = null,
   onUpdatePricingSheet,
+  contractType = 'SERVICES',
+  contractTypeSource = null,
+  contractTypeOverride = false,
+  onUpdateContractType,
 }: OpportunitySummaryPanelProps) {
   const [attachments, setAttachments] = useState<RichAttachment[]>([])
   const [loadingAttachments, setLoadingAttachments] = useState(false)
@@ -456,6 +465,14 @@ export default function OpportunitySummaryPanel({
       {/* RESOURCE PLAN + PRICING SHEET */}
       <div className="p-6 bg-stone-50 border-b border-stone-200">
         <div className="max-w-4xl mx-auto space-y-4">
+          <div className="flex justify-end">
+            <ContractTypePill
+              contractType={contractType}
+              contractTypeSource={contractTypeSource}
+              contractTypeOverride={contractTypeOverride}
+              onUpdate={onUpdateContractType}
+            />
+          </div>
           <ResourcePlanCard
             plan={resourcePlan}
             isGenerating={isGeneratingResourcePlan}
@@ -467,6 +484,7 @@ export default function OpportunitySummaryPanel({
             onUpdateJobDescription={onUpdateJobDescription ?? (() => {})}
             onRegenerateJobDescription={onRegenerateJobDescription ?? (() => {})}
             regeneratingJdFor={regeneratingJdFor}
+            contractType={contractType}
           />
           <PricingSheetCard
             sheet={pricingSheet}
@@ -1169,6 +1187,123 @@ function AttachmentRow({
 // ─── Contract Lifecycle & Action Plan ────────────────────────────────────────
 
 // ─── Helper Components ────────────────────────────────────────────────────────
+
+interface ContractTypePillProps {
+  contractType: ContractType
+  contractTypeSource: string | null
+  contractTypeOverride: boolean
+  onUpdate?: (nextType: ContractType) => void
+}
+
+function ContractTypePill({
+  contractType,
+  contractTypeSource,
+  contractTypeOverride,
+  onUpdate,
+}: ContractTypePillProps) {
+  const [open, setOpen] = useState(false)
+  const [selected, setSelected] = useState<ContractType>(contractType)
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    setSelected(contractType)
+  }, [contractType])
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('mousedown', handler)
+    return () => window.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const label = contractType === 'PRODUCT' ? 'Product procurement' : 'Services contract'
+  const tooltip = contractTypeSource || 'Auto-detected'
+
+  const handleSave = () => {
+    if (selected !== contractType) onUpdate?.(selected)
+    setOpen(false)
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={tooltip}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-stone-100 text-stone-700 border border-stone-200 hover:bg-stone-200 transition-colors"
+      >
+        <span>{label}</span>
+        <svg
+          className={`h-3 w-3 text-stone-500 transition-transform ${open ? 'rotate-180' : ''}`}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-30 w-60 bg-white border border-stone-200 rounded shadow-sm p-3 text-sm">
+          <p className="text-[10px] font-semibold text-stone-500 uppercase tracking-wide mb-2">
+            Contract type
+          </p>
+          <label className="flex items-center gap-2 py-1 cursor-pointer">
+            <input
+              type="radio"
+              name="contract-type"
+              value="SERVICES"
+              checked={selected === 'SERVICES'}
+              onChange={() => setSelected('SERVICES')}
+              className="h-3.5 w-3.5 text-stone-800 focus:ring-stone-500 border-stone-300"
+            />
+            <span className="text-stone-700">Services contract</span>
+          </label>
+          <label className="flex items-center gap-2 py-1 cursor-pointer">
+            <input
+              type="radio"
+              name="contract-type"
+              value="PRODUCT"
+              checked={selected === 'PRODUCT'}
+              onChange={() => setSelected('PRODUCT')}
+              className="h-3.5 w-3.5 text-stone-800 focus:ring-stone-500 border-stone-300"
+            />
+            <span className="text-stone-700">Product procurement</span>
+          </label>
+          {contractTypeSource && (
+            <p className="mt-2 pt-2 border-t border-stone-100 text-[11px] text-stone-500 leading-snug">
+              {contractTypeSource}
+            </p>
+          )}
+          {contractTypeOverride && (
+            <p className="mt-1 text-[11px] text-stone-500 italic">
+              Currently locked by user override
+            </p>
+          )}
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="text-xs text-stone-500 hover:text-stone-800 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={selected === contractType}
+              className="px-2.5 py-1 text-xs font-medium text-white bg-stone-800 rounded hover:bg-stone-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ─── Helper Functions ─────────────────────────────────────────────────────────
 

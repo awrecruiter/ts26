@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { classifyContractType } from '@/lib/opportunity-classification'
 
 export const maxDuration = 60
 
@@ -114,13 +115,21 @@ export async function POST(req: Request) {
           || opp.officeAddress?.state
           || null
         const naicsCode = opp.naicsCode || opp.classificationCode || null
+        const pscCode = opp.classificationCode || null
         const descStr = typeof description === 'string'
           ? description.substring(0, 10000)
           : JSON.stringify(description).substring(0, 10000)
+        const classification = classifyContractType({
+          pscCode,
+          naicsCode,
+          title: opp.title,
+          description: descStr,
+        })
         const common = {
           title: opp.title || 'Untitled',
           description: descStr,
           naicsCode,
+          pscCode,
           agency: opp.fullParentPathName || opp.organizationName || opp.department || null,
           department: opp.department || opp.fullParentPathName?.split('.')[0] || null,
           state: popState,
@@ -132,10 +141,25 @@ export async function POST(req: Request) {
         }
 
         try {
+          const existing = await prisma.opportunity.findUnique({
+            where: { solicitationNumber: solNum },
+            select: { contractTypeOverride: true },
+          })
+          const classificationUpdate = existing?.contractTypeOverride
+            ? {}
+            : {
+                contractType: classification.contractType,
+                contractTypeSource: classification.source,
+              }
           await prisma.opportunity.upsert({
             where: { solicitationNumber: solNum },
-            update: common,
-            create: { solicitationNumber: solNum, ...common },
+            update: { ...common, ...classificationUpdate },
+            create: {
+              solicitationNumber: solNum,
+              ...common,
+              contractType: classification.contractType,
+              contractTypeSource: classification.source,
+            },
           })
           return { ok: true }
         } catch (error) {

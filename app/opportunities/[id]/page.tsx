@@ -12,7 +12,7 @@ import EmailDraftPanel from '@/components/workspace/panels/EmailDraftPanel'
 import ScopeOverviewPanel from '@/components/workspace/panels/ScopeOverviewPanel'
 import AgentActivityPanel from '@/components/workspace/panels/AgentActivityPanel'
 import type { RichAttachment } from '@/lib/types/attachment'
-import type { JobDescription, ResourceCategory, ResourceLine, MarginBands } from '@/lib/types/resource-plan'
+import type { ContractType, JobDescription, ResourceCategory, ResourceLine, MarginBands } from '@/lib/types/resource-plan'
 import { extractCity, extractStateCode } from '@/lib/opportunity-classification'
 
 export default function OpportunityWorkspacePage() {
@@ -317,6 +317,20 @@ export default function OpportunityWorkspacePage() {
     }
   }, [opportunity?.id])
 
+  const handleUpdateContractType = useCallback(async (nextType: ContractType) => {
+    if (!opportunity?.id) return
+    try {
+      const res = await fetch(`/api/opportunities/${opportunity.id}/contract-type`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contractType: nextType, override: true }),
+      })
+      if (res.ok) await fetchData()
+    } catch (err) {
+      console.error('Failed to update contract type:', err)
+    }
+  }, [opportunity?.id, fetchData])
+
   const handleOpenVendorSearchForLine = useCallback(async (lineId: string) => {
     if (!opportunity?.id) return
     setActivePanel('subcontractors')
@@ -492,6 +506,10 @@ export default function OpportunityWorkspacePage() {
           onRegenerateJobDescription={handleRegenerateJobDescription}
           regeneratingJdFor={regeneratingJdFor}
           onUpdatePricingSheet={handleUpdatePricingSheet}
+          contractType={(opportunity?.contractType === 'PRODUCT' ? 'PRODUCT' : 'SERVICES') as ContractType}
+          contractTypeSource={opportunity?.contractTypeSource ?? null}
+          contractTypeOverride={!!opportunity?.contractTypeOverride}
+          onUpdateContractType={handleUpdateContractType}
         />
       ),
     },
@@ -893,8 +911,8 @@ function OpportunitySidebar({
           {opportunity.setAside && (
             <SidebarTile label="Set-Aside" value={formatSetAside(opportunity.setAside)} />
           )}
-          {opportunity.contractType && (
-            <SidebarTile label="Contract Type" value={opportunity.contractType} />
+          {opportunity.rawData?.contractType && (
+            <SidebarTile label="Contract Type" value={opportunity.rawData.contractType} />
           )}
           {postedDate && (
             <SidebarTile label="Posted" value={format(postedDate, 'MMM d, yyyy')} />

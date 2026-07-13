@@ -21,7 +21,7 @@ import {
   type ParsedAttachment,
 } from '@/lib/attachment-parser'
 import { computePricingSheet } from '@/lib/pricing'
-import type { ResourcePlan, PricingSheet } from '@/lib/types/resource-plan'
+import type { ResourcePlan, PricingSheet, ContractType } from '@/lib/types/resource-plan'
 import { DEFAULT_MARGIN_BANDS } from '@/lib/types/resource-plan'
 
 type ParsedAttachmentsCache = {
@@ -84,6 +84,7 @@ export async function POST(
         parsedAttachments: true,
         opportunityBrief: true,
         aiArtifacts: true,
+        contractType: true,
       },
     })
 
@@ -166,6 +167,7 @@ export async function POST(
       title: opportunity.title,
       agency: opportunity.agency || 'Unknown Agency',
       solicitationNumber: opportunity.solicitationNumber,
+      contractType: (opportunity.contractType as ContractType) || 'SERVICES',
       naicsCode: opportunity.naicsCode,
       setAside,
       description: opportunity.description,
@@ -299,6 +301,7 @@ export async function POST(
           parsedAttachments: true,
           opportunityBrief: true,
           aiArtifacts: true,
+          contractType: true,
         },
       }) as typeof opportunity
     }

@@ -1,9 +1,29 @@
+export type ContractType = 'SERVICES' | 'PRODUCT'
+
 export type ResourceCategory =
   | 'professional'
   | 'subcontracted_trade'
   | 'material'
   | 'equipment'
   | 'prime_overhead'
+  | 'product'
+  | 'logistics_shipping'
+  | 'warranty_support'
+
+export const SERVICES_CATEGORIES: ResourceCategory[] = [
+  'professional',
+  'subcontracted_trade',
+  'material',
+  'equipment',
+  'prime_overhead',
+]
+
+export const PRODUCT_CATEGORIES: ResourceCategory[] = [
+  'product',
+  'logistics_shipping',
+  'warranty_support',
+  'prime_overhead',
+]
 
 export type RiskLevel = 'low' | 'medium' | 'high'
 

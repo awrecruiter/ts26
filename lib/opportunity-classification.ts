@@ -39,6 +39,61 @@ const SERVICE_KEYWORDS = [
   'engineering', 'design', 'analysis', 'assessment',
 ]
 
+export interface ContractTypeClassification {
+  contractType: 'SERVICES' | 'PRODUCT'
+  source: string
+}
+
+export function classifyContractType(input: {
+  pscCode?: string | null
+  naicsCode?: string | null
+  title?: string | null
+  description?: string | null
+}): ContractTypeClassification {
+  const psc = input.pscCode?.trim() || ''
+  const pscResult = isPSCProduct(psc)
+  if (pscResult !== null) {
+    return {
+      contractType: pscResult ? 'PRODUCT' : 'SERVICES',
+      source: `PSC code ${psc} indicates ${pscResult ? 'product' : 'services'}`,
+    }
+  }
+
+  const naics = input.naicsCode?.trim() || ''
+  if (naics) {
+    const prefix2 = naics.substring(0, 2)
+    if (PRODUCT_NAICS_PREFIXES.includes(prefix2)) {
+      return {
+        contractType: 'PRODUCT',
+        source: `NAICS ${naics} prefix ${prefix2} is manufacturing/wholesale`,
+      }
+    }
+  }
+
+  const haystack = `${input.title || ''} ${input.description || ''}`.toLowerCase()
+  if (haystack.trim()) {
+    const productMatch = PRODUCT_KEYWORDS.find(kw => haystack.includes(kw))
+    const serviceMatch = SERVICE_KEYWORDS.find(kw => haystack.includes(kw))
+    if (productMatch && !serviceMatch) {
+      return {
+        contractType: 'PRODUCT',
+        source: `title/description keyword "${productMatch}" suggests product`,
+      }
+    }
+    if (serviceMatch && !productMatch) {
+      return {
+        contractType: 'SERVICES',
+        source: `title/description keyword "${serviceMatch}" suggests services`,
+      }
+    }
+  }
+
+  return {
+    contractType: 'SERVICES',
+    source: 'defaulted to services (no strong indicator)',
+  }
+}
+
 export function isProductSolicitation(opportunity: {
   naicsCode?: string | null
   title?: string | null
