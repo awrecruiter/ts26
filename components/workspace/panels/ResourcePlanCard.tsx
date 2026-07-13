@@ -245,18 +245,6 @@ function OverflowMenu({ line, onEdit, onChangeRisk, onFindVendors, onRemove }: O
               </div>
             )}
           </div>
-          {canFindVendors && (
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false)
-                onFindVendors()
-              }}
-              className="w-full text-left px-3 py-1.5 text-stone-800 hover:bg-stone-50"
-            >
-              Find vendors
-            </button>
-          )}
           <button
             type="button"
             onClick={() => {
