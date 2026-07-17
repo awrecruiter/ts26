@@ -11,6 +11,7 @@ import SubcontractorPanel from '@/components/workspace/panels/SubcontractorPanel
 import EmailDraftPanel from '@/components/workspace/panels/EmailDraftPanel'
 import ScopeOverviewPanel from '@/components/workspace/panels/ScopeOverviewPanel'
 import AgentActivityPanel from '@/components/workspace/panels/AgentActivityPanel'
+import PreworkPanel from '@/components/workspace/panels/PreworkPanel'
 import type { RichAttachment } from '@/lib/types/attachment'
 import type { ContractType, JobDescription, ResourceCategory, ResourceLine, MarginBands } from '@/lib/types/resource-plan'
 import { extractCity, extractStateCode } from '@/lib/opportunity-classification'
@@ -616,6 +617,21 @@ export default function OpportunityWorkspacePage() {
           onSubcontractorsUpdated={fetchData}
           expandedSubcontractorId={expandedSubcontractorId}
           onExpandedSubcontractorChange={setExpandedSubcontractorId}
+        />
+      ),
+    },
+    {
+      id: 'prework',
+      label: 'Prework',
+      icon: (
+        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+      content: (
+        <PreworkPanel
+          opportunityId={opportunity.id}
+          subcontractors={opportunity.subcontractors || []}
         />
       ),
     },

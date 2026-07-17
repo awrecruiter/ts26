@@ -160,6 +160,7 @@ model Opportunity {
   attachmentFormData  AttachmentFormData[]
   bidApprovalRequests BidApprovalRequest[]
   comparables         OpportunityComparable[]
+  requirements        RequirementInstance[]
 
   @@index([solicitationNumber])
   @@index([responseDeadline])
@@ -396,7 +397,8 @@ model Subcontractor {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  opportunity  Opportunity           @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  requirements RequirementInstance[]
 
   @@index([opportunityId])
   @@index([verificationStatus])
@@ -756,6 +758,81 @@ model AttachmentEditHistory {
 
   @@index([overrideId])
   @@map("attachment_edit_history")
+}
+
+// ============ PREWORK REQUIREMENTS (Sub Portal) ============
+// A RequirementInstance is one component of a required prework plan (APP, QCP,
+// WMP, SF-1413, Sub List, Insurance, Super Letter, Schedule of Values) that
+// gets answered by a specific subcontractor. Prime creates instances; subs
+// answer them via magic-link URLs (no login required).
+
+model RequirementInstance {
+  id              String   @id @default(cuid())
+  opportunityId   String
+  subcontractorId String
+
+  // Template identity (see lib/requirements/templates.ts)
+  templateKey     String   // e.g. "app_safety_officer", "sf1413_signature"
+  submittalGroup  String   // "app" | "qcp" | "wmp" | "sf1413" | "sub_list" | "insurance" | "super_letter" | "sov"
+
+  // Assignment
+  assignedName    String?  // display name of the sub member responsible
+  assignedEmail   String   // where the magic link was sent
+
+  // State machine
+  status          RequirementStatus @default(TODO)
+  responses       Json?    // { [fieldKey]: value } — matches template.formSchema
+  attachmentUrls  String[] // Vercel Blob URLs for uploaded files
+  submittedAt     DateTime?
+
+  // Review (prime side)
+  reviewedById    String?
+  reviewedAt      DateTime?
+  reviewNotes     String?  @db.Text
+  rejectionReason String?  @db.Text
+
+  dueAt           DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  opportunity     Opportunity   @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  subcontractor   Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+  tokens          RequirementMagicToken[]
+
+  @@unique([opportunityId, subcontractorId, templateKey])
+  @@index([opportunityId])
+  @@index([subcontractorId])
+  @@index([status])
+  @@map("requirement_instances")
+}
+
+enum RequirementStatus {
+  TODO
+  IN_PROGRESS
+  SUBMITTED
+  APPROVED
+  REJECTED
+  WAIVED
+}
+
+// Single-use magic-link tokens scoped to one RequirementInstance. Emailed to
+// the assigned sub member; consumed on submit. Multiple tokens per instance
+// allowed (resend generates a new one; old ones remain valid until expiry).
+
+model RequirementMagicToken {
+  id                    String   @id @default(cuid())
+  requirementInstanceId String
+  token                 String   @unique
+  expiresAt             DateTime
+  consumedAt            DateTime?
+  sentToEmail           String
+  createdAt             DateTime @default(now())
+
+  requirement RequirementInstance @relation(fields: [requirementInstanceId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([requirementInstanceId])
+  @@map("requirement_magic_tokens")
 }
 
 // ============ ATTACHMENT FORM DATA ============
