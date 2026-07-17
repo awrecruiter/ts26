@@ -36,6 +36,9 @@ interface Subcontractor {
   deliverableChecks?: number[] | null
   sowSentAt?: string | null
   workflowCompletedAt?: string | null
+  /** Which resource-plan trade row this sub was discovered/assigned for.
+   *  Used to scope the panel when the user clicks a trade from the brief. */
+  resourceLineId?: string | null
 }
 
 type StepState = 'done' | 'current' | 'pending'
@@ -93,6 +96,11 @@ interface SubcontractorPanelProps {
   isGeneratingArtifacts?: boolean
   /** Per-artifact regenerate handler. */
   onRegenerateChecklist?: () => void | Promise<void>
+  /** When set, the panel scopes to subs discovered for this resource line
+   *  and renders a breadcrumb to jump back to the brief. */
+  activeResourceLine?: { id: string; label: string } | null
+  /** Called when the user clears the resource-line filter via the breadcrumb. */
+  onClearResourceLineFilter?: () => void
 }
 
 function buildAIChecklist(items: string[]): ChecklistItem[] {
@@ -169,6 +177,8 @@ export default function SubcontractorPanel({
   aiCallChecklist,
   isGeneratingArtifacts,
   onRegenerateChecklist,
+  activeResourceLine = null,
+  onClearResourceLineFilter,
 }: SubcontractorPanelProps) {
   const [filter, setFilter] = useState<'active' | 'quoted' | 'pending'>('active')
   const [isSearching, setIsSearching] = useState(false)
@@ -290,7 +300,13 @@ export default function SubcontractorPanel({
     return optimisticCalls[sub.id] ?? sub.callCompleted ?? false
   }
 
-  const filtered = subcontractors.filter((sub) => {
+  // When the user arrived here by clicking a specific trade on the brief,
+  // scope the visible list to subs discovered for that resource line.
+  const scoped = activeResourceLine
+    ? subcontractors.filter((s) => s.resourceLineId === activeResourceLine.id)
+    : subcontractors
+
+  const filtered = scoped.filter((sub) => {
     // Pending = SOW sent, awaiting vendor's quote response.
     if (filter === 'pending') return !!sub.sowSentAt && sub.quotedAmount == null
     // Quoted = vendor responded with a quote
@@ -570,11 +586,40 @@ export default function SubcontractorPanel({
   return (
     <div className="h-full overflow-auto p-4 sm:p-6">
       <div className="max-w-3xl mx-auto">
+        {/* Breadcrumb — visible only when the user drilled in from a trade
+            on the resource plan. Clicking either link clears the scope and
+            returns to the opportunity brief. */}
+        {activeResourceLine && (
+          <nav className="mb-4 flex items-center gap-1.5 text-xs">
+            <button
+              type="button"
+              onClick={onClearResourceLineFilter}
+              className="text-stone-500 hover:text-stone-800 hover:underline transition-colors"
+            >
+              Resource Plan
+            </button>
+            <span className="text-stone-400">/</span>
+            <span className="text-stone-900 font-medium">{activeResourceLine.label}</span>
+            <button
+              type="button"
+              onClick={onClearResourceLineFilter}
+              className="ml-2 text-stone-400 hover:text-stone-700 transition-colors"
+              title="Clear filter — show all subcontractors"
+            >
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </nav>
+        )}
+
         {/* Header */}
         <div className="mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h1 className="text-lg font-semibold text-stone-900">Subcontractors</h1>
+              <h1 className="text-lg font-semibold text-stone-900">
+                {activeResourceLine ? `Subs for ${activeResourceLine.label}` : 'Subcontractors'}
+              </h1>
               <p className="text-sm text-stone-500 mt-1">
                 {subcontractors.length} vendor{subcontractors.length !== 1 ? 's' : ''}
                 {googleCount > 0 && samCount > 0

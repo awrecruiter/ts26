@@ -341,46 +341,223 @@ export const REQUIREMENT_TEMPLATES: RequirementTemplate[] = [
 ]
 
 // ─── Consolidated single-form quote submission (sub-facing) ───────────────
-// One link, sub-friendly language. When the sub opens the portal they see:
-//   - Basic company + contact info (prefilled from what we already know)
-//   - Their priced quote for the work assigned
-//   - A file upload for a detailed quote (auto-populates totals if we can)
-// Submission mirrors the answers onto the Subcontractor row so the internal
-// list is populated automatically — onboarding "begins at quote submission".
+// One link, sub-friendly language. Chunked into sections that mirror the
+// prime's Subcontractor Information Request Package template so the
+// answers feed straight into APP / QCP / WMP / schedule / SOV / bid /
+// subcontract / submittal register outputs.
+//
+// Keys marked (mirrored) get written back onto the Subcontractor row by the
+// submit route so the internal subs list is auto-populated.
 REQUIREMENT_TEMPLATES.push({
   key: 'sub_quote',
   submittalGroup: 'quote_submission',
   displayName: 'Submit your quote',
-  purpose: 'Confirm your company details and share your priced quote for this project.',
+  purpose: 'Confirm your company details and share everything the prime needs to evaluate your quote — no login required.',
   suggestedRole: 'estimator',
   defaultDueDays: 7,
   formSchema: [
+    // ─── 1. Company Information ─────────────────────────────────────
     {
-      title: 'Your company',
+      title: 'Company Information',
       fields: [
-        { key: 'company_name', label: 'Company name', type: 'text', required: true },
-        { key: 'address', label: 'Address', type: 'text' },
+        { key: 'company_name', label: 'Company name', type: 'text', required: true }, // mirrored
+        { key: 'address', label: 'Address', type: 'text' }, // mirrored
+        { key: 'contact_name', label: 'Primary contact name', type: 'text', required: true }, // mirrored
+        { key: 'contact_email', label: 'Contact email', type: 'email', required: true }, // mirrored
+        { key: 'contact_phone', label: 'Contact phone', type: 'phone' }, // mirrored
       ],
     },
+
+    // ─── 2. Scope of Work ───────────────────────────────────────────
     {
-      title: 'Point of contact',
+      title: 'Scope of Work',
+      description: 'Confirm what you are pricing and what you are not.',
       fields: [
-        { key: 'contact_name', label: 'Your name', type: 'text', required: true },
-        { key: 'contact_email', label: 'Email', type: 'email', required: true },
-        { key: 'contact_phone', label: 'Phone', type: 'phone' },
+        { key: 'scope_confirmation', label: 'Scope you are pricing', type: 'textarea',
+          helpText: 'One or two sentences describing the work items covered by this quote.' },
+        { key: 'exclusions', label: 'Exclusions', type: 'textarea',
+          helpText: 'Anything explicitly not included (e.g. traffic control, permitting).' },
       ],
     },
+
+    // ─── 3. Pricing ────────────────────────────────────────────────
     {
-      title: 'Your quote',
-      description: 'Share your price for the work. Upload a detailed quote if you have one — we\'ll try to fill in the totals for you.',
+      title: 'Pricing',
+      description: 'Upload your detailed quote if you have one — we\'ll try to fill in the totals for you.',
       fields: [
         { key: 'quote_upload', label: 'Detailed quote (PDF)', type: 'file',
           accept: 'application/pdf,image/*', multiple: true,
-          helpText: 'Optional. We\'ll auto-fill totals from the document when possible.' },
-        { key: 'grand_total', label: 'Grand total ($)', type: 'currency', required: true },
+          helpText: 'Optional. We\'ll auto-fill Grand total and Validity where we can.' },
+        { key: 'grand_total', label: 'Grand total ($)', type: 'currency', required: true }, // mirrored → quotedAmount
         { key: 'quote_valid_days', label: 'Quote valid for (days)', type: 'number', placeholder: '30' },
         { key: 'notes', label: 'Notes or assumptions', type: 'textarea',
-          helpText: 'Anything the prime should know — inclusions, exclusions, lead times.' },
+          helpText: 'Inclusions, exclusions, lead times.' }, // mirrored → quoteNotes
+      ],
+    },
+
+    // ─── 4. Schedule Inputs ────────────────────────────────────────
+    {
+      title: 'Schedule Inputs',
+      description: 'Feeds the construction schedule submitted to the government.',
+      fields: [
+        { key: 'mobilization_lead_days', label: 'Mobilization lead time (days)', type: 'number' },
+        { key: 'crew_size', label: 'Typical crew size on this project', type: 'number' },
+        { key: 'duration_days', label: 'Expected duration of your work (days)', type: 'number' },
+        { key: 'shifts', label: 'Shifts / work hours', type: 'text',
+          placeholder: 'e.g. Day shift, 6a–4p, Mon–Fri' },
+        { key: 'schedule_constraints', label: 'Weather, holiday, or other constraints', type: 'textarea' },
+      ],
+    },
+
+    // ─── 5. Safety (APP inputs) ────────────────────────────────────
+    {
+      title: 'Safety (APP inputs)',
+      description: 'Feeds the Accident Prevention Plan.',
+      fields: [
+        { key: 'safety_officer_name', label: 'Site safety supervisor', type: 'text' },
+        { key: 'safety_officer_phone', label: 'Safety supervisor phone', type: 'phone' },
+        { key: 'osha_training', label: 'OSHA training level (crew)', type: 'select',
+          options: [
+            { value: '', label: 'Select…' },
+            { value: 'osha10', label: 'OSHA-10' },
+            { value: 'osha30', label: 'OSHA-30' },
+            { value: 'em385', label: 'EM 385-1-1' },
+            { value: 'other', label: 'Other' },
+          ] },
+        { key: 'hazards_summary', label: 'Top hazards from your scope', type: 'textarea',
+          helpText: 'Site-specific hazards you\'ll be mitigating (e.g. heat, moving equipment, silica).' },
+        { key: 'aha_upload', label: 'Activity Hazard Analyses (PDF)', type: 'file',
+          accept: 'application/pdf', multiple: true,
+          helpText: 'One or more AHAs for the work phases you\'ll perform.' },
+      ],
+    },
+
+    // ─── 6. Quality Control inputs ─────────────────────────────────
+    {
+      title: 'Quality Control Inputs',
+      description: 'Feeds the Quality Control Plan.',
+      fields: [
+        { key: 'qc_officer_name', label: 'QC officer', type: 'text' },
+        { key: 'qc_officer_phone', label: 'QC officer phone', type: 'phone' },
+        { key: 'testing_lab', label: 'Independent testing lab (if any)', type: 'text' },
+        { key: 'inspection_frequency', label: 'Inspection frequency', type: 'text',
+          placeholder: 'e.g. Daily during placement' },
+        { key: 'qc_procedures_upload', label: 'QC procedures (PDF)', type: 'file',
+          accept: 'application/pdf', multiple: true },
+      ],
+    },
+
+    // ─── 7. Traffic & Logistics ────────────────────────────────────
+    {
+      title: 'Traffic & Logistics',
+      description: 'Only fill this in if your scope touches roadway, lane closures, or delivery routing.',
+      fields: [
+        { key: 'traffic_control_needed', label: 'Traffic control needed?', type: 'select',
+          options: [
+            { value: '', label: 'Select…' },
+            { value: 'yes', label: 'Yes' },
+            { value: 'no', label: 'No' },
+            { value: 'na', label: 'Not applicable' },
+          ] },
+        { key: 'mot_summary', label: 'Maintenance of Traffic (MOT) approach', type: 'textarea',
+          helpText: 'How you\'ll route traffic around your work — flaggers, lane closures, signage.' },
+        { key: 'traffic_control_plan_upload', label: 'Traffic Control Plan (PDF)', type: 'file',
+          accept: 'application/pdf', multiple: true },
+        { key: 'material_delivery_notes', label: 'Material delivery / staging notes', type: 'textarea' },
+      ],
+    },
+
+    // ─── 8. Waste Management ───────────────────────────────────────
+    {
+      title: 'Waste Management',
+      description: 'Feeds the Waste Management Plan.',
+      fields: [
+        { key: 'hauler_name', label: 'Waste hauler', type: 'text' },
+        { key: 'disposal_facility', label: 'Landfill / transfer station', type: 'text' },
+        { key: 'recycling_facility', label: 'Recycling facility (asphalt / concrete / metals)', type: 'text' },
+        { key: 'recycling_target_pct', label: 'Recycling target (%)', type: 'number' },
+        { key: 'waste_disposal_procedures_upload', label: 'Waste disposal procedures (PDF)', type: 'file',
+          accept: 'application/pdf', multiple: true },
+      ],
+    },
+
+    // ─── 9. Labor Compliance ───────────────────────────────────────
+    {
+      title: 'Labor Compliance',
+      description: 'Davis-Bacon / Service Contract Act.',
+      fields: [
+        { key: 'davis_bacon_ack', label: 'Davis-Bacon / SCA rates acknowledged?', type: 'select',
+          options: [
+            { value: '', label: 'Select…' },
+            { value: 'yes', label: 'Yes — will pay prevailing wage' },
+            { value: 'na', label: 'Not applicable to this scope' },
+          ] },
+        { key: 'certified_payroll_ack', label: 'Can you submit weekly certified payroll?', type: 'select',
+          options: [
+            { value: '', label: 'Select…' },
+            { value: 'yes', label: 'Yes' },
+            { value: 'no', label: 'No' },
+          ] },
+        { key: 'apprentice_ratio', label: 'Apprenticeship program / ratio (if any)', type: 'text' },
+      ],
+    },
+
+    // ─── 10. Insurance & Bonding ───────────────────────────────────
+    {
+      title: 'Insurance & Bonding',
+      fields: [
+        { key: 'gl_limit', label: 'General liability limit ($)', type: 'currency',
+          placeholder: 'e.g. 1000000' },
+        { key: 'auto_limit', label: 'Auto liability limit ($)', type: 'currency' },
+        { key: 'umbrella_limit', label: 'Umbrella / excess ($)', type: 'currency' },
+        { key: 'wc_state', label: 'Workers comp state(s) covered', type: 'text' },
+        { key: 'insurance_expiration', label: 'Policy expiration date', type: 'date' },
+        { key: 'bonding_capacity', label: 'Bonding capacity ($)', type: 'currency' },
+        { key: 'coi_upload', label: 'Certificate of Insurance (COI)', type: 'file',
+          accept: 'application/pdf', multiple: true },
+      ],
+    },
+
+    // ─── 11. Closeout Information ──────────────────────────────────
+    {
+      title: 'Closeout Information',
+      description: 'What you\'ll deliver at project close.',
+      fields: [
+        { key: 'warranty_period', label: 'Warranty period', type: 'text', placeholder: 'e.g. 12 months' },
+        { key: 'as_built_deliverable', label: 'As-built / red-line deliverable', type: 'text' },
+        { key: 'closeout_notes', label: 'Other closeout notes', type: 'textarea' },
+      ],
+    },
+
+    // ─── 12. Required Supporting Documents ─────────────────────────
+    {
+      title: 'Required Supporting Documents',
+      description: 'Upload each document you have. Anything you skip we\'ll follow up on.',
+      fields: [
+        { key: 'capability_statement_upload', label: 'Capability Statement', type: 'file',
+          accept: 'application/pdf,image/*', multiple: false },
+        { key: 'w9_upload', label: 'W-9', type: 'file',
+          accept: 'application/pdf,image/*', multiple: false },
+        { key: 'business_licenses_upload', label: 'Business licenses', type: 'file',
+          accept: 'application/pdf,image/*', multiple: true },
+        { key: 'safety_manual_upload', label: 'Safety manual', type: 'file',
+          accept: 'application/pdf', multiple: false },
+        { key: 'sds_upload', label: 'Safety Data Sheets (SDS)', type: 'file',
+          accept: 'application/pdf', multiple: true },
+        { key: 'equipment_list_upload', label: 'Equipment list', type: 'file',
+          accept: 'application/pdf,image/*', multiple: true },
+        { key: 'operator_certs_upload', label: 'Operator certifications', type: 'file',
+          accept: 'application/pdf,image/*', multiple: true },
+        { key: 'product_data_upload', label: 'Product data sheets', type: 'file',
+          accept: 'application/pdf', multiple: true },
+        { key: 'material_certs_upload', label: 'Material certifications', type: 'file',
+          accept: 'application/pdf', multiple: true },
+        { key: 'mix_designs_upload', label: 'Mix designs', type: 'file',
+          accept: 'application/pdf', multiple: true },
+        { key: 'past_performance_upload', label: 'Past performance / references', type: 'file',
+          accept: 'application/pdf', multiple: true },
+        { key: 'current_workload', label: 'Current workload / availability', type: 'textarea',
+          helpText: 'Briefly — are you booked, when could you start, how much bandwidth?' },
       ],
     },
   ],

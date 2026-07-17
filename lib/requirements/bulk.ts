@@ -133,38 +133,28 @@ export async function bulkProvisionRequirements(
 
 /**
  * Render the "Complete your info" block appended to outbound sub emails.
- * Groups bullets by submittal-group display name so the sub sees a coherent
- * heading rather than a flat list of unrelated form links.
+ * URLs are placed on their own dedicated lines with no leading whitespace
+ * or Unicode bullets — this keeps Gmail's autolinker AND our own HTML
+ * anchor pass from clipping the URL at unexpected boundaries.
  */
 export function renderPreworkLinksBlock(
   provisioned: ProvisionedRequirement[],
 ): string {
   if (provisioned.length === 0) return ''
 
-  const byGroup = new Map<string, ProvisionedRequirement[]>()
-  for (const p of provisioned) {
-    const existing = byGroup.get(p.submittalGroupDisplayName) ?? []
-    existing.push(p)
-    byGroup.set(p.submittalGroupDisplayName, existing)
-  }
-
   const lines: string[] = []
-  lines.push('─────────────────────────────────')
-  lines.push('COMPLETE YOUR INFO (one link each — no login needed):')
+  lines.push('-----------------------------------------------')
+  lines.push('SUBMIT YOUR INFO — no login required')
   lines.push('')
 
-  for (const [groupName, items] of byGroup) {
-    if (byGroup.size > 1) {
-      lines.push(`${groupName}:`)
-    }
-    for (const p of items) {
-      lines.push(`  • ${p.templateDisplayName}:  ${p.url}`)
-    }
+  for (const p of provisioned) {
+    lines.push(`${p.templateDisplayName}:`)
+    lines.push(p.url)
     lines.push('')
   }
 
-  lines.push('These help us confirm eligibility and evaluate your quote faster.')
-  lines.push('─────────────────────────────────')
+  lines.push('This helps us confirm eligibility and evaluate your quote faster.')
+  lines.push('-----------------------------------------------')
 
   return lines.join('\n')
 }

@@ -25,6 +25,7 @@ export default function OpportunityWorkspacePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activePanel, setActivePanel] = useState('summary')
+  const [activeResourceLineId, setActiveResourceLineId] = useState<string | null>(null)
   const [selectedSubcontractor, setSelectedSubcontractor] = useState<any>(null)
   const [expandedSubcontractorId, setExpandedSubcontractorId] = useState<string | null>(null)
   const [emailTemplateType, setEmailTemplateType] = useState<'quote_request' | 'follow_up' | 'custom'>('quote_request')
@@ -334,6 +335,7 @@ export default function OpportunityWorkspacePage() {
 
   const handleOpenVendorSearchForLine = useCallback(async (lineId: string) => {
     if (!opportunity?.id) return
+    setActiveResourceLineId(lineId)
     setActivePanel('subcontractors')
     try {
       await fetch(`/api/opportunities/${opportunity.id}/subcontractors/discover`, {
@@ -346,6 +348,11 @@ export default function OpportunityWorkspacePage() {
       console.error('Failed to discover for line:', err)
     }
   }, [opportunity?.id, fetchData])
+
+  const handleClearResourceLineFilter = useCallback(() => {
+    setActiveResourceLineId(null)
+    setActivePanel('summary')
+  }, [])
 
   // Discover subcontractors for this opportunity
   const handleDiscoverSubcontractors = async () => {
@@ -546,6 +553,16 @@ export default function OpportunityWorkspacePage() {
           aiCallChecklist={opportunity.aiArtifacts?.callChecklist}
           isGeneratingArtifacts={generatingArtifacts}
           onRegenerateChecklist={() => handleRegenerateArtifact('callChecklist')}
+          activeResourceLine={
+            activeResourceLineId
+              ? (() => {
+                  const line = (opportunity?.resourcePlan?.lines as Array<{ id: string; label: string }> | undefined)
+                    ?.find((l) => l.id === activeResourceLineId)
+                  return line ? { id: line.id, label: line.label } : null
+                })()
+              : null
+          }
+          onClearResourceLineFilter={handleClearResourceLineFilter}
           onRequestQuote={(sub) => {
             setSelectedSubcontractor(sub)
             setEmailTemplateType('quote_request')
