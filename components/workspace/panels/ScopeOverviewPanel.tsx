@@ -1431,16 +1431,32 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
   }, [aiScope?.documentation, opportunity.id, structured])
 
   const compliance = useMemo(() => {
-    if (aiScope?.compliance && aiScope.compliance.length > 0) {
-      return aiScope.compliance.map((c, i): ScopeItem => ({
-        id: `comp-${i}`,
-        text: c.text,
-        tags: c.tags || [],
-        critical: !!c.critical,
-      }))
-    }
-    return extractCompliance(structured, opportunity.description || '')
-  }, [aiScope?.compliance, opportunity.id, structured, opportunity.description])
+    const base: ScopeItem[] = aiScope?.compliance && aiScope.compliance.length > 0
+      ? aiScope.compliance.map((c, i): ScopeItem => ({
+          id: `comp-${i}`,
+          text: c.text,
+          tags: c.tags || [],
+          critical: !!c.critical,
+        }))
+      : extractCompliance(structured, opportunity.description || '')
+
+    // Required plans (APP, QCP, WMP, Safety, Environmental, Site-Specific)
+    // must show the place of performance the plan applies to. We inherit the
+    // location from the solicitation brief + opportunity record so subs and
+    // internal reviewers don't have to cross-reference to know where the plan
+    // is enforced. Non-plan compliance items pass through untouched.
+    const location = brief?.placeOfPerformance?.location
+      || opportunity.state
+      || null
+    if (!location) return base
+    const planRe = /\b(APP|QCP|WMP|SSHP|EMP|SWPPP|accident prevention plan|quality control plan|waste management plan|safety plan|site[- ]specific safety|environmental (?:protection|management) plan|storm ?water|health and safety plan)\b/i
+    return base.map(item => {
+      if (!planRe.test(item.text)) return item
+      // Skip if the item already names the location
+      if (item.text.toLowerCase().includes(location.toLowerCase())) return item
+      return { ...item, text: `${item.text} · Location: ${location}` }
+    })
+  }, [aiScope?.compliance, opportunity.id, structured, opportunity.description, brief?.placeOfPerformance?.location, opportunity])
 
   const qualifications: ScopeItem[] = useMemo(() => {
     const raw = structured?.qualifications || []

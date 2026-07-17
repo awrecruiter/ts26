@@ -7,15 +7,12 @@ import type { OpportunityBrief } from '@/lib/openai'
 import type {
   ContractType,
   JobDescription,
-  MarginBands,
   ResourceCategory,
   ResourceLine,
   ResourcePlan,
-  PricingSheet,
 } from '@/lib/types/resource-plan'
 import OpportunityBriefCard from './OpportunityBriefCard'
 import ResourcePlanCard from './ResourcePlanCard'
-import PricingSheetCard from './PricingSheetCard'
 import FormFillModal from './FormFillModal'
 import AttachmentPreviewModal from '@/components/shared/AttachmentPreviewModal'
 
@@ -125,10 +122,6 @@ interface OpportunitySummaryPanelProps {
   hasSubcontractors?: boolean
   onGenerateSOW?: (selectedAttachments?: string[]) => void
   isGeneratingSOW?: boolean
-  onFindSubcontractors?: () => void
-  onCreateBid?: () => void
-  onProceed?: () => void
-  nextStep?: string
   brief?: OpportunityBrief | null
   isGeneratingBrief?: boolean
   onGenerateBrief?: () => void
@@ -137,9 +130,8 @@ interface OpportunitySummaryPanelProps {
    *  Same Set drives the email bundle and the SOW generator input. */
   selectedAttachments: Set<string>
   onToggleAttachment: (id: string) => void
-  // Resource Plan + Pricing Sheet
+  // Resource Plan
   resourcePlan?: ResourcePlan | null
-  pricingSheet?: PricingSheet | null
   isProcessing?: boolean
   onProcessOpportunity?: () => void
   isGeneratingResourcePlan?: boolean
@@ -151,7 +143,6 @@ interface OpportunitySummaryPanelProps {
   onUpdateJobDescription?: (lineId: string, patch: Partial<JobDescription>) => void
   onRegenerateJobDescription?: (lineId: string) => void
   regeneratingJdFor?: string | null
-  onUpdatePricingSheet?: (patch: { userOverrideMarginPct?: number | null; marginBands?: MarginBands }) => void
   contractType?: ContractType
   contractTypeSource?: string | null
   contractTypeOverride?: boolean
@@ -166,10 +157,6 @@ export default function OpportunitySummaryPanel({
   hasSubcontractors,
   onGenerateSOW,
   isGeneratingSOW,
-  onFindSubcontractors,
-  onCreateBid,
-  onProceed,
-  nextStep,
   brief = null,
   isGeneratingBrief = false,
   onGenerateBrief,
@@ -177,7 +164,6 @@ export default function OpportunitySummaryPanel({
   selectedAttachments,
   onToggleAttachment,
   resourcePlan = null,
-  pricingSheet = null,
   isProcessing = false,
   onProcessOpportunity,
   isGeneratingResourcePlan = false,
@@ -189,7 +175,6 @@ export default function OpportunitySummaryPanel({
   onUpdateJobDescription,
   onRegenerateJobDescription,
   regeneratingJdFor = null,
-  onUpdatePricingSheet,
   contractType = 'SERVICES',
   contractTypeSource = null,
   contractTypeOverride = false,
@@ -234,6 +219,7 @@ export default function OpportunitySummaryPanel({
 
   // Solicitation description expansion
   const [showSolicitation, setShowSolicitation] = useState(false)
+  const [showBrief, setShowBrief] = useState(false)
 
   // Comparable past awards (USASpending.gov)
   const [comparables, setComparables] = useState<ComparablesPayload | null>(null)
@@ -421,8 +407,6 @@ export default function OpportunitySummaryPanel({
     }
   }, [editingValue, attachments, opportunity.id])
 
-  const workflowState = getWorkflowState(hasSOW, hasSubcontractors, hasBid)
-
   // Fetch comparable past awards on mount
   useEffect(() => {
     let cancelled = false
@@ -448,21 +432,9 @@ export default function OpportunitySummaryPanel({
 
   return (
     <div className="h-full overflow-auto">
-      {/* OPPORTUNITY BRIEF */}
-      <div className="p-6 bg-white border-b border-stone-200">
-        <div className="max-w-4xl mx-auto space-y-4">
-          <OpportunityBriefCard
-            brief={brief}
-            isGenerating={isGeneratingBrief}
-            onGenerate={onGenerateBrief ?? (() => {})}
-            opportunityTitle={opportunity.title}
-            agency={opportunity.agency}
-            error={briefError}
-          />
-        </div>
-      </div>
-
-      {/* RESOURCE PLAN + PRICING SHEET */}
+      {/* RESOURCE PLAN */}
+      {/* Pricing sheet was removed — prices only exist once a sub responds
+          with a real quote (see Subcontractor.quotedAmount). */}
       <div className="p-6 bg-stone-50 border-b border-stone-200">
         <div className="max-w-4xl mx-auto space-y-4">
           <div className="flex justify-end">
@@ -486,35 +458,15 @@ export default function OpportunitySummaryPanel({
             regeneratingJdFor={regeneratingJdFor}
             contractType={contractType}
           />
-          <PricingSheetCard
-            sheet={pricingSheet}
-            plan={resourcePlan}
-            onUpdate={onUpdatePricingSheet ?? (() => {})}
-          />
-        </div>
-      </div>
-
-      {/* FIRST FOLD — quick actions only */}
-      <div className="px-4 sm:px-6 py-4 bg-white border-b border-stone-200">
-        <div className="max-w-4xl mx-auto">
-          <button
-            onClick={onProceed}
-            className="px-4 py-2.5 text-sm font-medium text-white bg-stone-800 rounded hover:bg-stone-700 transition-colors inline-flex items-center gap-2 min-h-[44px]"
-          >
-            <span>{nextStep || workflowState.action}</span>
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
         </div>
       </div>
 
       {/* BELOW FOLD */}
       <div className="p-4 sm:p-6">
         <div className="max-w-4xl mx-auto space-y-6">
-          {/* Overview — AI narrative + full solicitation description */}
+          {/* Overview — What They're Buying + collapsible Opportunity Brief */}
           <div className="p-5 bg-white border border-stone-200 rounded-lg space-y-4">
-            <h2 className="text-sm font-semibold text-stone-800">Overview</h2>
+            <h2 className="text-sm font-semibold text-stone-800">What They&apos;re Buying</h2>
 
             {brief?.extendedOverview ? (
               /* Extended AI narrative — richer multi-paragraph version */
@@ -531,6 +483,37 @@ export default function OpportunitySummaryPanel({
             {brief && !brief.extendedOverview && (
               <p className="text-xs text-stone-400 italic">Regenerate the brief to get a full narrative overview.</p>
             )}
+
+            {/* Opportunity Brief — collapsible dropdown living inside this section */}
+            <div className="pt-3 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => setShowBrief((v) => !v)}
+                className="flex items-center gap-2 w-full text-left group"
+              >
+                <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider flex-1">
+                  Opportunity Brief
+                </p>
+                <svg
+                  className={`h-3.5 w-3.5 text-stone-400 transition-transform flex-shrink-0 ${showBrief ? 'rotate-180' : ''}`}
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {showBrief && (
+                <div className="mt-3">
+                  <OpportunityBriefCard
+                    brief={brief}
+                    isGenerating={isGeneratingBrief}
+                    onGenerate={onGenerateBrief ?? (() => {})}
+                    opportunityTitle={opportunity.title}
+                    agency={opportunity.agency}
+                    error={briefError}
+                  />
+                </div>
+              )}
+            </div>
 
             {/* Full solicitation description — collapsible */}
             {realDescription && (
@@ -1311,13 +1294,6 @@ function getExtension(filename: string): string {
   const lastDot = filename.lastIndexOf('.')
   if (lastDot === -1 || lastDot === 0) return ''
   return filename.slice(lastDot)
-}
-
-function getWorkflowState(hasSOW?: boolean, hasSubcontractors?: boolean, hasBid?: boolean) {
-  if (!hasSOW) return { step: 1, action: 'Generate SOW', panel: 'sow' }
-  if (!hasSubcontractors) return { step: 2, action: 'Find Subcontractors', panel: 'subcontractors' }
-  if (!hasBid) return { step: 3, action: 'Create Bid', panel: 'bid' }
-  return { step: 4, action: 'Review & Submit', panel: 'bid' }
 }
 
 function formatFileSize(bytes: number): string {

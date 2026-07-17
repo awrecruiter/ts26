@@ -744,6 +744,7 @@ function LineRow({
   const [flashSaved, setFlashSaved] = useState(false)
 
   const isProfessional = line.category === 'professional'
+  const isTrade = line.category === 'subcontracted_trade'
 
   const handleSaved = useCallback(() => {
     setFlashSaved(true)
@@ -754,6 +755,40 @@ function LineRow({
     (risk: RiskLevel) => onEditLine(line.id, { riskLevel: risk }),
     [line.id, onEditLine],
   )
+
+  // Trades: the whole row is a button that jumps to the vendor search
+  // filtered to this trade. Prices and the kebab menu are hidden — pricing
+  // only exists once a sub responds with a quote, and outreach happens from
+  // the vendor search view, not from an inline menu.
+  if (isTrade) {
+    return (
+      <div className="border-t border-stone-100 first:border-t-0">
+        <button
+          type="button"
+          onClick={() => onOpenVendorSearch(line.id)}
+          className="w-full text-left py-3 flex items-start gap-2 hover:bg-stone-50 rounded transition-colors"
+          title={`Find subs for ${line.label}`}
+        >
+          <div className="w-4 pt-0.5 shrink-0" />
+          <div className="pt-0.5 shrink-0">
+            <CategoryIcon category={line.category} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="text-sm font-semibold text-stone-900">{line.label}</span>
+            </div>
+            <p className="text-xs text-stone-600 mt-0.5 line-clamp-2">{line.valueDescription}</p>
+            <div className="mt-1">
+              <RiskChip level={line.riskLevel} />
+            </div>
+          </div>
+          <svg className="h-3.5 w-3.5 text-stone-400 shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="py-3 border-t border-stone-100 first:border-t-0">

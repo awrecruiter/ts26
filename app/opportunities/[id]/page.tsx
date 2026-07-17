@@ -483,10 +483,6 @@ export default function OpportunityWorkspacePage() {
           assessment={assessment}
           hasBid={!!currentBid}
           hasSubcontractors={hasSubcontractors}
-          onCreateBid={handleCreateBid}
-          onFindSubcontractors={handleDiscoverSubcontractors}
-          onProceed={handleProceed}
-          nextStep={workflowState.action}
           brief={opportunity?.aiArtifacts?.brief ?? opportunity?.opportunityBrief ?? null}
           isGeneratingBrief={generatingBrief || generatingArtifacts}
           onGenerateBrief={() => handleRegenerateArtifact('brief')}
@@ -494,7 +490,6 @@ export default function OpportunityWorkspacePage() {
           selectedAttachments={selectedAttachments}
           onToggleAttachment={handleToggleAttachment}
           resourcePlan={opportunity?.resourcePlan ?? null}
-          pricingSheet={opportunity?.pricingSheet ?? null}
           isProcessing={isProcessing}
           onProcessOpportunity={handleProcessOpportunity}
           isGeneratingResourcePlan={isGeneratingResourcePlan}
@@ -506,7 +501,6 @@ export default function OpportunityWorkspacePage() {
           onUpdateJobDescription={handleUpdateJobDescription}
           onRegenerateJobDescription={handleRegenerateJobDescription}
           regeneratingJdFor={regeneratingJdFor}
-          onUpdatePricingSheet={handleUpdatePricingSheet}
           contractType={(opportunity?.contractType === 'PRODUCT' ? 'PRODUCT' : 'SERVICES') as ContractType}
           contractTypeSource={opportunity?.contractTypeSource ?? null}
           contractTypeOverride={!!opportunity?.contractTypeOverride}
