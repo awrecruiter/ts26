@@ -757,12 +757,11 @@ function LineRow({
   )
 
   // Trades: the whole row is a button that jumps to the vendor search
-  // filtered to this trade. Prices and the kebab menu are hidden — pricing
-  // only exists once a sub responds with a quote, and outreach happens from
-  // the vendor search view, not from an inline menu.
+  // filtered to this trade. No inline menu — outreach happens from the
+  // vendor search view.
   if (isTrade) {
     return (
-      <div className="border-t border-stone-100 first:border-t-0">
+      <div>
         <button
           type="button"
           onClick={() => onOpenVendorSearch(line.id)}
@@ -790,10 +789,12 @@ function LineRow({
     )
   }
 
+  // Non-trade lines. Professionals still get the chevron+JD expander so the
+  // user can edit the role's job description. Kebab menu and inline dividers
+  // are removed to match the clean brief-page treatment.
   return (
-    <div className="py-3 border-t border-stone-100 first:border-t-0">
+    <div className="py-3">
       <div className="flex items-start gap-2">
-        {/* Chevron slot */}
         <div className="w-4 pt-0.5 shrink-0">
           {isProfessional && (
             <button
@@ -807,12 +808,10 @@ function LineRow({
           )}
         </div>
 
-        {/* Icon */}
         <div className="pt-0.5 shrink-0">
           <CategoryIcon category={line.category} />
         </div>
 
-        {/* Body */}
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-sm font-semibold text-stone-900">{line.label}</span>
@@ -821,28 +820,9 @@ function LineRow({
             )}
           </div>
           <p className="text-xs text-stone-600 mt-0.5 line-clamp-2">{line.valueDescription}</p>
-          <div className="mt-1 flex items-center gap-2 flex-wrap">
-            {(line.quantity || line.basis) && (
-              <span className="text-xs text-stone-500 tabular-nums">
-                {[line.quantity, line.basis].filter(Boolean).join(' · ')}
-              </span>
-            )}
+          <div className="mt-1">
             <RiskChip level={line.riskLevel} />
           </div>
-        </div>
-
-        {/* Cost + menu */}
-        <div className="flex items-start gap-2 shrink-0">
-          <span className="text-sm text-stone-900 tabular-nums pt-0.5">
-            {formatCurrency(line.estimatedTotalCost)}
-          </span>
-          <OverflowMenu
-            line={line}
-            onEdit={() => setEditing(true)}
-            onChangeRisk={handleChangeRisk}
-            onFindVendors={() => onOpenVendorSearch(line.id)}
-            onRemove={() => onRemoveLine(line.id)}
-          />
         </div>
       </div>
 
@@ -1018,14 +998,9 @@ export default function ResourcePlanCard({
   return (
     <div className="bg-white border border-stone-200 rounded-lg p-5 mb-6">
       <div className="flex items-start justify-between mb-4">
-        <div>
-          <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-0.5">
-            Resource Plan
-          </p>
-          <h2 className="text-base font-semibold text-stone-900">
-            Team, materials, and overhead
-          </h2>
-        </div>
+        <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide">
+          Resource Plan
+        </p>
         <button
           type="button"
           onClick={onGenerate}
@@ -1050,7 +1025,7 @@ export default function ResourcePlanCard({
         })}
       </div>
 
-      <div className="mt-5 pt-3 border-t border-stone-100 text-xs text-stone-500">
+      <div className="mt-5 text-xs text-stone-500">
         {totals.total} {totals.total === 1 ? 'line' : 'lines'}
         {contractType === 'PRODUCT' ? (
           <>

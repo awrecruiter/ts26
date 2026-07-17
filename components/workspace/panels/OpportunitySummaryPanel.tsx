@@ -219,7 +219,6 @@ export default function OpportunitySummaryPanel({
 
   // Solicitation description expansion
   const [showSolicitation, setShowSolicitation] = useState(false)
-  const [showBrief, setShowBrief] = useState(false)
 
   // Comparable past awards (USASpending.gov)
   const [comparables, setComparables] = useState<ComparablesPayload | null>(null)
@@ -432,88 +431,40 @@ export default function OpportunitySummaryPanel({
 
   return (
     <div className="h-full overflow-auto">
-      {/* RESOURCE PLAN */}
-      {/* Pricing sheet was removed — prices only exist once a sub responds
-          with a real quote (see Subcontractor.quotedAmount). */}
-      <div className="p-6 bg-stone-50 border-b border-stone-200">
-        <div className="max-w-4xl mx-auto space-y-4">
-          <div className="flex justify-end">
-            <ContractTypePill
-              contractType={contractType}
-              contractTypeSource={contractTypeSource}
-              contractTypeOverride={contractTypeOverride}
-              onUpdate={onUpdateContractType}
-            />
-          </div>
-          <ResourcePlanCard
-            plan={resourcePlan}
-            isGenerating={isGeneratingResourcePlan}
-            onGenerate={onGenerateResourcePlan ?? (() => {})}
-            onEditLine={onEditResourceLine ?? (() => {})}
-            onAddLine={onAddResourceLine ?? (() => {})}
-            onRemoveLine={onRemoveResourceLine ?? (() => {})}
-            onOpenVendorSearch={onOpenVendorSearchForLine ?? (() => {})}
-            onUpdateJobDescription={onUpdateJobDescription ?? (() => {})}
-            onRegenerateJobDescription={onRegenerateJobDescription ?? (() => {})}
-            regeneratingJdFor={regeneratingJdFor}
-            contractType={contractType}
-          />
-        </div>
-      </div>
-
-      {/* BELOW FOLD */}
+      {/* ── TOP: Info section owned by the Opportunity Brief ─────────────
+          The brief renders first — it's the primary orientation for the
+          whole page. The old solicitation summary ("What They're Buying"
+          + description) follows it. Resource plan, attachments, and
+          historical awards live below. */}
       <div className="p-4 sm:p-6">
         <div className="max-w-4xl mx-auto space-y-6">
-          {/* Overview — What They're Buying + collapsible Opportunity Brief */}
+          {/* Opportunity Brief — owner */}
+          <OpportunityBriefCard
+            brief={brief}
+            isGenerating={isGeneratingBrief}
+            onGenerate={onGenerateBrief ?? (() => {})}
+            opportunityTitle={opportunity.title}
+            agency={opportunity.agency}
+            error={briefError}
+          />
+
+          {/* Old summary — follows the brief */}
           <div className="p-5 bg-white border border-stone-200 rounded-lg space-y-4">
             <h2 className="text-sm font-semibold text-stone-800">What They&apos;re Buying</h2>
 
             {brief?.extendedOverview ? (
-              /* Extended AI narrative — richer multi-paragraph version */
               <div className="space-y-3">
                 {brief.extendedOverview.split(/\n+/).filter(Boolean).map((para, i) => (
                   <p key={i} className="text-sm text-stone-700 leading-relaxed">{para}</p>
                 ))}
               </div>
             ) : brief?.whatTheyAreBuying ? (
-              /* Fallback: short summary from older brief */
               <p className="text-sm text-stone-700 leading-relaxed">{brief.whatTheyAreBuying}</p>
             ) : null}
 
             {brief && !brief.extendedOverview && (
               <p className="text-xs text-stone-400 italic">Regenerate the brief to get a full narrative overview.</p>
             )}
-
-            {/* Opportunity Brief — collapsible dropdown living inside this section */}
-            <div className="pt-3 border-t border-stone-100">
-              <button
-                type="button"
-                onClick={() => setShowBrief((v) => !v)}
-                className="flex items-center gap-2 w-full text-left group"
-              >
-                <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider flex-1">
-                  Opportunity Brief
-                </p>
-                <svg
-                  className={`h-3.5 w-3.5 text-stone-400 transition-transform flex-shrink-0 ${showBrief ? 'rotate-180' : ''}`}
-                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {showBrief && (
-                <div className="mt-3">
-                  <OpportunityBriefCard
-                    brief={brief}
-                    isGenerating={isGeneratingBrief}
-                    onGenerate={onGenerateBrief ?? (() => {})}
-                    opportunityTitle={opportunity.title}
-                    agency={opportunity.agency}
-                    error={briefError}
-                  />
-                </div>
-              )}
-            </div>
 
             {/* Full solicitation description — collapsible */}
             {realDescription && (
@@ -543,6 +494,31 @@ export default function OpportunitySummaryPanel({
             {!brief?.whatTheyAreBuying && !realDescription && (
               <p className="text-sm text-stone-400 italic">No description available.</p>
             )}
+          </div>
+
+          {/* ── Resource Plan ─────────────────────────────────────────── */}
+          <div className="space-y-2">
+            <div className="flex justify-end">
+              <ContractTypePill
+                contractType={contractType}
+                contractTypeSource={contractTypeSource}
+                contractTypeOverride={contractTypeOverride}
+                onUpdate={onUpdateContractType}
+              />
+            </div>
+            <ResourcePlanCard
+              plan={resourcePlan}
+              isGenerating={isGeneratingResourcePlan}
+              onGenerate={onGenerateResourcePlan ?? (() => {})}
+              onEditLine={onEditResourceLine ?? (() => {})}
+              onAddLine={onAddResourceLine ?? (() => {})}
+              onRemoveLine={onRemoveResourceLine ?? (() => {})}
+              onOpenVendorSearch={onOpenVendorSearchForLine ?? (() => {})}
+              onUpdateJobDescription={onUpdateJobDescription ?? (() => {})}
+              onRegenerateJobDescription={onRegenerateJobDescription ?? (() => {})}
+              regeneratingJdFor={regeneratingJdFor}
+              contractType={contractType}
+            />
           </div>
 
           {/* SAM.gov Attachments */}
