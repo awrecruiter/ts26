@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import type { RequirementTemplate, FormField } from '@/lib/requirements/types'
 
 interface Attachment {
@@ -17,6 +17,14 @@ interface Props {
 }
 
 type Value = string | number | string[] | null
+
+function isFilled(v: Value | undefined): boolean {
+  if (v === null || v === undefined) return false
+  if (typeof v === 'string') return v.trim() !== ''
+  if (typeof v === 'number') return Number.isFinite(v)
+  if (Array.isArray(v)) return v.length > 0
+  return false
+}
 
 export default function RequirementForm({
   token,
@@ -43,10 +51,58 @@ export default function RequirementForm({
   const [done, setDone] = useState(alreadySubmitted)
   const [uploadingField, setUploadingField] = useState<string | null>(null)
   const [autoFilled, setAutoFilled] = useState<string[]>([])
+  const [activeIdx, setActiveIdx] = useState(0)
+  const tabsRef = useRef<HTMLDivElement | null>(null)
+
+  const sections = template.formSchema
+  const activeSection = sections[activeIdx] ?? sections[0]
+  const isLast = activeIdx === sections.length - 1
 
   const setField = useCallback((key: string, v: Value) => {
     setValues(prev => ({ ...prev, [key]: v }))
   }, [])
+
+  // Per-section required-field completion. A section counts as "complete"
+  // when every required field it defines has a non-empty value. Sections
+  // with no required fields default to complete once the user has touched
+  // any field in them (so they don't sit visually "unstarted" forever).
+  const perSection = useMemo(() => {
+    return sections.map(sec => {
+      const requiredKeys = sec.fields.filter(f => f.required).map(f => f.key)
+      const allKeys = sec.fields.map(f => f.key)
+      const requiredFilled = requiredKeys.filter(k => isFilled(values[k])).length
+      const anyFilled = allKeys.some(k => isFilled(values[k]))
+      const complete =
+        requiredKeys.length > 0 ? requiredFilled === requiredKeys.length : anyFilled
+      return { requiredTotal: requiredKeys.length, requiredFilled, anyFilled, complete }
+    })
+  }, [sections, values])
+
+  // Overall progress = required fields filled across the whole form.
+  const totals = useMemo(() => {
+    let required = 0
+    let filled = 0
+    for (const sec of sections) {
+      for (const f of sec.fields) {
+        if (!f.required) continue
+        required++
+        if (isFilled(values[f.key])) filled++
+      }
+    }
+    const pct = required === 0 ? 100 : Math.round((filled / required) * 100)
+    return { required, filled, pct }
+  }, [sections, values])
+
+  // Auto-scroll active section pill into view when it changes.
+  useEffect(() => {
+    const container = tabsRef.current
+    if (!container) return
+    const active = container.querySelector<HTMLButtonElement>(`[data-idx="${activeIdx}"]`)
+    if (active) active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+    // Return focus to the top of the form on section change so long forms
+    // don't leave the sub scrolled halfway down the previous section.
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [activeIdx])
 
   const uploadFile = useCallback(async (field: FormField, file: File) => {
     setUploadingField(field.key)
@@ -64,8 +120,7 @@ export default function RequirementForm({
         return
       }
       setAttachments(prev => [...prev, { url: data.url, filename: data.filename }])
-      // Also record the URL under the field key so response payload references it,
-      // and drop any server-extracted candidate values into empty fields.
+      // Drop any server-extracted candidate values into empty fields.
       setValues(prev => {
         const existing = prev[field.key]
         const next = { ...prev }
@@ -98,8 +153,7 @@ export default function RequirementForm({
     }
   }, [token])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = useCallback(async () => {
     setSubmitting(true)
     setError(null)
     setMissing([])
@@ -116,7 +170,10 @@ export default function RequirementForm({
       if (!res.ok) {
         if (data?.error === 'validation' && Array.isArray(data.missing)) {
           setMissing(data.missing)
-          setError(data.message || 'Please complete required fields.')
+          setError(data.message || 'Please complete required fields before submitting.')
+          // Jump to the first section that has an unfilled required field.
+          const firstIncomplete = perSection.findIndex(s => s.requiredTotal > 0 && s.requiredFilled < s.requiredTotal)
+          if (firstIncomplete >= 0) setActiveIdx(firstIncomplete)
         } else {
           setError(data?.message || data?.error || `Submit failed (${res.status})`)
         }
@@ -128,7 +185,7 @@ export default function RequirementForm({
     } finally {
       setSubmitting(false)
     }
-  }
+  }, [token, values, attachments, perSection])
 
   if (done) {
     return (
@@ -138,24 +195,103 @@ export default function RequirementForm({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h2 className="text-lg font-semibold text-stone-900 mb-2">Submitted</h2>
-        <p className="text-sm text-stone-600">
-          Thanks — your response has been sent to the prime contractor.
+        <h2 className="text-lg font-semibold text-stone-900 mb-2">Thanks — your response is in.</h2>
+        <p className="text-sm text-stone-600 leading-relaxed max-w-md mx-auto">
+          We&apos;ll review your information and get back to you if we want to move
+          forward or need more details. You can close this window.
         </p>
       </div>
     )
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {template.formSchema.map(section => (
-        <section key={section.title} className="bg-white border border-stone-200 rounded-lg p-5 sm:p-6">
-          <h2 className="text-base font-semibold text-stone-900 mb-1">{section.title}</h2>
-          {section.description && (
-            <p className="text-xs text-stone-500 mb-4">{section.description}</p>
+    <div className="space-y-5">
+      {/* Section switcher — horizontally scrollable pills that mirror the
+          workspace's panel switcher. Each pill shows a completion dot so the
+          sub can see at a glance which sections still need attention. */}
+      <div className="bg-white border border-stone-200 rounded-lg p-3">
+        <div
+          ref={tabsRef}
+          className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scroll-smooth snap-x snap-mandatory"
+          style={{ scrollbarWidth: 'thin' }}
+        >
+          {sections.map((sec, i) => {
+            const state = perSection[i]
+            const isActive = i === activeIdx
+            return (
+              <button
+                key={sec.title}
+                type="button"
+                data-idx={i}
+                onClick={() => setActiveIdx(i)}
+                className={`snap-start shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                  isActive
+                    ? 'bg-stone-800 text-white border-stone-800'
+                    : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-50'
+                }`}
+                title={sec.title}
+              >
+                <span
+                  className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-semibold ${
+                    isActive
+                      ? state.complete
+                        ? 'bg-emerald-400 text-white'
+                        : 'bg-white/20 text-white'
+                      : state.complete
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-stone-100 text-stone-500'
+                  }`}
+                  aria-hidden="true"
+                >
+                  {state.complete ? (
+                    <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    <span>{i + 1}</span>
+                  )}
+                </span>
+                <span className="whitespace-nowrap">{sec.title}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Progress bar */}
+        <div className="mt-3">
+          <div className="flex items-center justify-between text-[11px] text-stone-500 mb-1">
+            <span>
+              Section {activeIdx + 1} of {sections.length}
+            </span>
+            <span>
+              {totals.pct}% complete
+              {totals.required > 0 && ` · ${totals.filled} of ${totals.required} required fields`}
+            </span>
+          </div>
+          <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-emerald-500 transition-all"
+              style={{ width: `${totals.pct}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Active section */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (isLast) void handleSubmit()
+          else setActiveIdx(i => Math.min(i + 1, sections.length - 1))
+        }}
+      >
+        <section className="bg-white border border-stone-200 rounded-lg p-5 sm:p-6">
+          <h2 className="text-base font-semibold text-stone-900 mb-1">{activeSection.title}</h2>
+          {activeSection.description && (
+            <p className="text-xs text-stone-500 mb-4">{activeSection.description}</p>
           )}
           <div className="space-y-4">
-            {section.fields.map(field => (
+            {activeSection.fields.map(field => (
               <FieldRenderer
                 key={field.key}
                 field={field}
@@ -175,32 +311,52 @@ export default function RequirementForm({
             ))}
           </div>
         </section>
-      ))}
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-md p-3">
-          {error}
-          {missing.length > 0 && (
-            <ul className="list-disc list-inside mt-2 text-xs">
-              {missing.map(m => <li key={m}>{m}</li>)}
-            </ul>
+        {error && (
+          <div className="mt-4 bg-red-50 border border-red-200 text-red-800 text-sm rounded-md p-3">
+            {error}
+            {missing.length > 0 && (
+              <ul className="list-disc list-inside mt-2 text-xs">
+                {missing.map(m => <li key={m}>{m}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* Navigation */}
+        <div className="mt-5 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setActiveIdx(i => Math.max(i - 1, 0))}
+            disabled={activeIdx === 0}
+            className="text-sm text-stone-600 hover:text-stone-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors min-h-[44px] px-2"
+          >
+            ← Previous
+          </button>
+
+          <p className="text-xs text-stone-500 hidden sm:block">
+            {attachments.length > 0 && `${attachments.length} file${attachments.length === 1 ? '' : 's'} attached`}
+          </p>
+
+          {isLast ? (
+            <button
+              type="submit"
+              disabled={submitting}
+              className="bg-stone-800 hover:bg-stone-700 text-white text-sm font-medium px-5 py-2.5 rounded-md disabled:opacity-50 min-h-[44px]"
+            >
+              {submitting ? 'Submitting…' : 'Submit response'}
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className="bg-stone-800 hover:bg-stone-700 text-white text-sm font-medium px-5 py-2.5 rounded-md min-h-[44px]"
+            >
+              Next →
+            </button>
           )}
         </div>
-      )}
-
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-xs text-stone-500">
-          {attachments.length > 0 && `${attachments.length} file${attachments.length === 1 ? '' : 's'} attached`}
-        </p>
-        <button
-          type="submit"
-          disabled={submitting}
-          className="bg-stone-800 hover:bg-stone-700 text-white text-sm font-medium px-5 py-2.5 rounded-md disabled:opacity-50 min-h-[44px]"
-        >
-          {submitting ? 'Submitting…' : 'Submit response'}
-        </button>
-      </div>
-    </form>
+      </form>
+    </div>
   )
 }
 
@@ -270,7 +426,6 @@ function FieldRenderer({ field, value, onChange, onUpload, uploading, attachment
   }
 
   if (field.type === 'file') {
-    // Files uploaded via this field, matched by URL substring or presence in value
     const uploadedUrls = Array.isArray(value)
       ? value
       : typeof value === 'string' && value
@@ -320,7 +475,6 @@ function FieldRenderer({ field, value, onChange, onUpload, uploading, attachment
     )
   }
 
-  // text / email / phone / date / number / currency
   const htmlType =
     field.type === 'email' ? 'email'
     : field.type === 'phone' ? 'tel'
