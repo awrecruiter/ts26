@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   REQUIREMENT_TEMPLATES,
   SUBMITTAL_GROUPS,
@@ -362,6 +363,9 @@ function AssignModal({
   onClose: () => void
   onDone: () => void | Promise<void>
 }) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
   const existingSubIds = new Set(existingRows.map(r => r.subcontractor.id))
   const available = subcontractors.filter(s => !existingSubIds.has(s.id))
   const [subId, setSubId] = useState(available[0]?.id ?? '')
@@ -411,18 +415,31 @@ function AssignModal({
     }
   }
 
-  return (
-    <div className="fixed inset-0 bg-stone-900/50 z-50 flex items-center justify-center p-4"
+  if (!mounted) return null
+
+  const hasSubs = subcontractors.length > 0
+
+  const modal = (
+    <div className="fixed inset-0 bg-stone-900/50 z-[100] flex items-center justify-center p-4"
          onClick={onClose}>
-      <div className="bg-white rounded-lg w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-lg w-full max-w-md p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
         <h3 className="text-base font-semibold text-stone-900 mb-1">Assign requirement</h3>
         <p className="text-xs text-stone-500 mb-4">{template.displayName}</p>
 
-        {available.length === 0 ? (
+        {!hasSubs ? (
           <div>
             <p className="text-sm text-stone-600 mb-4">
-              All existing subcontractors have this requirement assigned. Add more subcontractors from the
-              Subcontractors tab.
+              No subcontractors on this opportunity yet. Add subcontractors from the Subcontractors tab
+              first — then come back here to assign prework requirements.
+            </p>
+            <button onClick={onClose}
+                    className="text-sm text-stone-700 hover:text-stone-900">Close</button>
+          </div>
+        ) : available.length === 0 ? (
+          <div>
+            <p className="text-sm text-stone-600 mb-4">
+              All {subcontractors.length} subcontractor(s) on this opportunity already have this
+              requirement assigned. Use Resend on the row below if you need to send the link again.
             </p>
             <button onClick={onClose}
                     className="text-sm text-stone-700 hover:text-stone-900">Close</button>
@@ -479,6 +496,8 @@ function AssignModal({
       </div>
     </div>
   )
+
+  return createPortal(modal, document.body)
 }
 
 // ─── View response modal ──────────────────────────────────────────────────
@@ -490,11 +509,14 @@ function ViewResponseModal({
   row: RequirementRow
   onClose: () => void
 }) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
   const entries = row.responses ? Object.entries(row.responses) : []
-  return (
-    <div className="fixed inset-0 bg-stone-900/50 z-50 flex items-center justify-center p-4"
+  if (!mounted) return null
+  const modal = (
+    <div className="fixed inset-0 bg-stone-900/50 z-[100] flex items-center justify-center p-4"
          onClick={onClose}>
-      <div className="bg-white rounded-lg w-full max-w-2xl max-h-[85vh] flex flex-col"
+      <div className="bg-white rounded-lg w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl"
            onClick={e => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-stone-200 flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -540,6 +562,7 @@ function ViewResponseModal({
       </div>
     </div>
   )
+  return createPortal(modal, document.body)
 }
 
 function formatValue(v: unknown): string {
