@@ -79,6 +79,64 @@ export default function PreworkPanel({ opportunityId, subcontractors }: Props) {
     return m
   }, [requirements])
 
+  // Quote comparison matrix — one row per sub with any submitted requirement
+  // across the four evaluation-critical templates (quote, insurance, SF-1413,
+  // sub_list_entry). Sorted so the lowest quote lands at the top and subs
+  // without a quote fall to the bottom.
+  const quoteMatrix = useMemo(() => {
+    const isDone = (s: RequirementRow['status']) => s === 'SUBMITTED' || s === 'APPROVED'
+    const bySub = new Map<string, RequirementRow[]>()
+    for (const r of requirements) {
+      if (!isDone(r.status)) continue
+      const list = bySub.get(r.subcontractor.id) ?? []
+      list.push(r)
+      bySub.set(r.subcontractor.id, list)
+    }
+
+    const rows = Array.from(bySub.entries()).map(([subId, subRows]) => {
+      const sub = subRows[0].subcontractor
+      const quoteRow = subRows.find(r => r.templateKey === 'sov_pricing_breakdown')
+      const insRow   = subRows.find(r => r.templateKey === 'insurance_certificate')
+      const sfRow    = subRows.find(r => r.templateKey === 'sf1413_signature')
+      const listRow  = subRows.find(r => r.templateKey === 'sub_list_entry')
+
+      const rawTotal = quoteRow?.responses?.grand_total
+      const quoted =
+        typeof rawTotal === 'number'
+          ? rawTotal
+          : typeof rawTotal === 'string' && rawTotal.trim() !== '' && !Number.isNaN(Number(rawTotal))
+            ? Number(rawTotal)
+            : null
+
+      const rawExp = insRow?.responses?.expiration_date
+      const expiration = typeof rawExp === 'string' ? rawExp : null
+      const rawGl = insRow?.responses?.gl_limit
+      const glLimit =
+        typeof rawGl === 'number'
+          ? rawGl
+          : typeof rawGl === 'string' && rawGl.trim() !== ''
+            ? rawGl
+            : null
+
+      return {
+        subId,
+        subName: sub.name,
+        quoted,
+        insurance: insRow ? { expiration, glLimit } : null,
+        sf1413: !!sfRow,
+        subListDone: !!listRow,
+      }
+    })
+
+    rows.sort((a, b) => {
+      if (a.quoted == null && b.quoted == null) return a.subName.localeCompare(b.subName)
+      if (a.quoted == null) return 1
+      if (b.quoted == null) return -1
+      return a.quoted - b.quoted
+    })
+    return rows
+  }, [requirements])
+
   const resend = async (rowId: string) => {
     const res = await fetch(`/api/opportunities/${opportunityId}/requirements/${rowId}/resend`, {
       method: 'POST',
@@ -141,6 +199,7 @@ export default function PreworkPanel({ opportunityId, subcontractors }: Props) {
       )}
 
       <div className="space-y-6">
+        <QuoteComparisonCard matrix={quoteMatrix} />
         {SUBMITTAL_GROUP_ORDER.map(groupKey => (
           <GroupSection
             key={groupKey}
@@ -569,4 +628,117 @@ function formatValue(v: unknown): string {
   if (v === null || v === undefined || v === '') return '—'
   if (Array.isArray(v)) return v.join(', ')
   return String(v)
+}
+
+// ─── Quote comparison card ───────────────────────────────────────────────────
+
+interface QuoteMatrixRow {
+  subId: string
+  subName: string
+  quoted: number | null
+  insurance: { expiration: string | null; glLimit: number | string | null } | null
+  sf1413: boolean
+  subListDone: boolean
+}
+
+const CURRENCY = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0,
+})
+
+function QuoteComparisonCard({ matrix }: { matrix: QuoteMatrixRow[] }) {
+  // Empty state: hide entirely rather than showing a placeholder card.
+  if (matrix.length === 0) return null
+
+  // Lowest/highest quote comparison — only meaningful when 2+ subs quoted.
+  // Δ shows how far under the highest bid the lowest sub is.
+  const quotedRows = matrix.filter((r): r is QuoteMatrixRow & { quoted: number } => r.quoted != null)
+  const hasSpread = quotedRows.length >= 2
+  const lowest = hasSpread ? quotedRows[0] : null
+  const highest = hasSpread ? quotedRows[quotedRows.length - 1] : null
+  const delta = hasSpread && lowest && highest ? highest.quoted - lowest.quoted : 0
+
+  return (
+    <section className="bg-white border border-stone-200 rounded-lg">
+      <header className="px-4 sm:px-5 py-3 border-b border-stone-100">
+        <h2 className="text-sm font-semibold text-stone-900">Quote Comparison</h2>
+        <p className="text-xs text-stone-500 mt-0.5">Submitted quotes side-by-side</p>
+      </header>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-stone-500 border-b border-stone-100">
+              <th className="px-4 sm:px-5 py-2 font-medium">Subcontractor</th>
+              <th className="px-3 py-2 font-medium">Quote</th>
+              <th className="px-3 py-2 font-medium">Insurance</th>
+              <th className="px-3 py-2 font-medium">SF-1413</th>
+              <th className="px-3 py-2 font-medium">Company Info</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-stone-100">
+            {matrix.map(row => (
+              <tr key={row.subId}>
+                <td className="px-4 sm:px-5 py-2 text-stone-800 font-medium">{row.subName}</td>
+                <td className="px-3 py-2 text-stone-800 tabular-nums">
+                  {row.quoted != null ? CURRENCY.format(row.quoted) : <span className="text-stone-400">—</span>}
+                </td>
+                <td className="px-3 py-2">
+                  <InsuranceCell insurance={row.insurance} />
+                </td>
+                <td className="px-3 py-2">
+                  {row.sf1413 ? <CheckIcon /> : <span className="text-stone-400">—</span>}
+                </td>
+                <td className="px-3 py-2">
+                  {row.subListDone ? <CheckIcon /> : <span className="text-stone-400">—</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {hasSpread && lowest && (
+        <div className="px-4 sm:px-5 py-2.5 border-t border-stone-100 text-xs text-stone-600">
+          Lowest quote: <span className="font-medium text-stone-900">{CURRENCY.format(lowest.quoted)}</span>{' '}
+          from <span className="font-medium text-stone-900">{lowest.subName}</span>
+          {delta > 0 && <> — Δ {CURRENCY.format(delta)} under highest.</>}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function InsuranceCell({ insurance }: { insurance: QuoteMatrixRow['insurance'] }) {
+  if (!insurance || !insurance.expiration) return <span className="text-stone-400">—</span>
+  const exp = new Date(insurance.expiration)
+  if (Number.isNaN(exp.getTime())) return <span className="text-stone-400">—</span>
+  const now = new Date()
+  const msPerDay = 24 * 60 * 60 * 1000
+  const daysUntil = Math.floor((exp.getTime() - now.getTime()) / msPerDay)
+
+  if (daysUntil < 0) {
+    return <span className="inline-flex items-center gap-1 text-red-700 font-medium">✗ expired</span>
+  }
+  if (daysUntil <= 30) {
+    const label = exp.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    return <span className="inline-flex items-center gap-1 text-amber-700 font-medium">⚠ expires {label}</span>
+  }
+  return <CheckIcon />
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="w-4 h-4 text-emerald-600 inline-block"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2.5}
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+    </svg>
+  )
 }

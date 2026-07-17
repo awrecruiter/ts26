@@ -196,6 +196,31 @@ export default function SubcontractorPanel({
   } | null>(null)
   const [checklistState, setChecklistState] = useState<Record<string, ChecklistItem[]>>({})
   const [deliverableChecks, setDeliverableChecks] = useState<Record<string, Set<number>>>({})
+  // Aggregated prework requirement counts per subcontractor. Fetched once on
+  // mount so each sub card can display a compact "Prework M/N" chip alongside
+  // the existing called/quoted badges.
+  const [preworkBySub, setPreworkBySub] = useState<Record<string, { total: number; submitted: number; approved: number }>>({})
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/opportunities/${opportunityId}/requirements`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data || !Array.isArray(data.requirements)) return
+        const agg: Record<string, { total: number; submitted: number; approved: number }> = {}
+        for (const req of data.requirements as Array<{ subcontractorId?: string | null; status?: string | null }>) {
+          const subId = req.subcontractorId
+          if (!subId) continue
+          if (!agg[subId]) agg[subId] = { total: 0, submitted: 0, approved: 0 }
+          agg[subId].total += 1
+          if (req.status === 'SUBMITTED' || req.status === 'APPROVED') agg[subId].submitted += 1
+          if (req.status === 'APPROVED') agg[subId].approved += 1
+        }
+        setPreworkBySub(agg)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [opportunityId])
 
   const checklistTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const deliverableTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
@@ -793,6 +818,34 @@ export default function SubcontractorPanel({
                             </span>
                           </>
                         )}
+
+                        {/* Prework status chip — reflects the sub's response to
+                            the prime's prework asks. Non-interactive for now;
+                            SubcontractorPanel has no setActivePanel prop. */}
+                        {(() => {
+                          const pw = preworkBySub[sub.id]
+                          if (!pw || pw.total === 0) return null
+                          const isComplete = pw.submitted === pw.total
+                          const hasSome = pw.submitted > 0
+                          const cls = isComplete
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : hasSome
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-stone-100 text-stone-600 border-stone-200'
+                          const label = isComplete
+                            ? `Prework ✓ ${pw.submitted}/${pw.total}`
+                            : hasSome
+                            ? `Prework ${pw.submitted}/${pw.total}`
+                            : `Prework waiting ${pw.submitted}/${pw.total}`
+                          return (
+                            <span
+                              className={`text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded border ${cls}`}
+                              title="Prework responses from this subcontractor"
+                            >
+                              {label}
+                            </span>
+                          )
+                        })()}
 
                         {sub.rating != null && (
                           <span className="flex items-center gap-1 text-xs text-stone-500">

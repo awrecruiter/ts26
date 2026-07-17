@@ -21,6 +21,7 @@ interface EmailDraftPanelProps {
     subject: string
     body: string
     attachmentIds: string[]
+    attachPreworkTemplates?: string[]
   }) => Promise<{ success: boolean; error?: string }>
   availableAttachments?: RichAttachment[]
   opportunityId?: string
@@ -36,6 +37,12 @@ interface EmailDraftPanelProps {
   callChecklist?: string[]
   /** Internal deadline for the sub to return their quote. */
   quoteDeadline?: string | null
+  /** Default state of the "Include Prework portal links" checkbox. Falls back
+   *  to true for quote_request templates, false for anything else. */
+  defaultIncludePrework?: boolean
+  /** Prework requirement template keys to provision + link when the checkbox
+   *  is on. Defaults to the sub-list entry + SOV/pricing breakdown pair. */
+  preworkTemplates?: string[]
 }
 
 const TEMPLATES: Record<string, { subject: string; body: string }> = {
@@ -143,6 +150,8 @@ export default function EmailDraftPanel({
   attachmentRelevance,
   callChecklist,
   quoteDeadline,
+  defaultIncludePrework,
+  preworkTemplates = ['sub_list_entry', 'sov_pricing_breakdown'],
 }: EmailDraftPanelProps) {
   const [to, setTo] = useState(recipientEmail)
   const [subject, setSubject] = useState('')
@@ -153,6 +162,12 @@ export default function EmailDraftPanel({
   const [sendSuccess, setSendSuccess] = useState<string | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState(templateType)
   const [previewAttachment, setPreviewAttachment] = useState<RichAttachment | null>(null)
+
+  // Prework portal links toggle. Default: on for quote_request templates,
+  // off otherwise (follow-ups + custom). Prop wins over that heuristic.
+  const initialIncludePrework =
+    defaultIncludePrework ?? (templateType === 'quote_request')
+  const [includePrework, setIncludePrework] = useState<boolean>(initialIncludePrework)
 
   const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -270,6 +285,11 @@ export default function EmailDraftPanel({
         subject,
         body,
         attachmentIds: Array.from(selectedAttachments),
+        // Always ship the template keys when the box is checked — the server
+        // silently drops them if no subcontractorId is on the request.
+        ...(includePrework && preworkTemplates.length > 0
+          ? { attachPreworkTemplates: preworkTemplates }
+          : {}),
       })
       if (result?.success) {
         setSendSuccess(`Email sent to ${to.trim()}.`)
@@ -478,6 +498,27 @@ export default function EmailDraftPanel({
             <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
               {sendError}
             </div>
+          )}
+
+          {/* Prework portal toggle */}
+          {preworkTemplates.length > 0 && (
+            <label className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer hover:bg-stone-100 transition-colors">
+              <input
+                type="checkbox"
+                checked={includePrework}
+                onChange={(e) => setIncludePrework(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-stone-300 text-stone-800 focus:ring-stone-300 flex-shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-stone-800">
+                  Include Prework portal links (company info + priced quote)
+                </p>
+                <p className="text-[11px] text-stone-500 mt-0.5">
+                  Appends secure magic-link URLs the sub can use to submit
+                  their info without logging in.
+                </p>
+              </div>
+            </label>
           )}
 
           {/* Actions */}

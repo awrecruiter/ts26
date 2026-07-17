@@ -661,7 +661,7 @@ export default function OpportunityWorkspacePage() {
           attachmentRelevance={opportunity?.aiArtifacts?.attachmentRelevance ?? null}
           callChecklist={opportunity?.aiArtifacts?.callChecklist ?? undefined}
           quoteDeadline={null}
-          onSend={async ({ to, subject, body, attachmentIds }) => {
+          onSend={async ({ to, subject, body, attachmentIds, attachPreworkTemplates }) => {
             try {
               const res = await fetch('/api/email/send', {
                 method: 'POST',
@@ -673,6 +673,7 @@ export default function OpportunityWorkspacePage() {
                   attachmentIds,
                   opportunityId: opportunity.id,
                   subcontractorId: selectedSubcontractor?.id,
+                  attachPreworkTemplates,
                 }),
               })
               const data = await res.json().catch(() => ({}))

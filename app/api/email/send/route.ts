@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { sendEmail, type EmailAttachment } from '@/lib/email'
 import { extractAttachmentsFromRawData } from '@/lib/samgov'
+import { bulkProvisionRequirements, renderPreworkLinksBlock } from '@/lib/requirements/bulk'
 
 interface SendRequestBody {
   to: string
@@ -14,6 +15,10 @@ interface SendRequestBody {
   subcontractorId?: string
   /** Attachment IDs to bundle from the opportunity's SAM.gov rawData. */
   attachmentIds?: string[]
+  /** Optional list of prework requirement template keys — when set with a
+   *  subcontractorId, each is provisioned and appended to the email body as
+   *  a magic-link portal URL. Silently ignored if no subcontractorId. */
+  attachPreworkTemplates?: string[]
 }
 
 /** Fetch one SAM.gov attachment server-side and return it as an EmailAttachment.
@@ -77,7 +82,14 @@ export async function POST(req: Request) {
     }
 
     const body = (await req.json()) as SendRequestBody
-    const { to, subject, attachmentIds = [], opportunityId, subcontractorId } = body
+    const {
+      to,
+      subject,
+      attachmentIds = [],
+      opportunityId,
+      subcontractorId,
+      attachPreworkTemplates = [],
+    } = body
 
     // Substitute the literal "[Your Name]" placeholder with the sender's identity
     // so signatures don't go out reading "Thanks,\n[Your Name]". Prefer display
@@ -90,7 +102,35 @@ export async function POST(req: Request) {
     const senderLines = [senderName, session.user.title, session.user.organization]
       .filter((s): s is string => Boolean(s && s.trim()))
       .join('\n')
-    const bodyText = (body.body || '').replace(/\[Your Name\]/g, senderLines || senderName)
+    let bodyText = (body.body || '').replace(/\[Your Name\]/g, senderLines || senderName)
+
+    // ── Prework provisioning ────────────────────────────────────────────────
+    // When the caller wants us to attach prework portal links, provision the
+    // requirements and append a formatted block BEFORE sending. Any failure
+    // is logged but never blocks the outbound email.
+    if (
+      opportunityId &&
+      subcontractorId &&
+      Array.isArray(attachPreworkTemplates) &&
+      attachPreworkTemplates.length > 0
+    ) {
+      try {
+        const { provisioned, skipped } = await bulkProvisionRequirements({
+          opportunityId,
+          subcontractorId,
+          templateKeys: attachPreworkTemplates,
+        })
+        if (skipped.length > 0) {
+          console.warn('[email/send] Some prework templates skipped:', skipped)
+        }
+        const block = renderPreworkLinksBlock(provisioned)
+        if (block) {
+          bodyText = `${bodyText.trimEnd()}\n\n${block}\n`
+        }
+      } catch (e) {
+        console.error('[email/send] Prework provisioning failed — continuing with send:', e)
+      }
+    }
 
     if (!to || !subject || !bodyText) {
       return NextResponse.json(
