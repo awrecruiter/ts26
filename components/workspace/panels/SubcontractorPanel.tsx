@@ -219,6 +219,11 @@ export default function SubcontractorPanel({
   // responses against the template's schema. Drives the trades-outreached
   // tile grid so admins can see who is how far along.
   const [intakeBySub, setIntakeBySub] = useState<Record<string, { filled: number; total: number; pct: number; submitted: boolean }>>({})
+  // Subs with a payment_package requirement in flight — flips the tile
+  // action from "Select for bid" to a "Selected" status chip.
+  const [selectedForBidSubs, setSelectedForBidSubs] = useState<Set<string>>(new Set())
+  const [selectingForBid, setSelectingForBid] = useState<string | null>(null)
+  const [selectError, setSelectError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -228,6 +233,7 @@ export default function SubcontractorPanel({
         if (cancelled || !data || !Array.isArray(data.requirements)) return
         const agg: Record<string, { total: number; submitted: number; approved: number }> = {}
         const intake: Record<string, { filled: number; total: number; pct: number; submitted: boolean }> = {}
+        const selected = new Set<string>()
         const subQuoteTemplate = getTemplate('sub_quote')
         const subQuoteFieldKeys = subQuoteTemplate
           ? subQuoteTemplate.formSchema.flatMap(sec => sec.fields.map(f => f.key))
@@ -244,6 +250,10 @@ export default function SubcontractorPanel({
           agg[subId].total += 1
           if (req.status === 'SUBMITTED' || req.status === 'APPROVED') agg[subId].submitted += 1
           if (req.status === 'APPROVED') agg[subId].approved += 1
+
+          if (req.templateKey === 'payment_package') {
+            selected.add(subId)
+          }
 
           if (req.templateKey === 'sub_quote' && subQuoteFieldKeys.length > 0) {
             const responses = req.responses ?? {}
@@ -266,6 +276,7 @@ export default function SubcontractorPanel({
         }
         setPreworkBySub(agg)
         setIntakeBySub(intake)
+        setSelectedForBidSubs(selected)
       })
       .catch(() => {})
     return () => { cancelled = true }
@@ -338,6 +349,32 @@ export default function SubcontractorPanel({
   const isCallCompleted = (sub: Subcontractor) => {
     return optimisticCalls[sub.id] ?? sub.callCompleted ?? false
   }
+
+  const handleSelectForBid = useCallback(async (sub: Subcontractor) => {
+    setSelectError(null)
+    setSelectingForBid(sub.id)
+    try {
+      const res = await fetch(`/api/opportunities/${opportunityId}/requirements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subcontractorId: sub.id,
+          templateKey: 'payment_package',
+          sendInvite: true,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.success) {
+        setSelectError(data?.error || `Select failed (${res.status})`)
+        return
+      }
+      setSelectedForBidSubs(prev => new Set(prev).add(sub.id))
+    } catch (e) {
+      setSelectError(e instanceof Error ? e.message : 'Network error')
+    } finally {
+      setSelectingForBid(null)
+    }
+  }, [opportunityId])
 
   // Outreach tiles — subs where a SOW / quote request has actually gone out.
   // Grouped by trade (resource line) so the admin can see progress per
@@ -856,6 +893,11 @@ export default function SubcontractorPanel({
             <h2 className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-3">
               Trades Outreached
             </h2>
+            {selectError && (
+              <div className="mb-3 p-2 rounded bg-red-50 border border-red-200 text-xs text-red-700">
+                {selectError}
+              </div>
+            )}
             <div className="space-y-4">
               {outreachTilesByTrade.map((group) => (
                 <div key={group.lineId}>
@@ -868,48 +910,78 @@ export default function SubcontractorPanel({
                       const total = intake?.total ?? 0
                       const submitted = intake?.submitted ?? false
                       const quoted = sub.quotedAmount != null
+                      const isSelected = selectedForBidSubs.has(sub.id)
+                      const canSelect = submitted && !isSelected
+                      const isSelecting = selectingForBid === sub.id
                       return (
-                        <button
+                        <div
                           key={sub.id}
-                          type="button"
-                          onClick={() => setExpandedCard(sub.id)}
-                          className="text-left bg-white border border-stone-200 rounded-lg p-3 hover:border-stone-400 transition-colors"
-                          title={`Open ${sub.name}`}
+                          className="bg-white border border-stone-200 rounded-lg p-3 hover:border-stone-400 transition-colors"
                         >
-                          <div className="flex items-start justify-between gap-2 mb-2">
-                            <p className="text-sm font-semibold text-stone-900 line-clamp-1">{sub.name}</p>
-                            {quoted ? (
-                              <span className="shrink-0 text-[10px] font-medium bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">
-                                Quoted
+                          <button
+                            type="button"
+                            onClick={() => setExpandedCard(sub.id)}
+                            className="w-full text-left"
+                            title={`Open ${sub.name}`}
+                          >
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <p className="text-sm font-semibold text-stone-900 line-clamp-1">{sub.name}</p>
+                              {isSelected ? (
+                                <span className="shrink-0 text-[10px] font-medium bg-stone-800 text-white px-1.5 py-0.5 rounded">
+                                  Selected for bid
+                                </span>
+                              ) : quoted ? (
+                                <span className="shrink-0 text-[10px] font-medium bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">
+                                  Quoted
+                                </span>
+                              ) : submitted ? (
+                                <span className="shrink-0 text-[10px] font-medium bg-stone-100 text-stone-700 px-1.5 py-0.5 rounded">
+                                  Submitted
+                                </span>
+                              ) : (
+                                <span className="shrink-0 text-[10px] font-medium bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded">
+                                  In progress
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-stone-500 mb-1">
+                              <span>Intake</span>
+                              <span>
+                                {pct}%{total > 0 && ` · ${filled}/${total} fields`}
                               </span>
-                            ) : submitted ? (
-                              <span className="shrink-0 text-[10px] font-medium bg-stone-100 text-stone-700 px-1.5 py-0.5 rounded">
-                                Submitted
-                              </span>
-                            ) : (
-                              <span className="shrink-0 text-[10px] font-medium bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded">
-                                In progress
-                              </span>
+                            </div>
+                            <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-emerald-500 transition-all"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            {quoted && (
+                              <p className="mt-2 text-xs text-stone-600">
+                                Quote: ${sub.quotedAmount?.toLocaleString()}
+                              </p>
                             )}
-                          </div>
-                          <div className="flex items-center justify-between text-[11px] text-stone-500 mb-1">
-                            <span>Intake</span>
-                            <span>
-                              {pct}%{total > 0 && ` · ${filled}/${total} fields`}
-                            </span>
-                          </div>
-                          <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-emerald-500 transition-all"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                          {quoted && (
-                            <p className="mt-2 text-xs text-stone-600">
-                              Quote: ${sub.quotedAmount?.toLocaleString()}
+                          </button>
+
+                          {/* Select for bid: only for subs who have finished
+                              the intake. Provisions the payment_package
+                              template and sends the sub a fresh magic link. */}
+                          {canSelect && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); void handleSelectForBid(sub) }}
+                              disabled={isSelecting}
+                              className="mt-3 w-full text-xs font-medium bg-stone-800 text-white hover:bg-stone-700 rounded px-3 py-1.5 disabled:opacity-50 transition-colors"
+                            >
+                              {isSelecting ? 'Selecting…' : 'Select for bid'}
+                            </button>
+                          )}
+                          {isSelected && (
+                            <p className="mt-3 text-[11px] text-stone-500">
+                              Payment package invite sent — awaiting monthly submissions.
                             </p>
                           )}
-                        </button>
+                        </div>
                       )
                     })}
                   </div>

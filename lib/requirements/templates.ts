@@ -67,6 +67,12 @@ export const SUBMITTAL_GROUPS: Record<SubmittalGroup, SubmittalGroupInfo> = {
     shortName: 'Quote',
     description: 'Basic company info and your priced quote for this project — in one form.',
   },
+  payment_package: {
+    key: 'payment_package',
+    displayName: 'Payment Package',
+    shortName: 'Payment',
+    description: 'Recurring monthly submission for pay-application inclusion — invoice, payroll, testing, tickets, photos, safety, change orders.',
+  },
 }
 
 export const REQUIREMENT_TEMPLATES: RequirementTemplate[] = [
@@ -563,6 +569,160 @@ REQUIREMENT_TEMPLATES.push({
   ],
 })
 
+// ─── Payment Package (recurring monthly pay-application intake) ───────────
+// Fires once the sub has been selected for the bid. Structured as tasks
+// (not "upload documents") — invoice + certified payroll + testing +
+// tickets + photos + safety + change orders. Each submission cycle for
+// a sub creates a fresh instance of this template.
+REQUIREMENT_TEMPLATES.push({
+  key: 'payment_package',
+  submittalGroup: 'payment_package',
+  displayName: 'Monthly payment package',
+  purpose: 'Submit the documentation the prime needs to include your work in this month\'s pay application.',
+  suggestedRole: 'admin',
+  defaultDueDays: 14,
+  formSchema: [
+    // ─── 1. Cycle ──────────────────────────────────────────────────
+    {
+      title: 'Pay Period',
+      description: 'Tell us which work week or month this package covers.',
+      fields: [
+        { key: 'period_label', label: 'Pay period label', type: 'text', required: true,
+          placeholder: 'e.g. Week 4, or Month of August 2026' },
+        { key: 'period_start', label: 'Period start date', type: 'date', required: true },
+        { key: 'period_end', label: 'Period end date', type: 'date', required: true },
+      ],
+    },
+
+    // ─── 2. Invoice ────────────────────────────────────────────────
+    {
+      title: 'Invoice',
+      fields: [
+        { key: 'invoice_number', label: 'Invoice number', type: 'text', required: true },
+        { key: 'invoice_date', label: 'Invoice date', type: 'date', required: true },
+        { key: 'invoice_amount', label: 'Invoice amount ($)', type: 'currency', required: true },
+        { key: 'percent_complete', label: 'Percent complete (%)', type: 'number', required: true,
+          placeholder: '0–100' },
+        { key: 'invoice_upload', label: 'Invoice PDF', type: 'file',
+          accept: 'application/pdf', required: true },
+      ],
+    },
+
+    // ─── 3. Certified Payroll ──────────────────────────────────────
+    {
+      title: 'Certified Payroll',
+      description: 'Davis-Bacon / SCA compliance — WH-347 + statement of compliance.',
+      fields: [
+        { key: 'payroll_week_ending', label: 'Week ending date', type: 'date', required: true },
+        { key: 'wh347_upload', label: 'WH-347 Certified Payroll', type: 'file',
+          accept: 'application/pdf', required: true },
+        { key: 'payroll_compliance_upload', label: 'Statement of Compliance', type: 'file',
+          accept: 'application/pdf', required: true },
+      ],
+    },
+
+    // ─── 4. Testing ────────────────────────────────────────────────
+    {
+      title: 'Testing / QC',
+      description: 'Skip this section if your scope had no testing this period.',
+      fields: [
+        { key: 'testing_company', label: 'Testing company', type: 'text' },
+        { key: 'testing_date', label: 'Testing date', type: 'date' },
+        { key: 'testing_reports_upload', label: 'Test / QC reports', type: 'file',
+          accept: 'application/pdf', multiple: true },
+      ],
+    },
+
+    // ─── 5. Materials ──────────────────────────────────────────────
+    {
+      title: 'Materials',
+      fields: [
+        { key: 'delivery_tickets_upload', label: 'Material delivery tickets', type: 'file',
+          accept: 'application/pdf,image/*', multiple: true },
+        { key: 'material_receipts_upload', label: 'Receipts', type: 'file',
+          accept: 'application/pdf,image/*', multiple: true },
+      ],
+    },
+
+    // ─── 6. Daily Reports ──────────────────────────────────────────
+    {
+      title: 'Daily Reports',
+      fields: [
+        { key: 'daily_logs_upload', label: 'Daily work logs', type: 'file',
+          accept: 'application/pdf', multiple: true, required: true,
+          helpText: 'One per work day for the period. We\'ll flag any missing days.' },
+      ],
+    },
+
+    // ─── 7. Photos ─────────────────────────────────────────────────
+    {
+      title: 'Progress Photos',
+      description: 'Before / during / after — as many as you have.',
+      fields: [
+        { key: 'photos_before_upload', label: 'Before photos', type: 'file',
+          accept: 'image/*', multiple: true },
+        { key: 'photos_during_upload', label: 'During photos', type: 'file',
+          accept: 'image/*', multiple: true },
+        { key: 'photos_after_upload', label: 'After photos', type: 'file',
+          accept: 'image/*', multiple: true },
+      ],
+    },
+
+    // ─── 8. Safety ─────────────────────────────────────────────────
+    {
+      title: 'Safety',
+      fields: [
+        { key: 'safety_incidents', label: 'Any safety incidents this period?', type: 'select',
+          required: true,
+          options: [
+            { value: '', label: 'Select…' },
+            { value: 'no', label: 'No incidents' },
+            { value: 'yes', label: 'Yes — reporting attached' },
+          ] },
+        { key: 'safety_report_upload', label: 'Incident report (if any)', type: 'file',
+          accept: 'application/pdf', multiple: true },
+      ],
+    },
+
+    // ─── 9. Change Orders ──────────────────────────────────────────
+    {
+      title: 'Change Orders',
+      fields: [
+        { key: 'change_orders_any', label: 'Any extra work / change orders this period?', type: 'select',
+          required: true,
+          options: [
+            { value: '', label: 'Select…' },
+            { value: 'no', label: 'No' },
+            { value: 'yes', label: 'Yes' },
+          ] },
+        { key: 'change_orders_description', label: 'Describe the extra work', type: 'textarea' },
+        { key: 'change_orders_photos_upload', label: 'Supporting photos', type: 'file',
+          accept: 'image/*', multiple: true },
+      ],
+    },
+
+    // ─── 10. Waste ─────────────────────────────────────────────────
+    {
+      title: 'Waste Disposal',
+      description: 'Skip if not applicable to your scope.',
+      fields: [
+        { key: 'waste_tickets_upload', label: 'Waste disposal tickets', type: 'file',
+          accept: 'application/pdf,image/*', multiple: true },
+      ],
+    },
+
+    // ─── 11. Lien Waiver ───────────────────────────────────────────
+    {
+      title: 'Lien Waiver',
+      description: 'If required by the prime\'s subcontract.',
+      fields: [
+        { key: 'lien_waiver_upload', label: 'Signed lien waiver', type: 'file',
+          accept: 'application/pdf' },
+      ],
+    },
+  ],
+})
+
 export function getTemplate(key: string): RequirementTemplate | undefined {
   return REQUIREMENT_TEMPLATES.find(t => t.key === key)
 }
@@ -574,6 +734,7 @@ export function templatesForGroup(group: SubmittalGroup): RequirementTemplate[] 
 /** Ordered list of all submittal groups (for stable UI rendering). */
 export const SUBMITTAL_GROUP_ORDER: SubmittalGroup[] = [
   'quote_submission',
+  'payment_package',
   'super_letter',
   'sub_list',
   'sf1413',

@@ -16,6 +16,7 @@ export type SubmittalGroup =
   | 'super_letter'      // Project Superintendent designation
   | 'sov'               // Schedule of Values (per-trade pricing)
   | 'quote_submission'  // Sub-facing: submit basic info + priced quote in one form
+  | 'payment_package'   // Recurring monthly compliance pipeline for selected subs
 
 export interface SubmittalGroupInfo {
   key: SubmittalGroup
