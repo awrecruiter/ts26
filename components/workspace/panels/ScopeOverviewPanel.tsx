@@ -1408,10 +1408,10 @@ function OverviewTab({
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-type FilterKey = 'overview' | 'compliance' | 'deliverables' | 'qualifications' | 'evaluation' | 'postAward' | 'lifecycle' | 'fieldGuide'
+type FilterKey = 'compliance' | 'deliverables' | 'qualifications' | 'evaluation' | 'postAward' | 'lifecycle' | 'fieldGuide'
 
 export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiScope }: ScopeOverviewPanelProps) {
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('overview')
+  const [activeFilter, setActiveFilter] = useState<FilterKey>('compliance')
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set())
   const [glossaryQuery, setGlossaryQuery] = useState('')
 
@@ -1493,7 +1493,6 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
   const hasParsedData = !!(structured?.compliance?.length || structured?.deliverables?.length)
 
   const ALL_FILTERS: { key: FilterKey; label: string; count?: number }[] = [
-    { key: 'overview',       label: 'Overview' },
     { key: 'compliance',     label: '⚖️ Compliance',    count: compliance.length },
     { key: 'deliverables',   label: '📄 Deliverables',  count: deliverables.length },
     { key: 'qualifications', label: '🎓 Qualifications', count: qualifications.length },
@@ -1503,7 +1502,7 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
     { key: 'fieldGuide',     label: '📚 Reference' },
   ]
   const FILTERS = ALL_FILTERS.filter(f =>
-    f.key === 'overview' || f.key === 'compliance' || f.key === 'postAward' || f.key === 'fieldGuide' || f.key === 'lifecycle' || (f.count ?? 0) > 0
+    f.key === 'compliance' || f.key === 'postAward' || f.key === 'fieldGuide' || f.key === 'lifecycle' || (f.count ?? 0) > 0
   )
 
   return (
@@ -1606,27 +1605,26 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
           ))}
         </div>
 
-        {/* Overview */}
-        {activeFilter === 'overview' && (
-          <OverviewTab opportunity={opportunity} brief={brief} assessment={assessment} />
-        )}
-
-        {/* Compliance */}
+        {/* Compliance — required plans from the solicitation surface first,
+            followed by the extracted compliance line items. */}
         {activeFilter === 'compliance' && (
-          compliance.length > 0 ? (
-            <SectionBlock
-              icon="⚖️"
-              title="Compliance Requirements"
-              count={compliance.length}
-              items={compliance}
-              accentClass="border-stone-200"
-              showCheckboxes
-              checkedItems={checkedItems}
-              onCheck={handleCheck}
-            />
-          ) : (
-            <EmptyState message="No compliance requirements extracted. Generate the SOW to parse solicitation attachments." />
-          )
+          <div className="space-y-4">
+            <RequiredPlansTiles compliance={compliance} />
+            {compliance.length > 0 ? (
+              <SectionBlock
+                icon="⚖️"
+                title="Compliance Requirements"
+                count={compliance.length}
+                items={compliance}
+                accentClass="border-stone-200"
+                showCheckboxes
+                checkedItems={checkedItems}
+                onCheck={handleCheck}
+              />
+            ) : (
+              <EmptyState message="No compliance requirements extracted. Generate the SOW to parse solicitation attachments." />
+            )}
+          </div>
         )}
 
         {/* Deliverables */}
@@ -1691,6 +1689,113 @@ function EmptyState({ message }: { message: string }) {
   return (
     <div className="rounded-xl border border-stone-200 bg-white px-6 py-10 text-center">
       <p className="text-sm text-stone-400">{message}</p>
+    </div>
+  )
+}
+
+// ─── Required Plans ─────────────────────────────────────────────────────────
+// Canonical prime-plan catalog. A plan tile only surfaces when at least one
+// compliance item mentions it — that's what makes it "required by the
+// solicitation." No invite action: plan assignment is delegated to the
+// subcontractor intake form.
+interface PlanDef {
+  key: string
+  label: string
+  shortName: string
+  detect: RegExp
+  purpose: string
+}
+
+const REQUIRED_PLANS: PlanDef[] = [
+  {
+    key: 'app',
+    label: 'Accident Prevention Plan (APP)',
+    shortName: 'APP',
+    detect: /\b(APP|accident prevention plan)\b/i,
+    purpose: 'Site-specific safety plan — supervisor, JHAs, emergency response, medical facility, PPE.',
+  },
+  {
+    key: 'qcp',
+    label: 'Quality Control Plan (QCP)',
+    shortName: 'QCP',
+    detect: /\b(QCP|quality control plan)\b/i,
+    purpose: 'QC officer, testing frequency, inspection procedures, non-conformance handling.',
+  },
+  {
+    key: 'wmp',
+    label: 'Waste Management Plan (WMP)',
+    shortName: 'WMP',
+    detect: /\b(WMP|waste management plan)\b/i,
+    purpose: 'Waste streams, hauler, disposal / recycling facilities, ticket documentation.',
+  },
+  {
+    key: 'sshp',
+    label: 'Site-Specific Safety & Health Plan (SSHP)',
+    shortName: 'SSHP',
+    detect: /\b(SSHP|site[- ]specific safety(?: and health)? plan|health and safety plan)\b/i,
+    purpose: 'EM 385-1-1 compliant safety plan tailored to this site\'s hazards.',
+  },
+  {
+    key: 'swppp',
+    label: 'Storm Water Pollution Prevention Plan (SWPPP)',
+    shortName: 'SWPPP',
+    detect: /\b(SWPPP|storm ?water(?: pollution)?(?: prevention)? plan)\b/i,
+    purpose: 'BMPs, discharge points, inspection schedule, corrective actions for storm water.',
+  },
+  {
+    key: 'emp',
+    label: 'Environmental Protection / Management Plan',
+    shortName: 'EMP',
+    detect: /\b(EMP|environmental (?:protection|management) plan)\b/i,
+    purpose: 'Environmental compliance, spill response, hazardous material handling.',
+  },
+  {
+    key: 'tcp',
+    label: 'Traffic Control Plan (TCP / MOT)',
+    shortName: 'TCP',
+    detect: /\b(TCP|MOT|traffic control plan|maintenance of traffic)\b/i,
+    purpose: 'Lane closures, flaggers, signage, MUTCD-compliant traffic routing.',
+  },
+]
+
+function RequiredPlansTiles({ compliance }: { compliance: ScopeItem[] }) {
+  const detected = REQUIRED_PLANS.filter((p) =>
+    compliance.some((c) => p.detect.test(c.text)),
+  )
+  if (detected.length === 0) return null
+
+  return (
+    <div className="bg-white rounded-xl border border-stone-200 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
+          Required Plans
+        </p>
+        <span className="text-[10px] text-stone-400">
+          Pulled from solicitation compliance items
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {detected.map((plan) => (
+          <div
+            key={plan.key}
+            className="border border-stone-200 rounded-lg p-3 bg-stone-50/50"
+          >
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <p className="text-sm font-semibold text-stone-900">{plan.shortName}</p>
+              <span className="text-[10px] font-medium text-stone-500 bg-white border border-stone-200 px-1.5 py-0.5 rounded">
+                Required
+              </span>
+            </div>
+            <p className="text-xs font-medium text-stone-700 mb-1">{plan.label}</p>
+            <p className="text-xs text-stone-500 leading-snug">{plan.purpose}</p>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-[11px] text-stone-400 italic">
+        Plan authors are assigned inside the subcontractor intake form —
+        each sub delegates the relevant section to the right person on
+        their team.
+      </p>
     </div>
   )
 }

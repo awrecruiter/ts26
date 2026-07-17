@@ -52,6 +52,7 @@ export default function RequirementForm({
   const [uploadingField, setUploadingField] = useState<string | null>(null)
   const [autoFilled, setAutoFilled] = useState<string[]>([])
   const [activeIdx, setActiveIdx] = useState(0)
+  const [certified, setCertified] = useState(false)
   const tabsRef = useRef<HTMLDivElement | null>(null)
 
   const sections = template.formSchema
@@ -160,6 +161,10 @@ export default function RequirementForm({
   }, [token])
 
   const handleSubmit = useCallback(async () => {
+    if (!certified) {
+      setError('Please certify that your answers are accurate before submitting.')
+      return
+    }
     setSubmitting(true)
     setError(null)
     setMissing([])
@@ -168,7 +173,13 @@ export default function RequirementForm({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          responses: values,
+          responses: {
+            ...values,
+            __attestation: {
+              certified: true,
+              certifiedAt: new Date().toISOString(),
+            },
+          },
           attachmentUrls: attachments.map(a => a.url),
         }),
       })
@@ -191,7 +202,7 @@ export default function RequirementForm({
     } finally {
       setSubmitting(false)
     }
-  }, [token, values, attachments, perSection])
+  }, [token, values, attachments, perSection, certified])
 
   if (done) {
     return (
@@ -282,8 +293,9 @@ export default function RequirementForm({
               <button
                 type="button"
                 onClick={() => void handleSubmit()}
-                disabled={submitting}
+                disabled={submitting || !certified}
                 className="shrink-0 bg-stone-800 hover:bg-stone-700 text-white text-sm font-medium px-4 py-2 rounded-md disabled:opacity-50 min-h-[36px]"
+                title={!certified ? 'Certify your answers below to enable Submit' : undefined}
               >
                 {submitting ? 'Submitting…' : 'Submit'}
               </button>
@@ -355,6 +367,32 @@ export default function RequirementForm({
                 {missing.map(m => <li key={m}>{m}</li>)}
               </ul>
             )}
+          </div>
+        )}
+
+        {/* Legal attestation — required on the final section. Sub must
+            actively check the box before Submit becomes enabled. The
+            timestamp is stored server-side under __attestation. */}
+        {isLast && (
+          <div className="mt-5 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={certified}
+                onChange={(e) => setCertified(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-amber-300 text-amber-700 focus:ring-amber-400 flex-shrink-0"
+              />
+              <span className="text-xs text-amber-900 leading-relaxed">
+                <span className="font-semibold">Certification of accuracy.</span>{' '}
+                I certify, under penalty of perjury, that the answers and
+                documents I have submitted here are true, complete, and
+                accurate to the best of my knowledge. I understand that
+                false or misleading information may result in exclusion
+                from this project, termination of any resulting agreement,
+                and potential civil or criminal liability under 18 U.S.C.
+                § 1001 and the False Claims Act.
+              </span>
+            </label>
           </div>
         )}
 
