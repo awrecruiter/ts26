@@ -680,14 +680,23 @@ export default function OpportunityWorkspacePage() {
               if (!res.ok || !data.success) {
                 return { success: false, error: data.error || `Send failed (${res.status})` }
               }
-              // Refetch so sowSentAt lands in state, then return to the Subs
-              // panel and collapse the just-worked card so the next active
-              // vendor is the visual top of the list. The user can re-expand
-              // the just-sent card later to Mark Complete in batch.
+              // Refetch so sowSentAt lands in state. Only auto-return to the
+              // Subs panel when there's nothing prework-related to show — if
+              // portal links or a diagnostic came back, keep the user here so
+              // they can verify the exact URLs their sub will receive.
               fetchData()
-              setExpandedSubcontractorId(null)
-              setActivePanel('subcontractors')
-              return { success: true }
+              const hasPreworkFeedback =
+                (Array.isArray(data.preworkProvisioned) && data.preworkProvisioned.length > 0) ||
+                Boolean(data.preworkDiagnostic)
+              if (!hasPreworkFeedback) {
+                setExpandedSubcontractorId(null)
+                setActivePanel('subcontractors')
+              }
+              return {
+                success: true,
+                preworkProvisioned: data.preworkProvisioned,
+                preworkDiagnostic: data.preworkDiagnostic,
+              }
             } catch (e) {
               return { success: false, error: e instanceof Error ? e.message : 'Network error' }
             }

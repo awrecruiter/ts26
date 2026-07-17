@@ -7,14 +7,15 @@
  */
 
 export type SubmittalGroup =
-  | 'app'           // Accident Prevention Plan
-  | 'qcp'           // Quality Control Plan
-  | 'wmp'           // Waste Management Plan
-  | 'sf1413'        // Labor Standards Compliance (subcontractor cert)
-  | 'sub_list'      // Prime's Subcontractor List
-  | 'insurance'     // Certificates of Insurance / bonding
-  | 'super_letter'  // Project Superintendent designation
-  | 'sov'           // Schedule of Values (per-trade pricing)
+  | 'app'               // Accident Prevention Plan
+  | 'qcp'               // Quality Control Plan
+  | 'wmp'               // Waste Management Plan
+  | 'sf1413'            // Labor Standards Compliance (subcontractor cert)
+  | 'sub_list'          // Prime's Subcontractor List
+  | 'insurance'         // Certificates of Insurance / bonding
+  | 'super_letter'      // Project Superintendent designation
+  | 'sov'               // Schedule of Values (per-trade pricing)
+  | 'quote_submission'  // Sub-facing: submit basic info + priced quote in one form
 
 export interface SubmittalGroupInfo {
   key: SubmittalGroup

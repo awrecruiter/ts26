@@ -72,6 +72,54 @@ export async function POST(
       where: { id: record.id },
       data: { consumedAt: now },
     })
+
+    // Mirror the consolidated quote form back onto the Subcontractor row so
+    // the prime's internal list is populated automatically — the whole point
+    // of the sub_quote template is "onboarding begins at quote submission."
+    if (template.key === 'sub_quote') {
+      const str = (k: string) => {
+        const v = responses[k]
+        return typeof v === 'string' && v.trim() ? v.trim() : undefined
+      }
+      const num = (k: string) => {
+        const v = responses[k]
+        if (typeof v === 'number' && Number.isFinite(v)) return v
+        if (typeof v === 'string' && v.trim()) {
+          const n = Number(v.replace(/[$,\s]/g, ''))
+          return Number.isFinite(n) ? n : undefined
+        }
+        return undefined
+      }
+      const grandTotal = num('grand_total')
+      const patch: Record<string, unknown> = {
+        name: str('company_name'),
+        address: str('address'),
+        contactName: str('contact_name'),
+        contactEmail: str('contact_email'),
+        contactPhone: str('contact_phone'),
+        // If the sub only gave a company email/phone, populate the top-level
+        // email/phone too so search & callbacks work off either field.
+        email: str('contact_email'),
+        phone: str('contact_phone'),
+        quoteNotes: str('notes'),
+      }
+      if (grandTotal !== undefined) {
+        patch.quotedAmount = grandTotal
+        patch.isActualQuote = true
+        patch.quoteReceivedAt = now
+      }
+      // Drop undefined so we don't stomp existing values with nulls.
+      for (const k of Object.keys(patch)) {
+        if (patch[k] === undefined) delete patch[k]
+      }
+      if (Object.keys(patch).length > 0) {
+        await tx.subcontractor.update({
+          where: { id: record.requirement.subcontractorId },
+          data: patch,
+        })
+      }
+    }
+
     return requirement
   })
 

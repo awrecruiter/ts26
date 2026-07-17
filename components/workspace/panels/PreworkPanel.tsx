@@ -80,9 +80,9 @@ export default function PreworkPanel({ opportunityId, subcontractors }: Props) {
   }, [requirements])
 
   // Quote comparison matrix — one row per sub with any submitted requirement
-  // across the four evaluation-critical templates (quote, insurance, SF-1413,
-  // sub_list_entry). Sorted so the lowest quote lands at the top and subs
-  // without a quote fall to the bottom.
+  // across the evaluation-critical templates (quote, insurance, SF-1413).
+  // Sorted so the lowest quote lands at the top and subs without a quote
+  // fall to the bottom.
   const quoteMatrix = useMemo(() => {
     const isDone = (s: RequirementRow['status']) => s === 'SUBMITTED' || s === 'APPROVED'
     const bySub = new Map<string, RequirementRow[]>()
@@ -95,10 +95,10 @@ export default function PreworkPanel({ opportunityId, subcontractors }: Props) {
 
     const rows = Array.from(bySub.entries()).map(([subId, subRows]) => {
       const sub = subRows[0].subcontractor
-      const quoteRow = subRows.find(r => r.templateKey === 'sov_pricing_breakdown')
+      const quoteRow = subRows.find(r => r.templateKey === 'sub_quote')
       const insRow   = subRows.find(r => r.templateKey === 'insurance_certificate')
       const sfRow    = subRows.find(r => r.templateKey === 'sf1413_signature')
-      const listRow  = subRows.find(r => r.templateKey === 'sub_list_entry')
+      const listRow  = subRows.find(r => r.templateKey === 'sub_quote')
 
       const rawTotal = quoteRow?.responses?.grand_total
       const quoted =

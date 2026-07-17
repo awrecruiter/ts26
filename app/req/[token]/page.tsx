@@ -1,5 +1,5 @@
 import { resolveMagicToken } from '@/lib/requirements/tokens'
-import { getTemplate, SUBMITTAL_GROUPS } from '@/lib/requirements/templates'
+import { getTemplate } from '@/lib/requirements/templates'
 import RequirementForm from './RequirementForm'
 
 interface PageProps {
@@ -45,17 +45,30 @@ export default async function RequirementAccessPage({ params }: PageProps) {
       </div>
     )
   }
-  const group = SUBMITTAL_GROUPS[template.submittalGroup]
+  // Prefill from what we already know about this specific sub. Only used when
+  // the sub hasn't started answering yet — otherwise their prior responses win.
+  // Keyed to the field keys defined in each template's formSchema.
+  const sub = req_.subcontractor
+  const priorResponses = (req_.responses as Record<string, unknown> | null) ?? null
+  let prefill: Record<string, unknown> | null = priorResponses
+  if (!priorResponses) {
+    if (template.key === 'sub_quote') {
+      prefill = {
+        company_name: sub.name ?? '',
+        address: sub.address ?? '',
+        contact_name: sub.contactName ?? '',
+        contact_email: sub.contactEmail ?? sub.email ?? '',
+        contact_phone: sub.contactPhone ?? sub.phone ?? '',
+      }
+    }
+  }
 
   return (
     <div className="min-h-[100dvh] bg-stone-50">
       <div className="max-w-2xl mx-auto p-4 sm:p-8">
         <header className="mb-6">
-          <p className="text-xs font-semibold text-stone-500 tracking-widest uppercase mb-1">
-            {group.displayName}
-          </p>
-          <h1 className="text-2xl font-semibold text-stone-900 mb-2">
-            {template.displayName}
+          <h1 className="text-2xl font-semibold text-stone-900 mb-1">
+            {req_.subcontractor.name}
           </h1>
           <p className="text-sm text-stone-600">{template.purpose}</p>
           <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-xs text-stone-500 border-t border-stone-200 pt-3">
@@ -69,10 +82,6 @@ export default async function RequirementAccessPage({ params }: PageProps) {
                 <span className="text-stone-700">{req_.opportunity.solicitationNumber}</span>
               </div>
             )}
-            <div>
-              <span className="text-stone-400">Company · </span>
-              <span className="text-stone-700">{req_.subcontractor.name}</span>
-            </div>
             {req_.dueAt && (
               <div>
                 <span className="text-stone-400">Due · </span>
@@ -89,7 +98,7 @@ export default async function RequirementAccessPage({ params }: PageProps) {
         <RequirementForm
           token={token}
           template={template}
-          initialResponses={(req_.responses as Record<string, unknown> | null) ?? null}
+          initialResponses={prefill}
           initialAttachments={req_.attachmentUrls}
           alreadySubmitted={req_.status === 'SUBMITTED' || req_.status === 'APPROVED'}
         />

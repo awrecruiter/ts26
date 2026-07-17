@@ -61,6 +61,12 @@ export const SUBMITTAL_GROUPS: Record<SubmittalGroup, SubmittalGroupInfo> = {
     description: 'Per-CLIN pricing breakdown — labor, material, equipment. Feeds prime bid.',
     sowReference: 'Div 01 §9.4',
   },
+  quote_submission: {
+    key: 'quote_submission',
+    displayName: 'Submit your quote',
+    shortName: 'Quote',
+    description: 'Basic company info and your priced quote for this project — in one form.',
+  },
 }
 
 export const REQUIREMENT_TEMPLATES: RequirementTemplate[] = [
@@ -84,56 +90,6 @@ export const REQUIREMENT_TEMPLATES: RequirementTemplate[] = [
           { key: 'super_email', label: 'Email', type: 'email', required: true },
           { key: 'super_years_experience', label: 'Years of relevant experience', type: 'number' },
           { key: 'super_resume', label: 'Resume / CV (PDF)', type: 'file', accept: 'application/pdf' },
-        ],
-      },
-    ],
-  },
-
-  // ─── Sub List (per-sub row) ───────────────────────────────────────────────
-  {
-    key: 'sub_list_entry',
-    submittalGroup: 'sub_list',
-    displayName: 'Confirm subcontractor information',
-    purpose: 'Confirm your company details for the prime\'s subcontractor list submittal.',
-    suggestedRole: 'admin',
-    defaultDueDays: 10,
-    formSchema: [
-      {
-        title: 'Company',
-        fields: [
-          { key: 'legal_name', label: 'Legal business name', type: 'text', required: true },
-          { key: 'dba', label: 'DBA (if any)', type: 'text' },
-          { key: 'uei', label: 'UEI', type: 'text', required: true, placeholder: 'SAM.gov Unique Entity ID' },
-          { key: 'cage', label: 'CAGE Code', type: 'text' },
-          { key: 'duns', label: 'DUNS (legacy)', type: 'text' },
-        ],
-      },
-      {
-        title: 'Address',
-        fields: [
-          { key: 'street', label: 'Street address', type: 'text', required: true },
-          { key: 'city', label: 'City', type: 'text', required: true },
-          { key: 'state', label: 'State', type: 'text', required: true },
-          { key: 'zip', label: 'ZIP', type: 'text', required: true },
-        ],
-      },
-      {
-        title: 'Trade & Scope',
-        fields: [
-          { key: 'trade', label: 'Trade / craft', type: 'text', required: true,
-            placeholder: 'e.g. Asphalt Paving, Pavement Marking' },
-          { key: 'scope_summary', label: 'Scope on this project', type: 'textarea', required: true,
-            helpText: 'One or two sentences describing your portion of the work.' },
-          { key: 'license_number', label: 'State contractor license #', type: 'text' },
-        ],
-      },
-      {
-        title: 'Point of Contact',
-        fields: [
-          { key: 'poc_name', label: 'Primary contact name', type: 'text', required: true },
-          { key: 'poc_title', label: 'Title', type: 'text' },
-          { key: 'poc_email', label: 'Email', type: 'email', required: true },
-          { key: 'poc_phone', label: 'Phone', type: 'phone', required: true },
         ],
       },
     ],
@@ -382,47 +338,53 @@ export const REQUIREMENT_TEMPLATES: RequirementTemplate[] = [
     ],
   },
 
-  // ─── SOV / Quote breakdown ────────────────────────────────────────────────
-  {
-    key: 'sov_pricing_breakdown',
-    submittalGroup: 'sov',
-    displayName: 'Per-CLIN pricing breakdown',
-    purpose: 'Your priced quote for the work assigned. Feeds the prime\'s Schedule of Values.',
-    suggestedRole: 'estimator',
-    defaultDueDays: 7,
-    formSchema: [
-      {
-        title: 'Scope',
-        fields: [
-          { key: 'scope_confirmation', label: 'Scope you are pricing', type: 'textarea', required: true,
-            helpText: 'Confirm the CLINs / work items covered by this quote.' },
-          { key: 'exclusions', label: 'Exclusions', type: 'textarea',
-            helpText: 'Anything explicitly not included (e.g. traffic control, permitting).' },
-        ],
-      },
-      {
-        title: 'Pricing',
-        fields: [
-          { key: 'labor_total', label: 'Labor total ($)', type: 'currency', required: true },
-          { key: 'material_total', label: 'Material total ($)', type: 'currency', required: true },
-          { key: 'equipment_total', label: 'Equipment total ($)', type: 'currency' },
-          { key: 'overhead_total', label: 'Overhead / other ($)', type: 'currency' },
-          { key: 'grand_total', label: 'Grand total ($)', type: 'currency', required: true },
-          { key: 'quote_valid_days', label: 'Quote valid for (days)', type: 'number',
-            placeholder: '30' },
-        ],
-      },
-      {
-        title: 'Backup',
-        fields: [
-          { key: 'quote_upload', label: 'Detailed quote / proposal (PDF)', type: 'file',
-            accept: 'application/pdf,image/*', multiple: true },
-          { key: 'notes', label: 'Notes / assumptions', type: 'textarea' },
-        ],
-      },
-    ],
-  },
 ]
+
+// ─── Consolidated single-form quote submission (sub-facing) ───────────────
+// One link, sub-friendly language. When the sub opens the portal they see:
+//   - Basic company + contact info (prefilled from what we already know)
+//   - Their priced quote for the work assigned
+//   - A file upload for a detailed quote (auto-populates totals if we can)
+// Submission mirrors the answers onto the Subcontractor row so the internal
+// list is populated automatically — onboarding "begins at quote submission".
+REQUIREMENT_TEMPLATES.push({
+  key: 'sub_quote',
+  submittalGroup: 'quote_submission',
+  displayName: 'Submit your quote',
+  purpose: 'Confirm your company details and share your priced quote for this project.',
+  suggestedRole: 'estimator',
+  defaultDueDays: 7,
+  formSchema: [
+    {
+      title: 'Your company',
+      fields: [
+        { key: 'company_name', label: 'Company name', type: 'text', required: true },
+        { key: 'address', label: 'Address', type: 'text' },
+      ],
+    },
+    {
+      title: 'Point of contact',
+      fields: [
+        { key: 'contact_name', label: 'Your name', type: 'text', required: true },
+        { key: 'contact_email', label: 'Email', type: 'email', required: true },
+        { key: 'contact_phone', label: 'Phone', type: 'phone' },
+      ],
+    },
+    {
+      title: 'Your quote',
+      description: 'Share your price for the work. Upload a detailed quote if you have one — we\'ll try to fill in the totals for you.',
+      fields: [
+        { key: 'quote_upload', label: 'Detailed quote (PDF)', type: 'file',
+          accept: 'application/pdf,image/*', multiple: true,
+          helpText: 'Optional. We\'ll auto-fill totals from the document when possible.' },
+        { key: 'grand_total', label: 'Grand total ($)', type: 'currency', required: true },
+        { key: 'quote_valid_days', label: 'Quote valid for (days)', type: 'number', placeholder: '30' },
+        { key: 'notes', label: 'Notes or assumptions', type: 'textarea',
+          helpText: 'Anything the prime should know — inclusions, exclusions, lead times.' },
+      ],
+    },
+  ],
+})
 
 export function getTemplate(key: string): RequirementTemplate | undefined {
   return REQUIREMENT_TEMPLATES.find(t => t.key === key)
@@ -434,6 +396,7 @@ export function templatesForGroup(group: SubmittalGroup): RequirementTemplate[] 
 
 /** Ordered list of all submittal groups (for stable UI rendering). */
 export const SUBMITTAL_GROUP_ORDER: SubmittalGroup[] = [
+  'quote_submission',
   'super_letter',
   'sub_list',
   'sf1413',

@@ -42,6 +42,7 @@ export default function RequirementForm({
   const [missing, setMissing] = useState<string[]>([])
   const [done, setDone] = useState(alreadySubmitted)
   const [uploadingField, setUploadingField] = useState<string | null>(null)
+  const [autoFilled, setAutoFilled] = useState<string[]>([])
 
   const setField = useCallback((key: string, v: Value) => {
     setValues(prev => ({ ...prev, [key]: v }))
@@ -63,14 +64,32 @@ export default function RequirementForm({
         return
       }
       setAttachments(prev => [...prev, { url: data.url, filename: data.filename }])
-      // Also record the URL under the field key so response payload references it
+      // Also record the URL under the field key so response payload references it,
+      // and drop any server-extracted candidate values into empty fields.
       setValues(prev => {
         const existing = prev[field.key]
+        const next = { ...prev }
         if (field.multiple) {
           const arr = Array.isArray(existing) ? existing : []
-          return { ...prev, [field.key]: [...arr, data.url] }
+          next[field.key] = [...arr, data.url]
+        } else {
+          next[field.key] = data.url
         }
-        return { ...prev, [field.key]: data.url }
+        const filled: string[] = []
+        const extracted = data?.extracted as Record<string, string | number | null> | undefined
+        if (extracted && typeof extracted === 'object') {
+          for (const [k, v] of Object.entries(extracted)) {
+            if (v === null || v === undefined || v === '') continue
+            const current = next[k]
+            const isEmpty = current === null || current === undefined || current === ''
+            if (isEmpty) {
+              next[k] = typeof v === 'number' ? v : String(v)
+              filled.push(k)
+            }
+          }
+        }
+        if (filled.length > 0) setAutoFilled(f => Array.from(new Set([...f, ...filled])))
+        return next
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed')
@@ -141,11 +160,17 @@ export default function RequirementForm({
                 key={field.key}
                 field={field}
                 value={values[field.key] ?? null}
-                onChange={v => setField(field.key, v)}
+                onChange={v => {
+                  setField(field.key, v)
+                  if (autoFilled.includes(field.key)) {
+                    setAutoFilled(f => f.filter(k => k !== field.key))
+                  }
+                }}
                 onUpload={file => uploadFile(field, file)}
                 uploading={uploadingField === field.key}
                 attachments={attachments}
                 highlight={missing.includes(field.label)}
+                autoFilled={autoFilled.includes(field.key)}
               />
             ))}
           </div>
@@ -187,13 +212,19 @@ interface FieldProps {
   uploading: boolean
   attachments: Attachment[]
   highlight: boolean
+  autoFilled?: boolean
 }
 
-function FieldRenderer({ field, value, onChange, onUpload, uploading, attachments, highlight }: FieldProps) {
+function FieldRenderer({ field, value, onChange, onUpload, uploading, attachments, highlight, autoFilled }: FieldProps) {
   const label = (
     <label className={`block text-sm font-medium mb-1.5 ${highlight ? 'text-red-700' : 'text-stone-800'}`}>
       {field.label}
       {field.required && <span className="text-red-500 ml-1">*</span>}
+      {autoFilled && (
+        <span className="ml-2 inline-block px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200 align-middle">
+          Auto-filled — please verify
+        </span>
+      )}
     </label>
   )
   const help = field.helpText ? (

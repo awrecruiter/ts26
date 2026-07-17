@@ -22,7 +22,12 @@ interface EmailDraftPanelProps {
     body: string
     attachmentIds: string[]
     attachPreworkTemplates?: string[]
-  }) => Promise<{ success: boolean; error?: string }>
+  }) => Promise<{
+    success: boolean
+    error?: string
+    preworkProvisioned?: Array<{ templateKey: string; url: string; templateDisplayName: string }>
+    preworkDiagnostic?: string
+  }>
   availableAttachments?: RichAttachment[]
   opportunityId?: string
   /** IDs of pre-selected attachments (parent-controlled, survives panel switching) */
@@ -151,7 +156,7 @@ export default function EmailDraftPanel({
   callChecklist,
   quoteDeadline,
   defaultIncludePrework,
-  preworkTemplates = ['sub_list_entry', 'sov_pricing_breakdown'],
+  preworkTemplates = ['sub_quote'],
 }: EmailDraftPanelProps) {
   const [to, setTo] = useState(recipientEmail)
   const [subject, setSubject] = useState('')
@@ -160,6 +165,8 @@ export default function EmailDraftPanel({
   const [toError, setToError] = useState<string | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
   const [sendSuccess, setSendSuccess] = useState<string | null>(null)
+  const [sendPreworkLinks, setSendPreworkLinks] = useState<Array<{ templateKey: string; url: string; templateDisplayName: string }>>([])
+  const [sendPreworkDiagnostic, setSendPreworkDiagnostic] = useState<string | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState(templateType)
   const [previewAttachment, setPreviewAttachment] = useState<RichAttachment | null>(null)
 
@@ -271,6 +278,8 @@ export default function EmailDraftPanel({
     setToError(null)
     setSendError(null)
     setSendSuccess(null)
+    setSendPreworkLinks([])
+    setSendPreworkDiagnostic(null)
 
     if (!onSend) {
       const mailtoUrl = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
@@ -293,6 +302,12 @@ export default function EmailDraftPanel({
       })
       if (result?.success) {
         setSendSuccess(`Email sent to ${to.trim()}.`)
+        if (result.preworkProvisioned?.length) {
+          setSendPreworkLinks(result.preworkProvisioned)
+        }
+        if (result.preworkDiagnostic) {
+          setSendPreworkDiagnostic(result.preworkDiagnostic)
+        }
       } else {
         setSendError(result?.error || 'Email send failed.')
       }
@@ -490,8 +505,45 @@ export default function EmailDraftPanel({
 
           {/* Send result banner */}
           {sendSuccess && (
-            <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-sm text-green-800">
-              {sendSuccess}
+            <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 space-y-2">
+              <p>{sendSuccess}</p>
+              {sendPreworkLinks.length > 0 && (
+                <div className="pt-2 border-t border-emerald-200">
+                  <p className="text-xs font-semibold text-emerald-900 mb-1.5">
+                    {sendPreworkLinks.length === 1 ? 'Portal link' : 'Portal links'} attached to the email (verify what your sub sees):
+                  </p>
+                  <ul className="space-y-1">
+                    {sendPreworkLinks.map(link => (
+                      <li key={link.templateKey} className="flex items-start gap-2 text-xs">
+                        <span className="text-emerald-700 font-medium flex-shrink-0">
+                          {link.templateDisplayName}:
+                        </span>
+                        <a
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-emerald-800 underline break-all font-mono"
+                        >
+                          {link.url}
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard.writeText(link.url).catch(() => {})}
+                          className="text-emerald-700 hover:text-emerald-900 flex-shrink-0"
+                          title="Copy link"
+                        >
+                          copy
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {sendPreworkDiagnostic && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-2">
+                  ⚠ {sendPreworkDiagnostic}
+                </p>
+              )}
             </div>
           )}
           {sendError && (
@@ -511,11 +563,11 @@ export default function EmailDraftPanel({
               />
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-stone-800">
-                  Include Prework portal links (company info + priced quote)
+                  Include quote submission link
                 </p>
                 <p className="text-[11px] text-stone-500 mt-0.5">
-                  Appends secure magic-link URLs the sub can use to submit
-                  their info without logging in.
+                  Adds a secure magic-link URL where the sub can confirm their
+                  info and send their quote without logging in.
                 </p>
               </div>
             </label>

@@ -5,6 +5,43 @@ import { sendEmail, type EmailAttachment } from '@/lib/email'
 import { extractAttachmentsFromRawData } from '@/lib/samgov'
 import { bulkProvisionRequirements, renderPreworkLinksBlock } from '@/lib/requirements/bulk'
 
+/**
+ * Convert the plain-text email body into an HTML alternative so mail clients
+ * render the portal links as real clickable anchors instead of relying on
+ * their own autolinker, which frequently clips URLs at the first `?`, `&`, or
+ * near the end. We escape everything, wrap URL matches in `<a href="…">`, and
+ * preserve line breaks. Trailing punctuation is peeled off the link so a
+ * sentence-ending `.` or `)` doesn't get swallowed into the href.
+ */
+function plainToHtml(text: string): string {
+  const escape = (s: string) =>
+    s.replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+
+  const urlRe = /https?:\/\/[^\s<>"']+/g
+  const parts: string[] = []
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = urlRe.exec(text)) !== null) {
+    parts.push(escape(text.slice(last, m.index)))
+    let url = m[0]
+    let trailing = ''
+    while (url.length > 0 && /[.,;:!?)\]]/.test(url[url.length - 1])) {
+      trailing = url[url.length - 1] + trailing
+      url = url.slice(0, -1)
+    }
+    parts.push(`<a href="${escape(url)}" target="_blank" rel="noopener noreferrer">${escape(url)}</a>${escape(trailing)}`)
+    last = m.index + m[0].length
+  }
+  parts.push(escape(text.slice(last)))
+
+  const escaped = parts.join('').replace(/\r\n|\r|\n/g, '<br>')
+  return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#1c1917;line-height:1.5;white-space:pre-wrap;word-break:break-word;">${escaped}</div>`
+}
+
 interface SendRequestBody {
   to: string
   subject: string
@@ -107,28 +144,43 @@ export async function POST(req: Request) {
     // ── Prework provisioning ────────────────────────────────────────────────
     // When the caller wants us to attach prework portal links, provision the
     // requirements and append a formatted block BEFORE sending. Any failure
-    // is logged but never blocks the outbound email.
-    if (
-      opportunityId &&
-      subcontractorId &&
-      Array.isArray(attachPreworkTemplates) &&
-      attachPreworkTemplates.length > 0
-    ) {
-      try {
-        const { provisioned, skipped } = await bulkProvisionRequirements({
-          opportunityId,
-          subcontractorId,
-          templateKeys: attachPreworkTemplates,
-        })
-        if (skipped.length > 0) {
-          console.warn('[email/send] Some prework templates skipped:', skipped)
+    // is logged but never blocks the outbound email. We echo the outcome back
+    // in the response so the UI can show the exact URLs that went out and
+    // surface a diagnostic when the flag was set but couldn't be honored.
+    let preworkProvisioned: Array<{ templateKey: string; url: string; templateDisplayName: string }> = []
+    let preworkDiagnostic: string | null = null
+    const preworkRequested = Array.isArray(attachPreworkTemplates) && attachPreworkTemplates.length > 0
+    if (preworkRequested) {
+      if (!opportunityId || !subcontractorId) {
+        preworkDiagnostic =
+          'Prework links skipped — no subcontractor selected. Open the Email panel by clicking Request Quote on a sub card so the link can be scoped to them.'
+      } else {
+        try {
+          const { provisioned, skipped } = await bulkProvisionRequirements({
+            opportunityId,
+            subcontractorId,
+            templateKeys: attachPreworkTemplates ?? [],
+          })
+          if (skipped.length > 0) {
+            console.warn('[email/send] Some prework templates skipped:', skipped)
+          }
+          const block = renderPreworkLinksBlock(provisioned)
+          if (block) {
+            bodyText = `${bodyText.trimEnd()}\n\n${block}\n`
+          }
+          preworkProvisioned = provisioned.map(p => ({
+            templateKey: p.templateKey,
+            url: p.url,
+            templateDisplayName: p.templateDisplayName,
+          }))
+          if (provisioned.length === 0 && skipped.length > 0) {
+            preworkDiagnostic = `Prework links skipped: ${skipped.map(s => `${s.templateKey} (${s.reason})`).join(', ')}`
+          }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          console.error('[email/send] Prework provisioning failed — continuing with send:', e)
+          preworkDiagnostic = `Prework provisioning failed — email sent without portal links. ${msg}`
         }
-        const block = renderPreworkLinksBlock(provisioned)
-        if (block) {
-          bodyText = `${bodyText.trimEnd()}\n\n${block}\n`
-        }
-      } catch (e) {
-        console.error('[email/send] Prework provisioning failed — continuing with send:', e)
       }
     }
 
@@ -185,6 +237,7 @@ export async function POST(req: Request) {
       to,
       subject,
       body: bodyText,
+      html: plainToHtml(bodyText),
       replyTo: session.user.email,
       attachments: resolvedAttachments,
       googleAccessToken: session.googleAccessToken,
@@ -221,6 +274,8 @@ export async function POST(req: Request) {
       messageId: result.messageId,
       attachmentsAttached: resolvedAttachments.length,
       attachmentFailures: attachmentFailures.length ? attachmentFailures : undefined,
+      preworkProvisioned: preworkProvisioned.length ? preworkProvisioned : undefined,
+      preworkDiagnostic: preworkDiagnostic ?? undefined,
     })
   } catch (error) {
     console.error('[email/send] Error:', error)
