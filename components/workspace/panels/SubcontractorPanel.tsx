@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { getTemplate } from '@/lib/requirements/templates'
 
 interface ChecklistItem {
   id: string
@@ -101,6 +102,8 @@ interface SubcontractorPanelProps {
   activeResourceLine?: { id: string; label: string } | null
   /** Called when the user clears the resource-line filter via the breadcrumb. */
   onClearResourceLineFilter?: () => void
+  /** Resource plan lines so the outreach tiles can show trade labels. */
+  resourceLines?: Array<{ id: string; label: string }>
 }
 
 function buildAIChecklist(items: string[]): ChecklistItem[] {
@@ -179,6 +182,7 @@ export default function SubcontractorPanel({
   onRegenerateChecklist,
   activeResourceLine = null,
   onClearResourceLineFilter,
+  resourceLines = [],
 }: SubcontractorPanelProps) {
   const [filter, setFilter] = useState<'active' | 'quoted' | 'pending'>('active')
   const [isSearching, setIsSearching] = useState(false)
@@ -211,6 +215,11 @@ export default function SubcontractorPanel({
   // the existing called/quoted badges.
   const [preworkBySub, setPreworkBySub] = useState<Record<string, { total: number; submitted: number; approved: number }>>({})
 
+  // Intake completion per sub — computed from the sub_quote RequirementInstance
+  // responses against the template's schema. Drives the trades-outreached
+  // tile grid so admins can see who is how far along.
+  const [intakeBySub, setIntakeBySub] = useState<Record<string, { filled: number; total: number; pct: number; submitted: boolean }>>({})
+
   useEffect(() => {
     let cancelled = false
     fetch(`/api/opportunities/${opportunityId}/requirements`)
@@ -218,15 +227,45 @@ export default function SubcontractorPanel({
       .then((data) => {
         if (cancelled || !data || !Array.isArray(data.requirements)) return
         const agg: Record<string, { total: number; submitted: number; approved: number }> = {}
-        for (const req of data.requirements as Array<{ subcontractorId?: string | null; status?: string | null }>) {
+        const intake: Record<string, { filled: number; total: number; pct: number; submitted: boolean }> = {}
+        const subQuoteTemplate = getTemplate('sub_quote')
+        const subQuoteFieldKeys = subQuoteTemplate
+          ? subQuoteTemplate.formSchema.flatMap(sec => sec.fields.map(f => f.key))
+          : []
+        for (const req of data.requirements as Array<{
+          subcontractorId?: string | null
+          status?: string | null
+          templateKey?: string | null
+          responses?: Record<string, unknown> | null
+        }>) {
           const subId = req.subcontractorId
           if (!subId) continue
           if (!agg[subId]) agg[subId] = { total: 0, submitted: 0, approved: 0 }
           agg[subId].total += 1
           if (req.status === 'SUBMITTED' || req.status === 'APPROVED') agg[subId].submitted += 1
           if (req.status === 'APPROVED') agg[subId].approved += 1
+
+          if (req.templateKey === 'sub_quote' && subQuoteFieldKeys.length > 0) {
+            const responses = req.responses ?? {}
+            let filled = 0
+            for (const k of subQuoteFieldKeys) {
+              const v = (responses as Record<string, unknown>)[k]
+              if (v === null || v === undefined) continue
+              if (typeof v === 'string' && v.trim() === '') continue
+              if (Array.isArray(v) && v.length === 0) continue
+              filled++
+            }
+            const total = subQuoteFieldKeys.length
+            intake[subId] = {
+              filled,
+              total,
+              pct: total === 0 ? 0 : Math.round((filled / total) * 100),
+              submitted: req.status === 'SUBMITTED' || req.status === 'APPROVED',
+            }
+          }
         }
         setPreworkBySub(agg)
+        setIntakeBySub(intake)
       })
       .catch(() => {})
     return () => { cancelled = true }
@@ -299,6 +338,33 @@ export default function SubcontractorPanel({
   const isCallCompleted = (sub: Subcontractor) => {
     return optimisticCalls[sub.id] ?? sub.callCompleted ?? false
   }
+
+  // Outreach tiles — subs where a SOW / quote request has actually gone out.
+  // Grouped by trade (resource line) so the admin can see progress per
+  // discipline at a glance. Only rendered when at least one sub has been
+  // outreached, so the panel stays clean on first visit.
+  const outreachedSubs = useMemo(
+    () => subcontractors.filter((s) => !!s.sowSentAt),
+    [subcontractors],
+  )
+  const tradeLabelById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const l of resourceLines) m.set(l.id, l.label)
+    return m
+  }, [resourceLines])
+  const outreachTilesByTrade = useMemo(() => {
+    const groups = new Map<string, { label: string; subs: Subcontractor[] }>()
+    for (const sub of outreachedSubs) {
+      const lineId = sub.resourceLineId ?? '__unassigned__'
+      const label = sub.resourceLineId
+        ? (tradeLabelById.get(sub.resourceLineId) ?? sub.service ?? 'Unlabelled trade')
+        : (sub.service ?? 'Unassigned')
+      const existing = groups.get(lineId) ?? { label, subs: [] }
+      existing.subs.push(sub)
+      groups.set(lineId, existing)
+    }
+    return Array.from(groups.entries()).map(([lineId, g]) => ({ lineId, ...g }))
+  }, [outreachedSubs, tradeLabelById])
 
   // When the user arrived here by clicking a specific trade on the brief,
   // scope the visible list to subs discovered for that resource line.
@@ -779,6 +845,76 @@ export default function SubcontractorPanel({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Trades Outreached — one section per trade, tiles inside show intake %.
+            Only rendered once at least one sub has been sent a quote request. */}
+        {outreachTilesByTrade.length > 0 && (
+          <div className="mb-6">
+            <h2 className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-3">
+              Trades Outreached
+            </h2>
+            <div className="space-y-4">
+              {outreachTilesByTrade.map((group) => (
+                <div key={group.lineId}>
+                  <p className="text-sm font-semibold text-stone-800 mb-2">{group.label}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {group.subs.map((sub) => {
+                      const intake = intakeBySub[sub.id]
+                      const pct = intake?.pct ?? 0
+                      const filled = intake?.filled ?? 0
+                      const total = intake?.total ?? 0
+                      const submitted = intake?.submitted ?? false
+                      const quoted = sub.quotedAmount != null
+                      return (
+                        <button
+                          key={sub.id}
+                          type="button"
+                          onClick={() => setExpandedCard(sub.id)}
+                          className="text-left bg-white border border-stone-200 rounded-lg p-3 hover:border-stone-400 transition-colors"
+                          title={`Open ${sub.name}`}
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <p className="text-sm font-semibold text-stone-900 line-clamp-1">{sub.name}</p>
+                            {quoted ? (
+                              <span className="shrink-0 text-[10px] font-medium bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">
+                                Quoted
+                              </span>
+                            ) : submitted ? (
+                              <span className="shrink-0 text-[10px] font-medium bg-stone-100 text-stone-700 px-1.5 py-0.5 rounded">
+                                Submitted
+                              </span>
+                            ) : (
+                              <span className="shrink-0 text-[10px] font-medium bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded">
+                                In progress
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-stone-500 mb-1">
+                            <span>Intake</span>
+                            <span>
+                              {pct}%{total > 0 && ` · ${filled}/${total} fields`}
+                            </span>
+                          </div>
+                          <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-emerald-500 transition-all"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          {quoted && (
+                            <p className="mt-2 text-xs text-stone-600">
+                              Quote: ${sub.quotedAmount?.toLocaleString()}
+                            </p>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

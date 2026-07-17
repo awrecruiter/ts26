@@ -563,6 +563,7 @@ export default function OpportunityWorkspacePage() {
               : null
           }
           onClearResourceLineFilter={handleClearResourceLineFilter}
+          resourceLines={(opportunity?.resourcePlan?.lines as Array<{ id: string; label: string }> | undefined) ?? []}
           onRequestQuote={(sub) => {
             setSelectedSubcontractor(sub)
             setEmailTemplateType('quote_request')
