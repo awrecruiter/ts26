@@ -716,12 +716,39 @@ export default function SubcontractorPanel({
           </nav>
         )}
 
+        {/* ── Default view: tiles-only landing page ─────────────────────
+            The Subcontractors tab shows nothing but the Trades Outreached
+            tile grid. Discovery, search, and vendor cards live under the
+            trade-scoped breadcrumb view (entered by clicking a trade on
+            the Opportunity Brief). */}
+        {!activeResourceLine && (
+          <div className="mb-6">
+            <h1 className="text-lg font-semibold text-stone-900 mb-1">Subcontractors</h1>
+            {outreachTilesByTrade.length === 0 ? (
+              <p className="text-sm text-stone-500">
+                Click a trade on the Opportunity Brief to find and reach out to
+                subcontractors. Trades you&apos;ve outreached will show up here as
+                tiles with live intake progress.
+              </p>
+            ) : (
+              <p className="text-sm text-stone-500">
+                Trades you&apos;ve outreached with live intake progress. Click
+                a tile to open that sub&apos;s details.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* ── Trade-scoped view: search + discovery + full vendor list ──
+            Only shown when the user drilled in from a trade on the brief. */}
+        {activeResourceLine && (
+        <>
         {/* Header */}
         <div className="mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <h1 className="text-lg font-semibold text-stone-900">
-                {activeResourceLine ? `Subs for ${activeResourceLine.label}` : 'Subcontractors'}
+                Subs for {activeResourceLine.label}
               </h1>
               <p className="text-sm text-stone-500 mt-1">
                 {subcontractors.length} vendor{subcontractors.length !== 1 ? 's' : ''}
@@ -886,9 +913,10 @@ export default function SubcontractorPanel({
           </div>
         )}
 
-        {/* Trades Outreached — one section per trade, tiles inside show intake %.
-            Only rendered once at least one sub has been sent a quote request. */}
-        {outreachTilesByTrade.length > 0 && (
+        {/* Trades Outreached — one section per trade, tiles inside show intake %. */}
+        </>
+        )}
+        {!activeResourceLine && outreachTilesByTrade.length > 0 && (
           <div className="mb-6">
             <h2 className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-3">
               Trades Outreached
@@ -991,7 +1019,9 @@ export default function SubcontractorPanel({
           </div>
         )}
 
-        {/* Filter tabs */}
+        {/* Filter tabs (trade-scoped only) */}
+        {activeResourceLine && (
+        <>
         <div className="flex gap-1 bg-stone-100 p-1 rounded-lg mb-4 w-fit">
           {(['active', 'pending', 'quoted'] as const).map((f) => (
             <button
@@ -1464,6 +1494,8 @@ export default function SubcontractorPanel({
             </div>
           )}
         </div>
+        </>
+        )}
       </div>
     </div>
   )
