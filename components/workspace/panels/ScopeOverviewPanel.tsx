@@ -1888,24 +1888,10 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
               onOpenPlan={(key) => setViewingPlan(key)}
               onDownloadPackage={handleDownloadPackage}
             />
-            {compliance.length > 0 ? (
-              <SectionBlock
-                icon="⚖️"
-                title="Compliance Requirements"
-                count={compliance.length}
-                items={compliance}
-                accentClass="border-stone-200"
-                showCheckboxes
-                checkedItems={checkedItems}
-                onCheck={handleCheck}
-              />
-            ) : (
-              <EmptyState message="No compliance requirements extracted. Generate the SOW to parse solicitation attachments." />
-            )}
-            {/* Bottom of the scrollable Compliance section: every FAR /
-                DFARS / AFARS / VAAR clause referenced anywhere in the
-                opportunity attachments, in a scrollable list. */}
-            <FarClausesSection clauses={farClauses} />
+            {/* Compliance Requirements — replaced with the applicable FAR
+                clauses (title + reference-library explanation per clause).
+                Sits at the bottom of the scrollable Compliance section. */}
+            <ComplianceRequirementsFarList clauses={farClauses} />
           </div>
         )}
 
@@ -2090,14 +2076,36 @@ function PlanViewerModal({
   )
 }
 
-// ─── Applicable FAR Clauses ────────────────────────────────────────────────
-// Sits at the bottom of the Compliance filter view. Every FAR / DFARS /
-// AFARS / VAAR / EPAAR / GSAM clause we found anywhere in the opportunity
-// attachment corpus is listed here, sorted by system + code, in a
-// scrollable list. Recognized codes show their canonical short title;
-// unknown codes show the surrounding attachment snippet.
-function FarClausesSection({ clauses }: { clauses: FarClause[] }) {
+// ─── Compliance Requirements (FAR clauses, glossary-explained) ─────────────
+// Every FAR / DFARS / AFARS / VAAR / EPAAR / GSAM clause found in the
+// attachment corpus is listed here as THE Compliance Requirements list.
+// Each row shows the clause reference, its canonical short title, and —
+// when a Reference Library term maps to that clause via its farRef — a
+// "Read what this means" expander with the plain-language explanation +
+// contractor must-do list from the glossary.
+
+// Build a reverse index: FAR code → matching glossary terms. Terms declare
+// their coverage via `farRef` strings like "FAR 52.209-3 (…)" — we scrape
+// every code out of that string so a single term can cover multiple
+// clauses (e.g. "FAR 52.246-2 / 52.246-4").
+const GLOSSARY_TERMS_BY_FAR_CODE: Map<string, GlossaryTerm[]> = (() => {
+  const m = new Map<string, GlossaryTerm[]>()
+  for (const cat of complianceGlossary.categories) {
+    for (const term of cat.terms) {
+      const codes = term.farRef.match(/\d{1,2}\.\d{1,4}(?:-\d{1,4})?/g) ?? []
+      for (const code of codes) {
+        const arr = m.get(code) ?? []
+        arr.push(term)
+        m.set(code, arr)
+      }
+    }
+  }
+  return m
+})()
+
+function ComplianceRequirementsFarList({ clauses }: { clauses: FarClause[] }) {
   const [query, setQuery] = useState('')
+  const [expanded, setExpanded] = useState<string | null>(null)
   const filtered = useMemo(() => {
     if (!query.trim()) return clauses
     const q = query.toLowerCase()
@@ -2112,8 +2120,8 @@ function FarClausesSection({ clauses }: { clauses: FarClause[] }) {
     <div className="bg-white rounded-xl border border-stone-200">
       <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-stone-100">
         <div className="flex items-center gap-2">
-          <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
-            Applicable FAR Clauses
+          <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider flex items-center gap-1.5">
+            <span>⚖️</span> Compliance Requirements
           </p>
           <span className="text-[10px] font-medium text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded">
             {clauses.length}
@@ -2131,20 +2139,80 @@ function FarClausesSection({ clauses }: { clauses: FarClause[] }) {
       </div>
       {clauses.length === 0 ? (
         <div className="px-4 py-6 text-center text-sm text-stone-400 italic">
-          No FAR / DFARS clauses parsed from the attachments yet.
+          No FAR / DFARS clauses parsed from the attachments yet. Generate
+          the SOW to parse solicitation attachments.
         </div>
       ) : (
-        <div className="max-h-96 overflow-y-auto divide-y divide-stone-100">
-          {filtered.map((c) => (
-            <div key={`${c.system}-${c.code}`} className="px-4 py-2 flex items-start gap-3">
-              <span className="shrink-0 mt-0.5 text-[10px] font-mono font-semibold text-stone-500 bg-stone-50 border border-stone-200 rounded px-1.5 py-0.5 whitespace-nowrap">
-                {c.ref}
-              </span>
-              <p className={`text-xs leading-snug ${c.known ? 'text-stone-800' : 'text-stone-500 italic'}`}>
-                {c.title || '(no context captured)'}
-              </p>
-            </div>
-          ))}
+        <div className="max-h-[32rem] overflow-y-auto divide-y divide-stone-100">
+          {filtered.map((c) => {
+            const key = `${c.system}-${c.code}`
+            const terms = GLOSSARY_TERMS_BY_FAR_CODE.get(c.code) ?? []
+            const hasExplanation = terms.length > 0
+            const isOpen = expanded === key
+            return (
+              <div key={key} className="px-4 py-2.5">
+                <div className="flex items-start gap-3">
+                  <span className="shrink-0 mt-0.5 text-[10px] font-mono font-semibold text-stone-500 bg-stone-50 border border-stone-200 rounded px-1.5 py-0.5 whitespace-nowrap">
+                    {c.ref}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs leading-snug ${c.known ? 'text-stone-800' : 'text-stone-500 italic'}`}>
+                      {c.title || '(no context captured)'}
+                    </p>
+                    {hasExplanation && (
+                      <button
+                        type="button"
+                        onClick={() => setExpanded(isOpen ? null : key)}
+                        className="mt-1 text-[11px] font-medium text-stone-600 hover:text-stone-900 flex items-center gap-1"
+                      >
+                        <svg
+                          className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                          fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                        {isOpen ? 'Hide explanation' : `What this means${terms.length > 1 ? ` (${terms.length} terms)` : ''}`}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {isOpen && hasExplanation && (
+                  <div className="mt-2 ml-16 space-y-3">
+                    {terms.map((t, i) => (
+                      <div key={i} className="bg-stone-50 border border-stone-200 rounded p-3 space-y-2 text-xs">
+                        <p className="font-semibold text-stone-800">{t.term}</p>
+                        <p className="text-stone-700 leading-relaxed">{t.fullExplanation}</p>
+                        {t.contractorMustDo.length > 0 && (
+                          <div>
+                            <p className="font-semibold text-stone-700 mb-1">What you must do:</p>
+                            <ul className="space-y-1">
+                              {t.contractorMustDo.map((action, j) => (
+                                <li key={j} className="flex items-start gap-1.5 text-stone-600">
+                                  <span className="text-stone-400 mt-0.5 flex-shrink-0">→</span>
+                                  <span>{action}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {t.commonMistakes.length > 0 && (
+                          <div className="bg-amber-50 border border-amber-100 rounded p-2 space-y-1">
+                            <p className="font-semibold text-amber-800 text-[10px] uppercase tracking-wide">Common mistakes</p>
+                            {t.commonMistakes.map((mistake, k) => (
+                              <p key={k} className="text-amber-800 leading-snug">⚠ {mistake}</p>
+                            ))}
+                          </div>
+                        )}
+                        {t.timing && (
+                          <p className="text-[11px] text-stone-500 italic">Timing: {t.timing}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
           {filtered.length === 0 && (
             <div className="px-4 py-6 text-center text-xs text-stone-400 italic">
               No clauses match &ldquo;{query}&rdquo;.
@@ -2745,7 +2813,10 @@ export interface FarClause {
 
 export function extractFarClauses(text: string): FarClause[] {
   if (!text) return []
-  const re = /(FAR|DFARS?|AFARS?|VAAR|EPAAR|GSAM)\s*(\d{1,2}\.\d{1,4}(?:-\d{1,4})?)/gi
+  // Require the dash (e.g. 52.209-10) so we skip subpart references like
+  // "FAR 12" or "FAR 12.203" that show up as chapter callouts, not as
+  // enforceable clauses on the contract.
+  const re = /(FAR|DFARS?|AFARS?|VAAR|EPAAR|GSAM)\s*(\d{1,2}\.\d{1,4}-\d{1,4})/gi
   const seen = new Map<string, FarClause>()
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
@@ -2753,23 +2824,41 @@ export function extractFarClauses(text: string): FarClause[] {
     const code = m[2]
     const key = `${system}:${code}`
     if (seen.has(key)) continue
+
     let title = ''
     let known = false
     if (system === 'FAR' && FAR_TITLES[code]) {
       title = FAR_TITLES[code]
       known = true
     } else {
-      // Best-effort: grab up to ~140 chars of surrounding context and clip
-      // at a sentence boundary so the snippet is a readable phrase.
-      const from = Math.max(0, m.index - 30)
-      const to = Math.min(text.length, m.index + m[0].length + 140)
-      title = text.slice(from, to)
+      // Best-effort: look at up to ~120 chars AFTER the clause reference —
+      // in federal solicitations the title (or a "REVISED / OCT 2020" date
+      // stamp) almost always immediately follows the code. Strip trailing
+      // FAR-code fragments, all-caps date stamps, and empty parens so we
+      // don't surface truncated garbage like "SES INCORPORATED BY REFERENCE
+      // FAR 52". If nothing usable remains, we leave the title empty and
+      // the row is dropped below.
+      const after = text.slice(m.index + m[0].length, m.index + m[0].length + 120)
         .replace(/[\s\r\n]+/g, ' ')
-        .replace(/^[^A-Z0-9]*|[^\w).\]]*$/g, '')
-        .split(/[.;\n]/)[0]
-        .slice(0, 200)
+        .replace(/\bFAR\s*52[\s\d.-]*/gi, '')
+        .replace(/\b(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s*\d{4}\b/gi, '')
+        .replace(/\(\s*\)/g, '')
+        .replace(/^[\s.,;:()\-]+/, '')
+        .split(/(?:[.;\n]|\s{2,})/)[0]
         .trim()
+      // Reject snippets that start mid-word (all-lowercase or ALL-CAPS-only
+      // fragment) or that are too short to be a real title.
+      const startsWithWord = /^[A-Z][a-zA-Z]{2,}/.test(after)
+      if (startsWithWord && after.length >= 8 && after.length <= 180) {
+        title = after
+      }
     }
+
+    // Drop rows with no usable title so we don't fill the compliance list
+    // with garbage snippets — the user only sees clauses we can actually
+    // name or explain.
+    if (!title) continue
+
     seen.set(key, { ref: `${system} ${code}`, code, system, title, known })
   }
   return Array.from(seen.values()).sort((a, b) => a.ref.localeCompare(b.ref))
