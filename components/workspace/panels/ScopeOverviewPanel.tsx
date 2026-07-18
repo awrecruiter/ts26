@@ -1977,6 +1977,119 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
           onClose={() => setViewingPlan(null)}
         />
       )}
+      {/* Template-outline modal for plans without a full generator (QCP,
+          WMP, SSHP, SWPPP, EMP, TCP). Shows sections + expected fields
+          so the user can see exactly what the plan will contain. */}
+      {viewingPlan &&
+        !['app', 'cs', 'sov', '__all__'].includes(viewingPlan) &&
+        (() => {
+          const planDef = REQUIRED_PLANS.find((p) => p.key === viewingPlan)
+          if (!planDef?.templateOutline?.length) return null
+          return (
+            <PlanTemplateOutlineModal
+              plan={planDef}
+              onClose={() => setViewingPlan(null)}
+            />
+          )
+        })()}
+    </div>
+  )
+}
+
+// ─── Plan Template Outline Modal ──────────────────────────────────────────
+// Shown when the user clicks a plan tile that doesn't have a full generator
+// yet (QCP, WMP, SSHP, SWPPP, EMP, TCP). Renders the plan's declared
+// section outline — title, purpose, expected fields — so the user can see
+// exactly what the plan will contain when it's generated.
+function PlanTemplateOutlineModal({
+  plan,
+  onClose,
+}: {
+  plan: PlanDef
+  onClose: () => void
+}) {
+  const outline = plan.templateOutline ?? []
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 sm:p-8"
+      onClick={onClose}
+    >
+      <div
+        className="relative bg-white rounded-xl shadow-xl max-w-3xl w-full my-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-white border-b border-stone-200 rounded-t-xl px-6 py-4 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-0.5">
+              {plan.shortName} · Template outline
+            </p>
+            <h2 className="text-lg font-semibold text-stone-900">{plan.label}</h2>
+            <p className="text-xs text-stone-500 mt-0.5">{plan.purpose}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-stone-400 hover:text-stone-700 p-1"
+            aria-label="Close"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-6 py-3 border-b border-stone-100 bg-stone-50/50">
+          <p className="text-[11px] text-stone-600 leading-snug">
+            Structural preview of the plan. Sections and fields below are
+            what the generator will populate once the SOW is finalized and
+            a subcontractor is selected for bid.
+          </p>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          {outline.length === 0 ? (
+            <p className="text-sm text-stone-500 italic">No outline defined for this plan yet.</p>
+          ) : (
+            outline.map((section, idx) => (
+              <section key={idx} className="border-l-2 border-stone-200 pl-4">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[10px] font-semibold text-stone-400 tabular-nums">
+                    {String(idx + 1).padStart(2, '0')}
+                  </span>
+                  <h3 className="text-sm font-semibold text-stone-900">{section.title}</h3>
+                </div>
+                <p className="text-xs text-stone-600 mt-1 leading-relaxed">{section.purpose}</p>
+                {section.expectedFields.length > 0 && (
+                  <div className="mt-2.5">
+                    <p className="text-[10px] uppercase tracking-wider text-stone-400 mb-1.5">
+                      Expected fields
+                    </p>
+                    <ul className="space-y-1">
+                      {section.expectedFields.map((f, i) => (
+                        <li key={i} className="text-xs text-stone-700 flex items-start gap-1.5 leading-snug">
+                          <span className="text-stone-300 mt-0.5 flex-shrink-0">▸</span>
+                          <span>{f}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </section>
+            ))
+          )}
+        </div>
+
+        <div className="px-6 py-3 border-t border-stone-100 text-[10px] text-stone-500 rounded-b-xl flex items-center justify-between">
+          <span>{outline.length} section{outline.length === 1 ? '' : 's'} · plan authors assigned via sub intake</span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-[11px] font-medium text-stone-700 hover:text-stone-900 underline"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -2652,6 +2765,11 @@ interface ContentTrigger {
   pattern: RegExp
   rationale: string
 }
+interface PlanOutlineSection {
+  title: string
+  purpose: string
+  expectedFields: string[]
+}
 interface PlanDef {
   key: string
   label: string
@@ -2662,6 +2780,9 @@ interface PlanDef {
   constructionDefault?: boolean
   /** Attachment-text phrases that imply this plan is required. */
   contentTriggers?: ContentTrigger[]
+  /** Template outline shown when the plan is clicked. Sections + expected
+   *  fields. Displayed as a preview even before a generator has run. */
+  templateOutline?: PlanOutlineSection[]
 }
 
 const REQUIRED_PLANS: PlanDef[] = [
@@ -2678,6 +2799,14 @@ const REQUIRED_PLANS: PlanDef[] = [
       { pattern: /\bEM[- ]?385\b|\bOSHA (?:10|30)\b/i, rationale: 'EM 385-1-1 / OSHA compliance called out' },
       { pattern: /\bpersonal protective equipment\b|\bPPE\b/i, rationale: 'PPE requirements referenced' },
     ],
+    templateOutline: [
+      { title: 'Site & Project Information', purpose: 'Basic identification — who, what, where.', expectedFields: ['Project name / solicitation #', 'Site address & directions', 'Prime + subcontractor names', 'Contract start / duration'] },
+      { title: 'Safety Personnel', purpose: 'Named accountable individuals with credentials.', expectedFields: ['Site Safety & Health Officer (SSHO)', 'Competent persons by hazard class', 'Emergency contacts + phone tree'] },
+      { title: 'Job Hazard Analyses (JHA)', purpose: 'Task-by-task hazard identification and controls.', expectedFields: ['Task description', 'Hazards identified', 'Controls / PPE', 'Training required'] },
+      { title: 'Emergency Response', purpose: 'What to do when things go wrong.', expectedFields: ['Nearest hospital / clinic address', 'Route map from site', 'Evacuation assembly point', 'Spill response kit location'] },
+      { title: 'PPE Program', purpose: 'Required equipment per task class.', expectedFields: ['Baseline PPE (hard hat, safety glasses, boots)', 'Task-specific PPE (respirators, harnesses)', 'Inspection & replacement schedule'] },
+      { title: 'Training & Records', purpose: 'OSHA / EM 385 compliance record-keeping.', expectedFields: ['OSHA 10 / 30 certifications', 'Site-specific orientation log', 'Daily safety huddle attendance', 'Incident / near-miss log'] },
+    ],
   },
   {
     key: 'qcp',
@@ -2692,6 +2821,14 @@ const REQUIRED_PLANS: PlanDef[] = [
       { pattern: /\btesting (?:lab|report|frequency|schedule)\b|\binspection (?:and testing|frequency|report)\b/i, rationale: 'Testing / inspection cadence required' },
       { pattern: /\bmaterial specifications?\b/i, rationale: 'Material specifications submittal required' },
     ],
+    templateOutline: [
+      { title: 'QC Organization', purpose: 'Names, credentials, and chain of authority for quality control.', expectedFields: ['Quality Control Manager (QCM) name + resume', 'Independent-of-production reporting line', 'QC staff by discipline (soils, concrete, welding)', 'Testing lab qualifications (AASHTO / A2LA)'] },
+      { title: 'Submittal Register', purpose: 'Every submittal called out in the specs — status tracker.', expectedFields: ['Submittal number + spec section', 'Type (product data / shop drawing / sample)', 'Government review window (typ. 14 days)', 'Resubmittal disposition'] },
+      { title: 'Testing Plan', purpose: 'What gets tested, how often, by whom.', expectedFields: ['Test type per material (proctor, slump, gradation)', 'Frequency (per lot / per lift / per placement)', 'Acceptance criteria', 'Testing lab + certifications'] },
+      { title: '3-Phase Inspection', purpose: 'USACE 3-phase control — preparatory, initial, follow-up.', expectedFields: ['Preparatory meeting agenda + attendees', 'Initial phase checklist', 'Follow-up inspection frequency', 'Records retention'] },
+      { title: 'Non-Conformance Handling', purpose: 'What happens when work fails.', expectedFields: ['NCR log + numbering', 'Root cause analysis workflow', 'Disposition (rework / repair / accept-with-deviation)', 'Closure verification'] },
+      { title: 'Reports & Records', purpose: 'Daily and periodic reporting to the government.', expectedFields: ['Daily QC report format', 'Deficiency log', 'As-built markups', 'Final QC certification'] },
+    ],
   },
   {
     key: 'wmp',
@@ -2704,6 +2841,13 @@ const REQUIRED_PLANS: PlanDef[] = [
       { pattern: /\bremoval (?:and|&) (?:proper )?disposal\b|\bdispos(?:e|al) of (?:all )?(?:trash|debris|waste)|construction waste/i, rationale: 'Trash / debris / construction-waste removal + disposal required' },
       { pattern: /\btrash (?:and|&) debris\b|\bdebris (?:box|removal|disposal)\b/i, rationale: 'Debris removal called out' },
     ],
+    templateOutline: [
+      { title: 'Waste Stream Inventory', purpose: 'Every material type expected to leave the site.', expectedFields: ['Construction & demolition (C&D) debris', 'Hazardous / regulated waste (solvents, fuel)', 'Recyclable streams (metal, cardboard, concrete)', 'General trash'] },
+      { title: 'Segregation & Storage', purpose: 'Onsite handling before pickup.', expectedFields: ['Container types + labeling', 'Container locations on site plan', 'Secondary containment for hazmat', 'Housekeeping / spill prevention'] },
+      { title: 'Hauler & Facilities', purpose: 'Licensed downstream chain of custody.', expectedFields: ['Hauler name + license #', 'Landfill / transfer station', 'Recycling facility (per stream)', 'Hazmat disposal facility (EPA ID)'] },
+      { title: 'Documentation', purpose: 'Paper trail proving compliant disposal.', expectedFields: ['Weight tickets (per load)', 'Uniform Hazardous Waste Manifests', 'Recycling receipts', 'Monthly diversion summary'] },
+      { title: 'Diversion Targets', purpose: 'Recycling / reuse goals stated in solicitation.', expectedFields: ['Target diversion % (e.g. 50% C&D)', 'Baseline calculation method', 'Reporting cadence to CO'] },
+    ],
   },
   {
     key: 'sshp',
@@ -2711,6 +2855,14 @@ const REQUIRED_PLANS: PlanDef[] = [
     shortName: 'SSHP',
     detect: /\b(SSHP|site[- ]specific safety(?: and health)? plan|health and safety plan)\b/i,
     purpose: 'EM 385-1-1 compliant safety plan tailored to this site\'s hazards.',
+    templateOutline: [
+      { title: 'Site Characterization', purpose: 'Physical and operational context of the work area.', expectedFields: ['Site description + boundary map', 'Adjacent operations / occupied areas', 'Overhead / underground utilities', 'Site security & controlled access'] },
+      { title: 'Hazard Analysis', purpose: 'Task-specific hazards identified via JHA.', expectedFields: ['Activity Hazard Analyses (AHAs) per task', 'Risk assessment (probability × severity)', 'Controls hierarchy (elim / eng / admin / PPE)'] },
+      { title: 'Roles & Responsibilities', purpose: 'Who does what for safety.', expectedFields: ['Site Safety & Health Officer (SSHO) — 24-hr contact', 'Competent persons (excavation, fall, confined space)', 'Qualified persons for specialized work', 'First-aid / CPR certified staff'] },
+      { title: 'Training & Orientation', purpose: 'Required certifications and onboarding.', expectedFields: ['OSHA 10 / 30 hour rosters', 'EM 385-1-1 training (if USACE)', 'Site-specific orientation checklist', 'Daily huddle / weekly toolbox topics'] },
+      { title: 'Emergency Response', purpose: 'What to do when things go wrong.', expectedFields: ['Nearest hospital / clinic (address + route)', 'Notification tree (911 → PM → CO)', 'Evacuation plan + muster point', 'Incident reporting workflow'] },
+      { title: 'Records & Recordkeeping', purpose: 'Documentation retained for the government.', expectedFields: ['OSHA 300 log', 'Incident / near-miss reports', 'Inspection records', 'Training attendance logs'] },
+    ],
   },
   {
     key: 'swppp',
@@ -2720,6 +2872,14 @@ const REQUIRED_PLANS: PlanDef[] = [
     purpose: 'BMPs, discharge points, inspection schedule, corrective actions for storm water.',
     contentTriggers: [
       { pattern: /\bstorm ?water\b|\brunoff\b|\berosion control\b|\bBMP(?:s)?\b|\bsediment control\b/i, rationale: 'Storm water / erosion control referenced' },
+    ],
+    templateOutline: [
+      { title: 'Site Description', purpose: 'Physical setting driving the plan.', expectedFields: ['Total site + disturbed acreage', 'Existing drainage patterns', 'Receiving waters (name + 303(d) status)', 'Soil types + slopes'] },
+      { title: 'Potential Pollutants', purpose: 'What could reach storm water from this site.', expectedFields: ['Sediment sources (grading, stockpiles)', 'Non-storm-water (concrete washout, dewatering)', 'Fuel / oil handling areas', 'Solid waste / debris'] },
+      { title: 'Best Management Practices (BMPs)', purpose: 'Controls implemented onsite.', expectedFields: ['Erosion controls (mulching, blankets)', 'Sediment controls (silt fence, fiber roll, sediment traps)', 'Stabilized construction entrance', 'Concrete washout containment', 'Good housekeeping / spill kits'] },
+      { title: 'Inspection Schedule', purpose: 'Cadence and triggers for BMP inspection.', expectedFields: ['Routine inspections (weekly)', 'Rain-triggered inspections (>0.25")', 'Inspector qualifications', 'Inspection form template'] },
+      { title: 'Corrective Actions', purpose: 'Response to BMP failure or discharge.', expectedFields: ['Deficiency close-out timeline (typ. 7 days)', 'Escalation for repeat failures', 'Records + photos'] },
+      { title: 'Permit Compliance', purpose: 'Alignment with applicable CGP / state permit.', expectedFields: ['NOI submittal proof', 'Permit coverage number', 'NEC (termination) at project close'] },
     ],
   },
   {
@@ -2732,6 +2892,14 @@ const REQUIRED_PLANS: PlanDef[] = [
       { pattern: /\benvironmental (?:consideration|protection|regulation|impact)/i, rationale: 'Environmental protection called out in SOW' },
       { pattern: /\bminimize site disturbance\b|\bsite disturbance\b/i, rationale: 'Minimize site disturbance required' },
     ],
+    templateOutline: [
+      { title: 'Environmental Baseline', purpose: 'Sensitive resources on and around the site.', expectedFields: ['Sensitive habitat / T&E species', 'Cultural or archaeological resources', 'Wetlands / waters of the U.S.', 'Adjacent land uses'] },
+      { title: 'Impact Avoidance', purpose: 'How work will avoid protected resources.', expectedFields: ['Exclusion / buffer zones + flagging', 'Seasonal or time-of-day restrictions', 'Equipment staging boundaries', 'Vegetation protection details'] },
+      { title: 'Spill Prevention & Response', purpose: 'Fuel / lubricant / hazmat handling.', expectedFields: ['Spill kit locations + inventory', 'Secondary containment for fuel storage', 'Notification procedure (911, agency, CO)', 'Cleanup + disposal chain'] },
+      { title: 'Hazardous Material Handling', purpose: 'Onsite chemicals and their controls.', expectedFields: ['SDS binder location', 'Storage requirements per SDS', 'Employee training records', 'Waste characterization + disposal'] },
+      { title: 'Air Quality & Dust', purpose: 'Emissions and particulate controls.', expectedFields: ['Dust control method (water, chemical)', 'Vehicle idling limits', 'Fugitive dust monitoring'] },
+      { title: 'Restoration & Monitoring', purpose: 'Post-work site recovery.', expectedFields: ['Revegetation / seed mix', 'Monitoring frequency + duration', 'Success criteria', 'Corrective replanting'] },
+    ],
   },
   {
     key: 'tcp',
@@ -2743,6 +2911,14 @@ const REQUIRED_PLANS: PlanDef[] = [
     contentTriggers: [
       { pattern: /\btraffic control\b|\balternate route(?:s)?\b|\bmaintain access\b|\bobstruct road(?:s|way)?\b|\blane closure\b|\bflagger\b|\bdetour\b/i, rationale: 'Traffic control / alternate routing required' },
       { pattern: /\brecreating public\b|\bemergency personnel\b/i, rationale: 'Maintain public + emergency access' },
+    ],
+    templateOutline: [
+      { title: 'Existing Conditions', purpose: 'Baseline traffic environment.', expectedFields: ['Road classification + AADT', 'Posted speed + advisory speed', 'Sight distance / horizontal curvature', 'Intersections + access points within work zone'] },
+      { title: 'Work Zone Layout', purpose: 'MUTCD-compliant zone diagram per phase.', expectedFields: ['Advance warning area (signs, distances)', 'Transition area (taper length by speed)', 'Activity area + buffer', 'Termination area'] },
+      { title: 'Traffic Control Devices', purpose: 'Signs, cones, barriers deployed.', expectedFields: ['Sign inventory (type / quantity / MUTCD code)', 'Channelizing device spacing', 'Portable barriers or attenuators (if used)', 'Nighttime retroreflectivity spec'] },
+      { title: 'Personnel', purpose: 'Certified flagging and supervision.', expectedFields: ['Flaggers — ATSSA / state certification', 'Traffic Control Supervisor (TCS)', 'Spotters for backing / crossing operations', 'Shift schedules'] },
+      { title: 'Public + Emergency Access', purpose: 'Continued access for the public and responders.', expectedFields: ['Detour route + signage plan', 'Emergency vehicle passage procedure', 'Business / resident access maintenance', 'Public notification (72-hr advance)'] },
+      { title: 'Special Conditions', purpose: 'Night / weather / event-specific measures.', expectedFields: ['Nighttime work lighting spec', 'Weather-triggered shutdown thresholds', 'Special events / peak-hour restrictions'] },
     ],
   },
   {
@@ -3247,19 +3423,22 @@ function RequiredPlansTiles({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {detected.map(({ plan, rationales }) => {
-          const hasViewer = plan.key === 'app' || plan.key === 'cs' || plan.key === 'sov'
+          const hasGenerator = plan.key === 'app' || plan.key === 'cs' || plan.key === 'sov'
+          const hasOutline = !!plan.templateOutline?.length
+          const isClickable = hasGenerator || hasOutline
           const c = completionByPlan[plan.key] ?? { percent: 0, filled: 0, total: 0 }
           const isDone = c.percent >= 100
+          const ctaLabel = hasGenerator ? 'Open preview' : 'See template outline'
           return (
             <button
               key={plan.key}
               type="button"
-              onClick={() => hasViewer && onOpenPlan(plan.key)}
-              disabled={!hasViewer}
+              onClick={() => isClickable && onOpenPlan(plan.key)}
+              disabled={!isClickable}
               className={`text-left border border-stone-200 rounded-lg p-3 bg-stone-50/50 transition-colors ${
-                hasViewer ? 'hover:border-stone-400 hover:bg-white cursor-pointer' : 'cursor-default'
+                isClickable ? 'hover:border-stone-400 hover:bg-white cursor-pointer' : 'cursor-default'
               }`}
-              title={hasViewer ? `Open the ${plan.shortName} preview` : undefined}
+              title={isClickable ? `${ctaLabel} for ${plan.shortName}` : undefined}
             >
               <div className="flex items-start justify-between gap-2 mb-1">
                 <p className="text-sm font-semibold text-stone-900">{plan.shortName}</p>
@@ -3277,7 +3456,7 @@ function RequiredPlansTiles({
               {/* Completion strip */}
               <div className="mt-2">
                 <div className="flex items-center justify-between text-[10px] text-stone-500 mb-1">
-                  <span>{c.note ?? (hasViewer ? 'Fields filled' : 'Awaiting generator')}</span>
+                  <span>{c.note ?? (hasGenerator ? 'Fields filled' : 'Template outline available')}</span>
                   <span className="tabular-nums">
                     {c.percent}%{c.total > 0 && ` · ${c.filled}/${c.total}`}
                   </span>
@@ -3300,9 +3479,9 @@ function RequiredPlansTiles({
                   ))}
                 </ul>
               )}
-              {hasViewer && (
+              {isClickable && (
                 <p className="mt-2 text-[11px] font-medium text-stone-700">
-                  Open preview →
+                  {ctaLabel} →
                 </p>
               )}
             </button>
