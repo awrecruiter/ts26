@@ -270,20 +270,33 @@ function extractCompliance(structured: StructuredContent | undefined, descriptio
   }))
 }
 
-// Site-facility requirements — trailers, dumpsters, porta-johns, storage
-// containers, temporary fencing, temp utilities. Federal SOWs bury these in
-// the general-requirements section and the deliverables list; our earlier
-// compliance scan misses them because they're not FAR clauses or MIL specs.
-// Scan every parsed text block sentence-by-sentence and pull out the ones
-// that mention a facility keyword.
+// Site-facility & general-requirement scan. Federal SOWs express these as
+// "the contractor shall provide / furnish / dispose of / clean up …" —
+// not as literal "dumpster" mentions. We match a broader vocabulary per
+// tag so real requirements surface even when the exact facility word is
+// absent (e.g. "removal and disposal of all trash, debris, and
+// construction waste" is a dumpster-like requirement).
 const SITE_FACILITY_PATTERNS: { tag: string; re: RegExp }[] = [
-  { tag: 'TRAILER', re: /\b(?:job|field|office|construction|site|temporary|temp\.?)\s*(?:trailer|office)\b|\bfield office\b|\bconstruction (?:trailer|office)\b/i },
-  { tag: 'DUMPSTER', re: /\b(?:dumpster|roll[- ]?off|waste (?:container|receptacle|bin)|refuse (?:container|receptacle|bin)|debris box)\b/i },
-  { tag: 'PORTA-JOHN', re: /\b(?:porta[- ]?(?:john|potty|let)s?|portable (?:toilet|restroom|sanitation)|chemical toilet|port[- ]?a[- ]?jane)\b/i },
-  { tag: 'STORAGE', re: /\b(?:conex|storage (?:container|box|trailer)|shipping container)\b/i },
-  { tag: 'FENCING', re: /\btemporary (?:fenc(?:e|ing))\b|\b(?:site|construction|perimeter) fenc(?:e|ing)\b|\bstaging area\b/i },
-  { tag: 'UTILITIES', re: /\btemporary (?:power|water|electric(?:al|ity)?|utilities|sanitation|lighting)\b|\butility hookup\b/i },
-  { tag: 'SIGNAGE', re: /\b(?:project|construction) sign(?:age)?\b|\btemporary sign(?:age)?\b/i },
+  { tag: 'TRAILER',
+    re: /\b(?:job|field|office|construction|site|temporary|temp\.?)\s*(?:trailer|office)\b|\bfield office\b|\bconstruction (?:trailer|office)\b|\bon[- ]?site office\b/i },
+  { tag: 'WASTE',
+    re: /\b(?:dumpster|roll[- ]?off|waste (?:container|receptacle|bin|disposal|management|removal)|refuse (?:container|receptacle|bin)|debris (?:box|removal|disposal)|construction (?:waste|debris)|trash (?:and|&) debris|removal (?:and|&) (?:proper )?disposal|dispos(?:e|al) of (?:all )?(?:trash|debris|waste))\b/i },
+  { tag: 'PORTA-JOHN',
+    re: /\b(?:porta[- ]?(?:john|potty|let)s?|portable (?:toilet|restroom|sanitation)|chemical toilet|port[- ]?a[- ]?jane|sanitation (?:facilit|service)|restroom facilit)/i },
+  { tag: 'STORAGE',
+    re: /\b(?:conex|storage (?:container|box|trailer|area)|shipping container|material staging|equipment staging)\b/i },
+  { tag: 'FENCING',
+    re: /\btemporary (?:fenc(?:e|ing))\b|\b(?:site|construction|perimeter|safety) fenc(?:e|ing)\b|\bstaging area\b|\bwork zone barricad/i },
+  { tag: 'UTILITIES',
+    re: /\btemporary (?:power|water|electric(?:al|ity)?|utilities|sanitation|lighting)\b|\butility hookup\b|\bportable generator\b|\bgenerator (?:for|on[- ]site)\b|\bwater supply\b/i },
+  { tag: 'SIGNAGE',
+    re: /\b(?:project|construction) sign(?:age|s)?\b|\btemporary sign(?:age|s)?\b|\bwarning sign(?:age|s)?\b/i },
+  { tag: 'DUST CONTROL',
+    re: /\bdust control\b|\bwater truck\b|\bdust suppression\b/i },
+  { tag: 'SPILL / HAZMAT',
+    re: /\bspill (?:kit|response|prevention|contain)|\bhazardous material(?:s)? spill|\bcontain,? clean up,? and (?:properly )?dispose\b|\boil (?:or hazardous )?spill/i },
+  { tag: 'CLEANUP',
+    re: /\b(?:site|final|daily) clean[- ]?up\b|\bproject clean[- ]?up\b|\bsweep (?:road|pavement|site) (?:free|clean)\b/i },
 ]
 
 function extractSiteFacilityRequirements(
@@ -302,11 +315,15 @@ function extractSiteFacilityRequirements(
   let idx = 0
   for (const block of blocks) {
     if (!block) continue
-    // Split on sentence boundaries and stray bullet chars so we get one
-    // requirement per hit, not a whole paragraph.
-    const sentences = block
-      .split(/(?<=[.!?;:])\s+|\n+|(?:^|\s)(?=[•·▪◦])/g)
-      .map(s => s.replace(/^[•·▪◦\s]+/, '').trim())
+    // Federal-SOW parsed text has stray single newlines mid-sentence. Join
+    // those first so sentence patterns don't get chopped in half, THEN split
+    // on true sentence terminators / bullet chars / paragraph breaks.
+    const normalized = block
+      .replace(/\r/g, '')
+      .replace(/([^\n])\n(?!\n)/g, '$1 ')
+    const sentences = normalized
+      .split(/(?<=[.!?])\s+|\n{2,}|(?:^|\s)(?=[•·▪◦])/g)
+      .map(s => s.replace(/^[•·▪◦\s\-a-z]{0,4}\.?\s*/i, '').trim())
       .filter(s => s.length > 15 && s.length < 400)
     for (const sentence of sentences) {
       for (const { tag, re } of SITE_FACILITY_PATTERNS) {
