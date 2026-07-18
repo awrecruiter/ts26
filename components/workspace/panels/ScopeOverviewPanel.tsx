@@ -1,10 +1,16 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { format, differenceInDays, addMonths, startOfMonth } from 'date-fns'
 import { complianceGlossary } from '@/lib/data/compliance-glossary'
 import type { GlossaryTerm } from '@/lib/data/compliance-glossary'
 import type { OpportunityBrief, ScopeOverviewArtifact } from '@/lib/openai'
+import {
+  generateAccidentPreventionPlan,
+  type AppSubResponses,
+  type GeneratedPlan,
+  type PlanField,
+} from '@/lib/plans/app-plan'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -1415,6 +1421,62 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set())
   const [glossaryQuery, setGlossaryQuery] = useState('')
 
+  // Which plan the user is previewing (auto-filled preview modal).
+  const [viewingPlan, setViewingPlan] = useState<string | null>(null)
+  // Selected sub responses for populating the plan. Fetched from the
+  // /requirements API — the "chosen" sub is whichever sub has a submitted
+  // sub_quote AND a payment_package requirement (i.e., admin has selected
+  // them for bid). Falls back to any sub with a submitted sub_quote so a
+  // preview is possible before final selection.
+  const [selectedSubForPlan, setSelectedSubForPlan] = useState<{
+    id: string
+    name: string
+    responses: Record<string, unknown> | null
+  } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/opportunities/${opportunity.id}/requirements`)
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (cancelled || !data || !Array.isArray(data.requirements)) return
+        type Req = {
+          subcontractorId?: string | null
+          templateKey?: string | null
+          status?: string | null
+          responses?: Record<string, unknown> | null
+          subcontractor?: { id: string; name: string } | null
+        }
+        const reqs = data.requirements as Req[]
+        const paymentPackageSubs = new Set(
+          reqs.filter(r => r.templateKey === 'payment_package' && r.subcontractorId)
+              .map(r => r.subcontractorId as string),
+        )
+        const isDone = (s?: string | null) => s === 'SUBMITTED' || s === 'APPROVED'
+        // Prefer a sub who has been Selected for bid AND has a submitted quote.
+        const selected = reqs.find(r =>
+          r.templateKey === 'sub_quote' &&
+          isDone(r.status) &&
+          r.subcontractorId &&
+          paymentPackageSubs.has(r.subcontractorId),
+        )
+        // Fallback: any sub with a submitted quote — useful before selection.
+        const fallback = selected ? null : reqs.find(r =>
+          r.templateKey === 'sub_quote' && isDone(r.status),
+        )
+        const chosen = selected ?? fallback
+        if (chosen && chosen.subcontractor) {
+          setSelectedSubForPlan({
+            id: chosen.subcontractor.id,
+            name: chosen.subcontractor.name,
+            responses: chosen.responses ?? null,
+          })
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [opportunity.id])
+
   const structured: StructuredContent | undefined = (opportunity.parsedAttachments as any)?.structured
 
   // AI scope wins when present; otherwise fall back to rule-based extraction.
@@ -1609,7 +1671,11 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
             followed by the extracted compliance line items. */}
         {activeFilter === 'compliance' && (
           <div className="space-y-4">
-            <RequiredPlansTiles compliance={compliance} />
+            <RequiredPlansTiles
+              compliance={compliance}
+              naicsCode={opportunity.naicsCode}
+              onOpenPlan={(key) => setViewingPlan(key)}
+            />
             {compliance.length > 0 ? (
               <SectionBlock
                 icon="⚖️"
@@ -1681,6 +1747,148 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
         {activeFilter === 'fieldGuide' && <FieldGuide query={glossaryQuery} />}
 
       </div>
+
+      {/* Auto-filled plan preview modal */}
+      {viewingPlan === 'app' && (
+        <PlanViewerModal
+          plan={generateAccidentPreventionPlan({
+            opportunity: {
+              title: opportunity.title,
+              solicitationNumber: opportunity.solicitationNumber,
+              agency: opportunity.agency ?? null,
+              state: opportunity.state ?? null,
+              placeOfPerformance: brief?.placeOfPerformance?.location ?? opportunity.state ?? null,
+            },
+            primeCompanyName: null,
+            selectedSub: selectedSubForPlan
+              ? {
+                  id: selectedSubForPlan.id,
+                  name: selectedSubForPlan.name,
+                  responses: (selectedSubForPlan.responses ?? {}) as AppSubResponses,
+                }
+              : null,
+          })}
+          onClose={() => setViewingPlan(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Plan Viewer Modal ─────────────────────────────────────────────────────
+// Renders a GeneratedPlan (sections + fields) with clear provenance chips
+// so the user can see which values came from the opportunity, the selected
+// sub's intake responses, template boilerplate, or still need admin input.
+function PlanViewerModal({
+  plan,
+  onClose,
+}: {
+  plan: GeneratedPlan
+  onClose: () => void
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 sm:p-8"
+      onClick={onClose}
+    >
+      <div
+        className="relative bg-white rounded-xl shadow-xl max-w-3xl w-full my-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-stone-200 rounded-t-xl px-6 py-4 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-0.5">
+              {plan.planCode} · Auto-filled preview
+            </p>
+            <h2 className="text-lg font-semibold text-stone-900">{plan.displayName}</h2>
+            <p className="text-xs text-stone-500 mt-0.5">
+              {plan.sourceSubcontractorName
+                ? `Sub-provided fields sourced from ${plan.sourceSubcontractorName}`
+                : 'No selected sub yet — sub-provided fields will fill once a sub is selected for bid.'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="text-xs px-3 py-1.5 border border-stone-200 rounded hover:bg-stone-50"
+              title="Print / Save as PDF"
+            >
+              Print
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-stone-400 hover:text-stone-700 p-1"
+              aria-label="Close"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Legend */}
+        <div className="px-6 py-3 border-b border-stone-100 flex flex-wrap gap-3 text-[10px]">
+          <span className="inline-flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded bg-stone-800" />Opportunity</span>
+          <span className="inline-flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded bg-emerald-500" />Selected sub</span>
+          <span className="inline-flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded bg-stone-300" />Template</span>
+          <span className="inline-flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded bg-amber-400" />Needs admin input</span>
+        </div>
+
+        {/* Sections */}
+        <div className="px-6 py-5 space-y-6">
+          {plan.sections.map((section) => (
+            <section key={section.key}>
+              <h3 className="text-sm font-semibold text-stone-900 mb-2">{section.title}</h3>
+              {section.intro && (
+                <p className="text-xs text-stone-600 mb-3 leading-relaxed">{section.intro}</p>
+              )}
+              {section.bullets && section.bullets.length > 0 && (
+                <ul className="mb-3 space-y-1 text-xs text-stone-700 list-disc list-inside">
+                  {section.bullets.map((b, i) => <li key={i}>{b}</li>)}
+                </ul>
+              )}
+              {section.fields.length > 0 && (
+                <div className="space-y-2">
+                  {section.fields.map((f, i) => (
+                    <PlanFieldRow key={i} field={f} />
+                  ))}
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
+
+        <div className="px-6 py-3 border-t border-stone-100 text-[10px] text-stone-400 text-center rounded-b-xl">
+          Generated {new Date(plan.generatedAt).toLocaleString('en-US')}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PlanFieldRow({ field }: { field: PlanField }) {
+  const sourceStyle = field.needsInput
+    ? 'bg-amber-400'
+    : field.source === 'opportunity'
+      ? 'bg-stone-800'
+      : field.source === 'sub'
+        ? 'bg-emerald-500'
+        : field.source === 'template'
+          ? 'bg-stone-300'
+          : 'bg-amber-400'
+  return (
+    <div className="flex items-start gap-2.5 py-1.5 border-b border-stone-50 last:border-b-0">
+      <span className={`mt-1.5 inline-block w-2 h-2 rounded ${sourceStyle} shrink-0`} aria-hidden="true" />
+      <div className="flex-1 min-w-0">
+        <p className="text-[11px] font-medium text-stone-500 uppercase tracking-wide">{field.label}</p>
+        <p className={`text-sm leading-snug ${field.needsInput ? 'text-amber-700 italic' : 'text-stone-800'}`}>
+          {field.value}
+        </p>
+      </div>
     </div>
   )
 }
@@ -1694,16 +1902,21 @@ function EmptyState({ message }: { message: string }) {
 }
 
 // ─── Required Plans ─────────────────────────────────────────────────────────
-// Canonical prime-plan catalog. A plan tile only surfaces when at least one
-// compliance item mentions it — that's what makes it "required by the
-// solicitation." No invite action: plan assignment is delegated to the
-// subcontractor intake form.
+// Canonical prime-plan catalog. A plan tile surfaces when either
+//   (a) a compliance item explicitly mentions the plan, or
+//   (b) the opportunity's NAICS falls under construction (23xxxx) and the
+//       plan is one of the default plans required by USACE / EM 385-1-1
+//       for construction contracts.
+// No invite action: plan assignment is delegated to the subcontractor intake
+// form. Clicking a plan opens the auto-filled preview.
 interface PlanDef {
   key: string
   label: string
   shortName: string
   detect: RegExp
   purpose: string
+  /** True when this plan is a construction default (surfaces on NAICS 23xxxx). */
+  constructionDefault?: boolean
 }
 
 const REQUIRED_PLANS: PlanDef[] = [
@@ -1713,6 +1926,7 @@ const REQUIRED_PLANS: PlanDef[] = [
     shortName: 'APP',
     detect: /\b(APP|accident prevention plan)\b/i,
     purpose: 'Site-specific safety plan — supervisor, JHAs, emergency response, medical facility, PPE.',
+    constructionDefault: true,
   },
   {
     key: 'qcp',
@@ -1720,6 +1934,7 @@ const REQUIRED_PLANS: PlanDef[] = [
     shortName: 'QCP',
     detect: /\b(QCP|quality control plan)\b/i,
     purpose: 'QC officer, testing frequency, inspection procedures, non-conformance handling.',
+    constructionDefault: true,
   },
   {
     key: 'wmp',
@@ -1727,6 +1942,7 @@ const REQUIRED_PLANS: PlanDef[] = [
     shortName: 'WMP',
     detect: /\b(WMP|waste management plan)\b/i,
     purpose: 'Waste streams, hauler, disposal / recycling facilities, ticket documentation.',
+    constructionDefault: true,
   },
   {
     key: 'sshp',
@@ -1755,13 +1971,30 @@ const REQUIRED_PLANS: PlanDef[] = [
     shortName: 'TCP',
     detect: /\b(TCP|MOT|traffic control plan|maintenance of traffic)\b/i,
     purpose: 'Lane closures, flaggers, signage, MUTCD-compliant traffic routing.',
+    constructionDefault: true,
   },
 ]
 
-function RequiredPlansTiles({ compliance }: { compliance: ScopeItem[] }) {
-  const detected = REQUIRED_PLANS.filter((p) =>
-    compliance.some((c) => p.detect.test(c.text)),
-  )
+function isConstructionNaics(code?: string | null): boolean {
+  if (!code) return false
+  return /^23/.test(code.trim())
+}
+
+function RequiredPlansTiles({
+  compliance,
+  naicsCode,
+  onOpenPlan,
+}: {
+  compliance: ScopeItem[]
+  naicsCode?: string | null
+  onOpenPlan: (planKey: string) => void
+}) {
+  const isConstruction = isConstructionNaics(naicsCode)
+  const detected = REQUIRED_PLANS.filter((p) => {
+    const mentionedInCompliance = compliance.some((c) => p.detect.test(c.text))
+    const constructionDefault = isConstruction && p.constructionDefault
+    return mentionedInCompliance || constructionDefault
+  })
   if (detected.length === 0) return null
 
   return (
@@ -1771,25 +2004,39 @@ function RequiredPlansTiles({ compliance }: { compliance: ScopeItem[] }) {
           Required Plans
         </p>
         <span className="text-[10px] text-stone-400">
-          Pulled from solicitation compliance items
+          {isConstruction ? 'Construction NAICS + solicitation compliance' : 'Pulled from solicitation compliance items'}
         </span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {detected.map((plan) => (
-          <div
-            key={plan.key}
-            className="border border-stone-200 rounded-lg p-3 bg-stone-50/50"
-          >
-            <div className="flex items-start justify-between gap-2 mb-1">
-              <p className="text-sm font-semibold text-stone-900">{plan.shortName}</p>
-              <span className="text-[10px] font-medium text-stone-500 bg-white border border-stone-200 px-1.5 py-0.5 rounded">
-                Required
-              </span>
-            </div>
-            <p className="text-xs font-medium text-stone-700 mb-1">{plan.label}</p>
-            <p className="text-xs text-stone-500 leading-snug">{plan.purpose}</p>
-          </div>
-        ))}
+        {detected.map((plan) => {
+          const clickable = plan.key === 'app'
+          return (
+            <button
+              key={plan.key}
+              type="button"
+              onClick={() => clickable && onOpenPlan(plan.key)}
+              disabled={!clickable}
+              className={`text-left border border-stone-200 rounded-lg p-3 bg-stone-50/50 transition-colors ${
+                clickable ? 'hover:border-stone-400 hover:bg-white cursor-pointer' : 'cursor-default'
+              }`}
+              title={clickable ? `Open the ${plan.shortName} preview` : undefined}
+            >
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <p className="text-sm font-semibold text-stone-900">{plan.shortName}</p>
+                <span className="text-[10px] font-medium text-stone-500 bg-white border border-stone-200 px-1.5 py-0.5 rounded">
+                  Required
+                </span>
+              </div>
+              <p className="text-xs font-medium text-stone-700 mb-1">{plan.label}</p>
+              <p className="text-xs text-stone-500 leading-snug">{plan.purpose}</p>
+              {clickable && (
+                <p className="mt-2 text-[11px] font-medium text-stone-700">
+                  Open auto-filled preview →
+                </p>
+              )}
+            </button>
+          )
+        })}
       </div>
       <p className="mt-3 text-[11px] text-stone-400 italic">
         Plan authors are assigned inside the subcontractor intake form —
