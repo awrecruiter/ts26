@@ -2791,61 +2791,266 @@ export interface PlanCompletion {
 // and try to match each against a short-title lookup — falls back to the
 // surrounding text snippet when the exact title isn't recognised.
 const FAR_TITLES: Record<string, string> = {
+  // ── Part 52.202 — Definitions
+  '52.202-1': 'Definitions',
+  // ── Part 52.203 — Improper Business Practices and Personal Conflicts of Interest
+  '52.203-2': 'Certificate of Independent Price Determination',
+  '52.203-3': 'Gratuities',
+  '52.203-5': 'Covenant Against Contingent Fees',
   '52.203-6': 'Restrictions on Subcontractor Sales to the Government',
+  '52.203-7': 'Anti-Kickback Procedures',
+  '52.203-8': 'Cancellation, Rescission, and Recovery of Funds for Illegal or Improper Activity',
+  '52.203-10': 'Price or Fee Adjustment for Illegal or Improper Activity',
   '52.203-11': 'Certification and Disclosure Regarding Payments to Influence Federal Transactions',
+  '52.203-12': 'Limitation on Payments to Influence Certain Federal Transactions',
   '52.203-13': 'Contractor Code of Business Ethics and Conduct',
+  '52.203-14': 'Display of Hotline Poster(s)',
+  '52.203-16': 'Preventing Personal Conflicts of Interest',
+  '52.203-17': 'Contractor Employee Whistleblower Rights',
+  '52.203-18': 'Prohibition on Contracting with Entities That Require Certain Internal Confidentiality Agreements or Statements—Representation',
+  '52.203-19': 'Prohibition on Requiring Certain Internal Confidentiality Agreements or Statements',
+  // ── Part 52.204 — Administrative Matters
+  '52.204-3': 'Taxpayer Identification',
+  '52.204-4': 'Printed or Copied Double-Sided on Postconsumer Fiber Content Paper',
+  '52.204-5': 'Women-Owned Business (Other Than Small Business)',
   '52.204-7': 'System for Award Management (SAM)',
+  '52.204-8': 'Annual Representations and Certifications',
+  '52.204-9': 'Personal Identity Verification of Contractor Personnel',
   '52.204-10': 'Reporting Executive Compensation and First-Tier Subcontract Awards',
   '52.204-13': 'System for Award Management Maintenance',
-  '52.204-24': 'Representation Regarding Certain Telecommunications Equipment (Section 889)',
-  '52.204-25': 'Prohibition on Certain Telecommunications (Section 889 Part B)',
-  '52.209-6': 'Protecting the Government\'s Interest When Subcontracting with Contractors Debarred, Suspended, or Proposed for Debarment',
+  '52.204-16': 'Commercial and Government Entity Code Reporting',
+  '52.204-17': 'Ownership or Control of Offeror',
+  '52.204-18': 'Commercial and Government Entity Code Maintenance',
+  '52.204-19': 'Incorporation by Reference of Representations and Certifications',
+  '52.204-20': 'Predecessor of Offeror',
+  '52.204-21': 'Basic Safeguarding of Covered Contractor Information Systems',
+  '52.204-23': 'Prohibition on Contracting for Hardware, Software, and Services Developed or Provided by Kaspersky Lab and Other Covered Entities',
+  '52.204-24': 'Representation Regarding Certain Telecommunications and Video Surveillance Services or Equipment (Section 889)',
+  '52.204-25': 'Prohibition on Contracting for Certain Telecommunications and Video Surveillance Services or Equipment (Section 889 Part B)',
+  '52.204-26': 'Covered Telecommunications Equipment or Services—Representation',
+  '52.204-27': 'Prohibition on a ByteDance Covered Application',
+  // ── Part 52.209 — Contractor Qualifications
+  '52.209-2': 'Prohibition on Contracting with Inverted Domestic Corporations—Representation',
+  '52.209-5': 'Certification Regarding Responsibility Matters',
+  '52.209-6': "Protecting the Government's Interest When Subcontracting with Contractors Debarred, Suspended, or Proposed for Debarment",
+  '52.209-7': 'Information Regarding Responsibility Matters',
   '52.209-10': 'Prohibition on Contracting with Inverted Domestic Corporations',
-  '52.212-4': 'Contract Terms and Conditions — Commercial Products and Commercial Services',
+  '52.209-11': 'Representation by Corporations Regarding Delinquent Tax Liability or a Felony Conviction under Any Federal Law',
+  '52.209-12': 'Certification Regarding Tax Matters',
+  // ── Part 52.211 — Priorities and Delivery
+  '52.211-15': 'Defense Priority and Allocation Requirements',
+  // ── Part 52.212 — Commercial Products and Services
+  '52.212-1': 'Instructions to Offerors—Commercial Products and Commercial Services',
+  '52.212-2': 'Evaluation—Commercial Products and Commercial Services',
+  '52.212-3': 'Offeror Representations and Certifications—Commercial Products and Commercial Services',
+  '52.212-4': 'Contract Terms and Conditions—Commercial Products and Commercial Services',
+  '52.212-5': 'Contract Terms and Conditions Required to Implement Statutes or Executive Orders—Commercial Products and Commercial Services',
+  '52.213-4': 'Terms and Conditions—Simplified Acquisitions (Other Than Commercial Products and Commercial Services)',
+  // ── Part 52.215 — Contracting by Negotiation
+  '52.215-1': 'Instructions to Offerors—Competitive Acquisition',
+  '52.215-2': 'Audit and Records—Negotiation',
+  '52.215-8': 'Order of Precedence—Uniform Contract Format',
+  '52.215-14': 'Integrity of Unit Prices',
+  '52.215-20': 'Requirements for Certified Cost or Pricing Data and Data Other Than Certified Cost or Pricing Data',
+  '52.215-21': 'Requirements for Certified Cost or Pricing Data and Data Other Than Certified Cost or Pricing Data—Modifications',
+  '52.215-23': 'Limitations on Pass-Through Charges',
+  // ── Part 52.216 — Types of Contracts
+  '52.216-1': 'Type of Contract',
+  '52.216-18': 'Ordering',
+  '52.216-19': 'Order Limitations',
+  '52.216-22': 'Indefinite Quantity',
+  // ── Part 52.217 — Special Contracting Methods
+  '52.217-5': 'Evaluation of Options',
+  '52.217-8': 'Option to Extend Services',
+  '52.217-9': 'Option to Extend the Term of the Contract',
+  // ── Part 52.219 — Small Business Programs
+  '52.219-1': 'Small Business Program Representations',
+  '52.219-4': 'Notice of Price Evaluation Preference for HUBZone Small Business Concerns',
   '52.219-6': 'Notice of Total Small Business Set-Aside',
   '52.219-8': 'Utilization of Small Business Concerns',
+  '52.219-9': 'Small Business Subcontracting Plan',
+  '52.219-13': 'Notice of Set-Aside of Orders',
   '52.219-14': 'Limitations on Subcontracting',
+  '52.219-16': 'Liquidated Damages—Subcontracting Plan',
+  '52.219-27': 'Notice of Set-Aside for, or Sole-Source Award to, Service-Disabled Veteran-Owned Small Business Concerns',
   '52.219-28': 'Post-Award Small Business Program Rerepresentation',
+  '52.219-29': 'Notice of Set-Aside for, or Sole-Source Award to, Economically Disadvantaged Women-Owned Small Business Concerns',
+  '52.219-30': 'Notice of Set-Aside for, or Sole-Source Award to, Women-Owned Small Business Concerns Eligible Under the Women-Owned Small Business Program',
+  // ── Part 52.222 — Labor Laws
   '52.222-3': 'Convict Labor',
+  '52.222-4': 'Contract Work Hours and Safety Standards—Overtime Compensation',
   '52.222-6': 'Construction Wage Rate Requirements (Davis-Bacon)',
   '52.222-7': 'Withholding of Funds (Davis-Bacon)',
   '52.222-8': 'Payrolls and Basic Records (Davis-Bacon)',
   '52.222-11': 'Subcontracts (Labor Standards)',
+  '52.222-14': 'Disputes Concerning Labor Standards',
   '52.222-15': 'Certification of Eligibility',
+  '52.222-17': 'Nondisplacement of Qualified Workers',
+  '52.222-19': 'Child Labor—Cooperation with Authorities and Remedies',
   '52.222-21': 'Prohibition of Segregated Facilities',
+  '52.222-22': 'Previous Contracts and Compliance Reports',
+  '52.222-23': 'Notice of Requirement for Affirmative Action to Ensure Equal Employment Opportunity for Construction',
+  '52.222-25': 'Affirmative Action Compliance',
   '52.222-26': 'Equal Opportunity',
+  '52.222-27': 'Affirmative Action Compliance Requirements for Construction',
   '52.222-35': 'Equal Opportunity for Veterans',
   '52.222-36': 'Equal Opportunity for Workers with Disabilities',
+  '52.222-37': 'Employment Reports on Veterans',
+  '52.222-38': "Compliance with Veterans' Employment Reporting Requirements",
   '52.222-40': 'Notification of Employee Rights Under the National Labor Relations Act',
+  '52.222-41': 'Service Contract Labor Standards',
+  '52.222-42': 'Statement of Equivalent Rates for Federal Hires',
   '52.222-50': 'Combating Trafficking in Persons',
   '52.222-54': 'Employment Eligibility Verification (E-Verify)',
+  '52.222-55': 'Minimum Wages for Contractor Workers Under Executive Order 14026',
+  '52.222-62': 'Paid Sick Leave Under Executive Order 13706',
+  // ── Part 52.223 — Environment, Energy & Safety
   '52.223-3': 'Hazardous Material Identification and Material Safety Data',
   '52.223-5': 'Pollution Prevention and Right-to-Know Information',
+  '52.223-6': 'Drug-Free Workplace',
+  '52.223-11': 'Ozone-Depleting Substances and High Global Warming Potential Hydrofluorocarbons',
+  '52.223-15': 'Energy Efficiency in Energy-Consuming Products',
+  '52.223-17': 'Affirmative Procurement of EPA-Designated Items in Service and Construction Contracts',
   '52.223-18': 'Encouraging Contractor Policies to Ban Text Messaging While Driving',
-  '52.225-9': 'Buy American — Construction Materials',
+  // ── Part 52.224 — Privacy
+  '52.224-1': 'Privacy Act Notification',
+  '52.224-2': 'Privacy Act',
+  '52.224-3': 'Privacy Training',
+  // ── Part 52.225 — Foreign Acquisition
+  '52.225-1': 'Buy American—Supplies',
+  '52.225-3': 'Buy American—Free Trade Agreements—Israeli Trade Act',
+  '52.225-4': 'Buy American—Free Trade Agreements—Israeli Trade Act Certificate',
+  '52.225-9': 'Buy American—Construction Materials',
+  '52.225-11': 'Buy American—Construction Materials Under Trade Agreements',
+  '52.225-12': 'Notice of Buy American Requirement—Construction Materials Under Trade Agreements',
   '52.225-13': 'Restrictions on Certain Foreign Purchases',
-  '52.228-5': 'Insurance — Work on a Government Installation',
-  '52.228-15': 'Performance and Payment Bonds — Construction',
+  '52.225-25': 'Prohibition on Contracting with Entities Engaging in Certain Activities or Transactions Relating to Iran—Representation and Certifications',
+  // ── Part 52.227 — Patents, Data, Copyrights
+  '52.227-1': 'Authorization and Consent',
+  '52.227-2': 'Notice and Assistance Regarding Patent and Copyright Infringement',
+  '52.227-4': 'Patent Indemnity—Construction Contracts',
+  '52.227-14': 'Rights in Data—General',
+  // ── Part 52.228 — Bonds and Insurance
+  '52.228-1': 'Bid Guarantee',
+  '52.228-5': 'Insurance—Work on a Government Installation',
+  '52.228-11': 'Pledges of Assets',
+  '52.228-12': 'Prospective Subcontractor Requests for Bonds',
+  '52.228-13': 'Alternative Payment Protections',
+  '52.228-14': 'Irrevocable Letter of Credit',
+  '52.228-15': 'Performance and Payment Bonds—Construction',
+  '52.228-16': 'Performance and Payment Bonds—Other Than Construction',
+  // ── Part 52.229 — Taxes
+  '52.229-3': 'Federal, State, and Local Taxes',
+  // ── Part 52.230 — Cost Accounting Standards
+  '52.230-1': 'Cost Accounting Standards Notices and Certification',
+  '52.230-2': 'Cost Accounting Standards',
+  // ── Part 52.232 — Payment
   '52.232-1': 'Payments',
+  '52.232-8': 'Discounts for Prompt Payment',
+  '52.232-11': 'Extras',
+  '52.232-17': 'Interest',
+  '52.232-23': 'Assignment of Claims',
+  '52.232-25': 'Prompt Payment',
   '52.232-27': 'Prompt Payment for Construction Contracts',
-  '52.232-33': 'Payment by Electronic Funds Transfer — SAM',
+  '52.232-33': 'Payment by Electronic Funds Transfer—SAM',
+  '52.232-39': 'Unenforceability of Unauthorized Obligations',
+  '52.232-40': 'Providing Accelerated Payments to Small Business Subcontractors',
+  // ── Part 52.233 — Protests, Disputes, and Appeals
   '52.233-1': 'Disputes',
+  '52.233-2': 'Service of Protest',
   '52.233-3': 'Protest After Award',
+  '52.233-4': 'Applicable Law for Breach of Contract Claim',
+  // ── Part 52.236 — Construction and Architect-Engineer Contracts
+  '52.236-1': 'Performance of Work by the Contractor',
   '52.236-2': 'Differing Site Conditions',
   '52.236-3': 'Site Investigation and Conditions Affecting the Work',
+  '52.236-4': 'Physical Data',
   '52.236-5': 'Material and Workmanship',
   '52.236-6': 'Superintendence by the Contractor',
   '52.236-7': 'Permits and Responsibilities',
+  '52.236-8': 'Other Contracts',
+  '52.236-9': 'Protection of Existing Vegetation, Structures, Equipment, Utilities, and Improvements',
+  '52.236-10': 'Operations and Storage Areas',
+  '52.236-11': 'Use and Possession Prior to Completion',
+  '52.236-12': 'Cleaning Up',
   '52.236-13': 'Accident Prevention',
+  '52.236-14': 'Availability and Use of Utility Services',
   '52.236-15': 'Schedules for Construction Contracts',
+  '52.236-16': 'Quantity Surveys',
+  '52.236-17': 'Layout of Work',
+  '52.236-19': 'Organization and Direction of the Work',
   '52.236-21': 'Specifications and Drawings for Construction',
+  '52.236-27': 'Site Visit (Construction)',
+  // ── Part 52.237 — Service Contracting
+  '52.237-1': 'Site Visit',
+  '52.237-2': 'Protection of Government Buildings, Equipment, and Vegetation',
+  '52.237-3': 'Continuity of Services',
+  // ── Part 52.242 — Contract Administration
+  '52.242-13': 'Bankruptcy',
   '52.242-14': 'Suspension of Work',
+  '52.242-15': 'Stop-Work Order',
+  // ── Part 52.243 — Changes
+  '52.243-1': 'Changes—Fixed-Price',
   '52.243-4': 'Changes (Construction)',
+  // ── Part 52.244 — Subcontracting
+  '52.244-2': 'Subcontracts',
+  '52.244-5': 'Competition in Subcontracting',
   '52.244-6': 'Subcontracts for Commercial Products and Commercial Services',
+  // ── Part 52.245 — Government Property
+  '52.245-1': 'Government Property',
+  // ── Part 52.246 — Quality Assurance
+  '52.246-2': 'Inspection of Supplies—Fixed-Price',
+  '52.246-4': 'Inspection of Services—Fixed-Price',
   '52.246-12': 'Inspection of Construction',
   '52.246-21': 'Warranty of Construction',
+  // ── Part 52.247 — Transportation
+  '52.247-34': 'F.O.B. Destination',
+  // ── Part 52.248 — Value Engineering
+  '52.248-1': 'Value Engineering',
+  // ── Part 52.249 — Termination
+  '52.249-1': 'Termination for Convenience of the Government (Fixed-Price) (Short Form)',
+  '52.249-2': 'Termination for Convenience of the Government (Fixed-Price)',
+  '52.249-4': 'Termination for Convenience of the Government (Services) (Short Form)',
+  '52.249-7': 'Termination (Fixed-Price Architect-Engineer)',
   '52.249-10': 'Default (Fixed-Price Construction)',
+  '52.249-14': 'Excusable Delays',
+  // ── Part 52.253 — Forms
   '52.253-1': 'Computer Generated Forms',
+}
+
+// Common DFARS clauses seen in DoD solicitations.
+const DFARS_TITLES: Record<string, string> = {
+  '252.203-7000': 'Requirements Relating to Compensation of Former DoD Officials',
+  '252.203-7001': 'Prohibition on Persons Convicted of Fraud or Other Defense-Contract-Related Felonies',
+  '252.203-7002': 'Requirement to Inform Employees of Whistleblower Rights',
+  '252.203-7005': 'Representation Relating to Compensation of Former DoD Officials',
+  '252.204-7000': 'Disclosure of Information',
+  '252.204-7003': 'Control of Government Personnel Work Product',
+  '252.204-7004': 'Antiterrorism Awareness Training for Contractors',
+  '252.204-7008': 'Compliance with Safeguarding Covered Defense Information Controls',
+  '252.204-7009': 'Limitations on the Use or Disclosure of Third-Party Contractor Reported Cyber Incident Information',
+  '252.204-7012': 'Safeguarding Covered Defense Information and Cyber Incident Reporting',
+  '252.204-7015': 'Notice of Authorized Disclosure of Information for Litigation Support',
+  '252.204-7016': 'Covered Defense Telecommunications Equipment or Services—Representation',
+  '252.204-7017': 'Prohibition on the Acquisition of Covered Defense Telecommunications Equipment or Services—Representation',
+  '252.204-7018': 'Prohibition on the Acquisition of Covered Defense Telecommunications Equipment or Services',
+  '252.204-7020': 'NIST SP 800-171 DoD Assessment Requirements',
+  '252.204-7024': 'Notice on the Use of the Supplier Performance Risk System',
+  '252.209-7999': 'Representation by Corporations Regarding an Unpaid Delinquent Tax Liability or a Felony Conviction under Any Federal Law',
+  '252.219-7003': 'Small Business Subcontracting Plan (DoD Contracts)',
+  '252.223-7008': 'Prohibition of Hexavalent Chromium',
+  '252.225-7001': 'Buy American and Balance of Payments Program',
+  '252.225-7002': 'Qualifying Country Sources as Subcontractors',
+  '252.225-7008': 'Restriction on Acquisition of Specialty Metals',
+  '252.225-7048': 'Export-Controlled Items',
+  '252.226-7001': 'Utilization of Indian Organizations, Indian-Owned Economic Enterprises, and Native Hawaiian Small Business Concerns',
+  '252.232-7003': 'Electronic Submission of Payment Requests and Receiving Reports',
+  '252.232-7006': 'Wide Area WorkFlow Payment Instructions',
+  '252.232-7010': 'Levies on Contract Payments',
+  '252.243-7001': 'Pricing of Contract Modifications',
+  '252.244-7000': 'Subcontracts for Commercial Products or Commercial Services',
+  '252.246-7003': 'Notification of Potential Safety Issues',
+  '252.247-7023': 'Transportation of Supplies by Sea',
 }
 
 export interface FarClause {
@@ -2854,6 +3059,30 @@ export interface FarClause {
   system: string   // "FAR" | "DFARS" | "AFARS" | "VAAR" | "EPAAR" | "GSAM"
   title: string    // known title or best-effort context snippet
   known: boolean   // true when we recognized the code
+}
+
+// Federal solicitations often print clause titles in ALL CAPS. Convert those
+// to Title Case, but keep short function/style words lower ("of", "and",
+// "the") and preserve acronyms and hyphenated compounds.
+const TITLE_LOWER_WORDS = new Set([
+  'a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'in', 'nor', 'of',
+  'on', 'or', 'the', 'to', 'up', 'with', 'from', 'per', 'via',
+])
+function toTitleCase(s: string): string {
+  const words = s.toLowerCase().split(/(\s+|—|–|-)/)
+  return words
+    .map((w, i) => {
+      if (!w || /^\s+$/.test(w) || w === '—' || w === '–' || w === '-') return w
+      // Keep uppercase for known acronyms embedded in titles.
+      if (/^(sam|dod|dfars|far|epa|osha|dbe|hubzone|sba|it|us|eft|naics|cui|ffp|nist|sp|ffr|it|ust|cage|itar|rfp|rfq)$/i.test(w)) {
+        return w.toUpperCase()
+      }
+      if (i > 0 && TITLE_LOWER_WORDS.has(w)) return w
+      return w.charAt(0).toUpperCase() + w.slice(1)
+    })
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 export function extractFarClauses(text: string): FarClause[] {
@@ -2875,27 +3104,36 @@ export function extractFarClauses(text: string): FarClause[] {
     if (system === 'FAR' && FAR_TITLES[code]) {
       title = FAR_TITLES[code]
       known = true
+    } else if (system === 'DFARS' && DFARS_TITLES[code]) {
+      title = DFARS_TITLES[code]
+      known = true
     } else {
-      // Best-effort: look at up to ~120 chars AFTER the clause reference —
-      // in federal solicitations the title (or a "REVISED / OCT 2020" date
-      // stamp) almost always immediately follows the code. Strip trailing
-      // FAR-code fragments, all-caps date stamps, and empty parens so we
-      // don't surface truncated garbage like "SES INCORPORATED BY REFERENCE
-      // FAR 52". If nothing usable remains, we leave the title empty and
-      // the row is dropped below.
-      const after = text.slice(m.index + m[0].length, m.index + m[0].length + 120)
+      // Best-effort: look at up to ~240 chars AFTER the clause reference —
+      // federal clause titles can run 100+ characters (e.g. 52.225-25) and
+      // the previous 120-char window was clipping them mid-phrase. Strip
+      // trailing FAR-code fragments, all-caps date stamps, and empty
+      // parens; then take the first sentence-like chunk.
+      const after = text.slice(m.index + m[0].length, m.index + m[0].length + 240)
         .replace(/[\s\r\n]+/g, ' ')
-        .replace(/\bFAR\s*52[\s\d.-]*/gi, '')
+        .replace(/\b(?:FAR|DFARS?)\s*\d{2,3}[\s\d.-]*/gi, '')
         .replace(/\b(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s*\d{4}\b/gi, '')
         .replace(/\(\s*\)/g, '')
         .replace(/^[\s.,;:()\-]+/, '')
         .split(/(?:[.;\n]|\s{2,})/)[0]
         .trim()
-      // Reject snippets that start mid-word (all-lowercase or ALL-CAPS-only
-      // fragment) or that are too short to be a real title.
+
+      // Reject snippets that end mid-phrase — trailing prepositions,
+      // conjunctions, or articles are the tell that we clipped a title
+      // in the middle. Better to drop the row than surface a fragment.
+      const endsMidPhrase =
+        /\b(?:and|or|the|a|an|of|to|for|with|by|as|in|on|at|from|that|which|when|where|is|are|be|been|being|has|have|had|internal|external|federal|certain|these|those|this|his|her|its)$/i.test(after)
+
       const startsWithWord = /^[A-Z][a-zA-Z]{2,}/.test(after)
-      if (startsWithWord && after.length >= 8 && after.length <= 180) {
-        title = after
+      if (startsWithWord && !endsMidPhrase && after.length >= 8 && after.length <= 220) {
+        // Federal solicitations often print clause titles in ALL CAPS.
+        // Convert to Title Case so the compliance list reads coherently
+        // alongside the canonical entries above.
+        title = /^[^a-z]+$/.test(after) ? toTitleCase(after) : after
       }
     }
 
