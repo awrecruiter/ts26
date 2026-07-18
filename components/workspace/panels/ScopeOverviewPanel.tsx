@@ -3014,6 +3014,13 @@ const FAR_TITLES: Record<string, string> = {
   '52.249-7': 'Termination (Fixed-Price Architect-Engineer)',
   '52.249-10': 'Default (Fixed-Price Construction)',
   '52.249-14': 'Excusable Delays',
+  // ── Part 52.252 — Solicitation Provisions and Contract Clauses
+  '52.252-1': 'Solicitation Provisions Incorporated by Reference',
+  '52.252-2': 'Clauses Incorporated by Reference',
+  '52.252-3': 'Alterations in Solicitation',
+  '52.252-4': 'Alterations in Contract',
+  '52.252-5': 'Authorized Deviations in Provisions',
+  '52.252-6': 'Authorized Deviations in Clauses',
   // ── Part 52.253 — Forms
   '52.253-1': 'Computer Generated Forms',
 }
