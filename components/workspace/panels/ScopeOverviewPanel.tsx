@@ -1675,6 +1675,9 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
     setTimeout(() => window.print(), 200)
   }
 
+  // Every FAR / DFARS / etc. clause referenced across the opportunity docs.
+  const farClauses = useMemo(() => extractFarClauses(fullAttachmentText), [fullAttachmentText])
+
   // AI scope wins when present; otherwise fall back to rule-based extraction.
   const deliverables = useMemo(() => {
     if (aiScope?.documentation && aiScope.documentation.length > 0) {
@@ -1872,7 +1875,9 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
         </div>
 
         {/* Compliance — required plans from the solicitation surface first,
-            followed by the extracted compliance line items. */}
+            followed by the extracted compliance line items, and finally the
+            full list of applicable FAR / DFARS clauses in a scrollable list
+            at the bottom. */}
         {activeFilter === 'compliance' && (
           <div className="space-y-4">
             <RequiredPlansTiles
@@ -1897,6 +1902,10 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
             ) : (
               <EmptyState message="No compliance requirements extracted. Generate the SOW to parse solicitation attachments." />
             )}
+            {/* Bottom of the scrollable Compliance section: every FAR /
+                DFARS / AFARS / VAAR clause referenced anywhere in the
+                opportunity attachments, in a scrollable list. */}
+            <FarClausesSection clauses={farClauses} />
           </div>
         )}
 
@@ -2077,6 +2086,72 @@ function PlanViewerModal({
           Generated {new Date(plan.generatedAt).toLocaleString('en-US')}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Applicable FAR Clauses ────────────────────────────────────────────────
+// Sits at the bottom of the Compliance filter view. Every FAR / DFARS /
+// AFARS / VAAR / EPAAR / GSAM clause we found anywhere in the opportunity
+// attachment corpus is listed here, sorted by system + code, in a
+// scrollable list. Recognized codes show their canonical short title;
+// unknown codes show the surrounding attachment snippet.
+function FarClausesSection({ clauses }: { clauses: FarClause[] }) {
+  const [query, setQuery] = useState('')
+  const filtered = useMemo(() => {
+    if (!query.trim()) return clauses
+    const q = query.toLowerCase()
+    return clauses.filter(c =>
+      c.ref.toLowerCase().includes(q) ||
+      c.code.toLowerCase().includes(q) ||
+      c.title.toLowerCase().includes(q),
+    )
+  }, [clauses, query])
+
+  return (
+    <div className="bg-white rounded-xl border border-stone-200">
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-stone-100">
+        <div className="flex items-center gap-2">
+          <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
+            Applicable FAR Clauses
+          </p>
+          <span className="text-[10px] font-medium text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded">
+            {clauses.length}
+          </span>
+        </div>
+        {clauses.length > 0 && (
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter — code or title"
+            className="text-xs px-2 py-1 border border-stone-200 rounded focus:outline-none focus:border-stone-400 w-48"
+          />
+        )}
+      </div>
+      {clauses.length === 0 ? (
+        <div className="px-4 py-6 text-center text-sm text-stone-400 italic">
+          No FAR / DFARS clauses parsed from the attachments yet.
+        </div>
+      ) : (
+        <div className="max-h-96 overflow-y-auto divide-y divide-stone-100">
+          {filtered.map((c) => (
+            <div key={`${c.system}-${c.code}`} className="px-4 py-2 flex items-start gap-3">
+              <span className="shrink-0 mt-0.5 text-[10px] font-mono font-semibold text-stone-500 bg-stone-50 border border-stone-200 rounded px-1.5 py-0.5 whitespace-nowrap">
+                {c.ref}
+              </span>
+              <p className={`text-xs leading-snug ${c.known ? 'text-stone-800' : 'text-stone-500 italic'}`}>
+                {c.title || '(no context captured)'}
+              </p>
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <div className="px-4 py-6 text-center text-xs text-stone-400 italic">
+              No clauses match &ldquo;{query}&rdquo;.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -2594,6 +2669,110 @@ export interface PlanCompletion {
   total: number
   /** Optional caption explaining what's missing / where the % came from. */
   note?: string
+}
+
+// ─── FAR clause extraction ─────────────────────────────────────────────────
+// Common FAR / DFARS / AFARS / VAAR clauses show up in solicitations as
+// bare references like "FAR 52.209-10" or "52.222-6 Construction Wage Rate
+// Requirements." Pull every unique reference out of the attachment corpus
+// and try to match each against a short-title lookup — falls back to the
+// surrounding text snippet when the exact title isn't recognised.
+const FAR_TITLES: Record<string, string> = {
+  '52.203-6': 'Restrictions on Subcontractor Sales to the Government',
+  '52.203-11': 'Certification and Disclosure Regarding Payments to Influence Federal Transactions',
+  '52.203-13': 'Contractor Code of Business Ethics and Conduct',
+  '52.204-7': 'System for Award Management (SAM)',
+  '52.204-10': 'Reporting Executive Compensation and First-Tier Subcontract Awards',
+  '52.204-13': 'System for Award Management Maintenance',
+  '52.204-24': 'Representation Regarding Certain Telecommunications Equipment (Section 889)',
+  '52.204-25': 'Prohibition on Certain Telecommunications (Section 889 Part B)',
+  '52.209-6': 'Protecting the Government\'s Interest When Subcontracting with Contractors Debarred, Suspended, or Proposed for Debarment',
+  '52.209-10': 'Prohibition on Contracting with Inverted Domestic Corporations',
+  '52.212-4': 'Contract Terms and Conditions — Commercial Products and Commercial Services',
+  '52.219-6': 'Notice of Total Small Business Set-Aside',
+  '52.219-8': 'Utilization of Small Business Concerns',
+  '52.219-14': 'Limitations on Subcontracting',
+  '52.219-28': 'Post-Award Small Business Program Rerepresentation',
+  '52.222-3': 'Convict Labor',
+  '52.222-6': 'Construction Wage Rate Requirements (Davis-Bacon)',
+  '52.222-7': 'Withholding of Funds (Davis-Bacon)',
+  '52.222-8': 'Payrolls and Basic Records (Davis-Bacon)',
+  '52.222-11': 'Subcontracts (Labor Standards)',
+  '52.222-15': 'Certification of Eligibility',
+  '52.222-21': 'Prohibition of Segregated Facilities',
+  '52.222-26': 'Equal Opportunity',
+  '52.222-35': 'Equal Opportunity for Veterans',
+  '52.222-36': 'Equal Opportunity for Workers with Disabilities',
+  '52.222-40': 'Notification of Employee Rights Under the National Labor Relations Act',
+  '52.222-50': 'Combating Trafficking in Persons',
+  '52.222-54': 'Employment Eligibility Verification (E-Verify)',
+  '52.223-3': 'Hazardous Material Identification and Material Safety Data',
+  '52.223-5': 'Pollution Prevention and Right-to-Know Information',
+  '52.223-18': 'Encouraging Contractor Policies to Ban Text Messaging While Driving',
+  '52.225-9': 'Buy American — Construction Materials',
+  '52.225-13': 'Restrictions on Certain Foreign Purchases',
+  '52.228-5': 'Insurance — Work on a Government Installation',
+  '52.228-15': 'Performance and Payment Bonds — Construction',
+  '52.232-1': 'Payments',
+  '52.232-27': 'Prompt Payment for Construction Contracts',
+  '52.232-33': 'Payment by Electronic Funds Transfer — SAM',
+  '52.233-1': 'Disputes',
+  '52.233-3': 'Protest After Award',
+  '52.236-2': 'Differing Site Conditions',
+  '52.236-3': 'Site Investigation and Conditions Affecting the Work',
+  '52.236-5': 'Material and Workmanship',
+  '52.236-6': 'Superintendence by the Contractor',
+  '52.236-7': 'Permits and Responsibilities',
+  '52.236-13': 'Accident Prevention',
+  '52.236-15': 'Schedules for Construction Contracts',
+  '52.236-21': 'Specifications and Drawings for Construction',
+  '52.242-14': 'Suspension of Work',
+  '52.243-4': 'Changes (Construction)',
+  '52.244-6': 'Subcontracts for Commercial Products and Commercial Services',
+  '52.246-12': 'Inspection of Construction',
+  '52.246-21': 'Warranty of Construction',
+  '52.249-10': 'Default (Fixed-Price Construction)',
+  '52.253-1': 'Computer Generated Forms',
+}
+
+export interface FarClause {
+  ref: string      // e.g. "FAR 52.209-10"
+  code: string     // e.g. "52.209-10"
+  system: string   // "FAR" | "DFARS" | "AFARS" | "VAAR" | "EPAAR" | "GSAM"
+  title: string    // known title or best-effort context snippet
+  known: boolean   // true when we recognized the code
+}
+
+export function extractFarClauses(text: string): FarClause[] {
+  if (!text) return []
+  const re = /(FAR|DFARS?|AFARS?|VAAR|EPAAR|GSAM)\s*(\d{1,2}\.\d{1,4}(?:-\d{1,4})?)/gi
+  const seen = new Map<string, FarClause>()
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    const system = m[1].toUpperCase().replace('DFAR', 'DFARS').replace('AFAR', 'AFARS')
+    const code = m[2]
+    const key = `${system}:${code}`
+    if (seen.has(key)) continue
+    let title = ''
+    let known = false
+    if (system === 'FAR' && FAR_TITLES[code]) {
+      title = FAR_TITLES[code]
+      known = true
+    } else {
+      // Best-effort: grab up to ~140 chars of surrounding context and clip
+      // at a sentence boundary so the snippet is a readable phrase.
+      const from = Math.max(0, m.index - 30)
+      const to = Math.min(text.length, m.index + m[0].length + 140)
+      title = text.slice(from, to)
+        .replace(/[\s\r\n]+/g, ' ')
+        .replace(/^[^A-Z0-9]*|[^\w).\]]*$/g, '')
+        .split(/[.;\n]/)[0]
+        .slice(0, 200)
+        .trim()
+    }
+    seen.set(key, { ref: `${system} ${code}`, code, system, title, known })
+  }
+  return Array.from(seen.values()).sort((a, b) => a.ref.localeCompare(b.ref))
 }
 
 function RequiredPlansTiles({
