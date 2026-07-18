@@ -1553,6 +1553,27 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
 
   const structured: StructuredContent | undefined = (opportunity.parsedAttachments as any)?.structured
 
+  // Full attachment corpus for content-based plan detection. Combines every
+  // structured section + the raw `fullText` of each parsed attachment (SOW,
+  // O&M Plan, drawings notes, etc.) + the opportunity's own description.
+  // This is what lets a plan surface because the SOW says "dust control" or
+  // "95% proctor" even when the plan name itself isn't spelled out.
+  const fullAttachmentText = useMemo(() => {
+    const rawAttachments = ((opportunity.parsedAttachments as unknown as {
+      attachments?: Array<{ fullText?: string | null }>
+    })?.attachments ?? []).map(a => a?.fullText ?? '')
+    return [
+      opportunity.description ?? '',
+      ...(structured?.scope ?? []),
+      ...(structured?.deliverables ?? []),
+      ...(structured?.compliance ?? []),
+      ...(structured?.qualifications ?? []),
+      ...(structured?.evaluation ?? []),
+      ...(structured?.periodOfPerformance ?? []),
+      ...rawAttachments,
+    ].join('\n\n')
+  }, [opportunity.description, opportunity.parsedAttachments, structured])
+
   // AI scope wins when present; otherwise fall back to rule-based extraction.
   const deliverables = useMemo(() => {
     if (aiScope?.documentation && aiScope.documentation.length > 0) {
@@ -1755,6 +1776,7 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
           <div className="space-y-4">
             <RequiredPlansTiles
               compliance={compliance}
+              attachmentText={fullAttachmentText}
               naicsCode={opportunity.naicsCode}
               onOpenPlan={(key) => setViewingPlan(key)}
             />
@@ -1984,13 +2006,20 @@ function EmptyState({ message }: { message: string }) {
 }
 
 // ─── Required Plans ─────────────────────────────────────────────────────────
-// Canonical prime-plan catalog. A plan tile surfaces when either
-//   (a) a compliance item explicitly mentions the plan, or
+// A plan tile surfaces when any of these trigger:
+//   (a) a compliance item explicitly names the plan (APP, QCP, etc.)
 //   (b) the opportunity's NAICS falls under construction (23xxxx) and the
-//       plan is one of the default plans required by USACE / EM 385-1-1
-//       for construction contracts.
+//       plan is a construction default under USACE / EM 385-1-1
+//   (c) content-triggers: the actual attachment text calls out work that
+//       implies this plan is required (e.g. "dust control" → APP,
+//       "traffic control" → TCP, "95% proctor" → QCP). Each trigger
+//       carries a human-readable rationale we surface on the tile.
 // No invite action: plan assignment is delegated to the subcontractor intake
 // form. Clicking a plan opens the auto-filled preview.
+interface ContentTrigger {
+  pattern: RegExp
+  rationale: string
+}
 interface PlanDef {
   key: string
   label: string
@@ -1999,6 +2028,8 @@ interface PlanDef {
   purpose: string
   /** True when this plan is a construction default (surfaces on NAICS 23xxxx). */
   constructionDefault?: boolean
+  /** Attachment-text phrases that imply this plan is required. */
+  contentTriggers?: ContentTrigger[]
 }
 
 const REQUIRED_PLANS: PlanDef[] = [
@@ -2009,6 +2040,12 @@ const REQUIRED_PLANS: PlanDef[] = [
     detect: /\b(APP|accident prevention plan)\b/i,
     purpose: 'Site-specific safety plan — supervisor, JHAs, emergency response, medical facility, PPE.',
     constructionDefault: true,
+    contentTriggers: [
+      { pattern: /\bdust control\b/i, rationale: 'SOW requires dust control during installation' },
+      { pattern: /\bhazardous material(?:s)? spill|\boil (?:or hazardous )?spill|\bcontain,? clean up,? and (?:properly )?dispose/i, rationale: 'SOW requires hazmat / oil spill response' },
+      { pattern: /\bEM[- ]?385\b|\bOSHA (?:10|30)\b/i, rationale: 'EM 385-1-1 / OSHA compliance called out' },
+      { pattern: /\bpersonal protective equipment\b|\bPPE\b/i, rationale: 'PPE requirements referenced' },
+    ],
   },
   {
     key: 'qcp',
@@ -2017,6 +2054,12 @@ const REQUIRED_PLANS: PlanDef[] = [
     detect: /\b(QCP|quality control plan)\b/i,
     purpose: 'QC officer, testing frequency, inspection procedures, non-conformance handling.',
     constructionDefault: true,
+    contentTriggers: [
+      { pattern: /\b95%\s*(?:standard\s*)?proctor\b|\bstandard proctor\b|\bcompaction test\b/i, rationale: 'Compaction density testing (proctor) required' },
+      { pattern: /\bquality (?:assurance|control)\b/i, rationale: 'Quality assurance / control mentioned' },
+      { pattern: /\btesting (?:lab|report|frequency|schedule)\b|\binspection (?:and testing|frequency|report)\b/i, rationale: 'Testing / inspection cadence required' },
+      { pattern: /\bmaterial specifications?\b/i, rationale: 'Material specifications submittal required' },
+    ],
   },
   {
     key: 'wmp',
@@ -2025,6 +2068,10 @@ const REQUIRED_PLANS: PlanDef[] = [
     detect: /\b(WMP|waste management plan)\b/i,
     purpose: 'Waste streams, hauler, disposal / recycling facilities, ticket documentation.',
     constructionDefault: true,
+    contentTriggers: [
+      { pattern: /\bremoval (?:and|&) (?:proper )?disposal\b|\bdispos(?:e|al) of (?:all )?(?:trash|debris|waste)|construction waste/i, rationale: 'Trash / debris / construction-waste removal + disposal required' },
+      { pattern: /\btrash (?:and|&) debris\b|\bdebris (?:box|removal|disposal)\b/i, rationale: 'Debris removal called out' },
+    ],
   },
   {
     key: 'sshp',
@@ -2039,6 +2086,9 @@ const REQUIRED_PLANS: PlanDef[] = [
     shortName: 'SWPPP',
     detect: /\b(SWPPP|storm ?water(?: pollution)?(?: prevention)? plan)\b/i,
     purpose: 'BMPs, discharge points, inspection schedule, corrective actions for storm water.',
+    contentTriggers: [
+      { pattern: /\bstorm ?water\b|\brunoff\b|\berosion control\b|\bBMP(?:s)?\b|\bsediment control\b/i, rationale: 'Storm water / erosion control referenced' },
+    ],
   },
   {
     key: 'emp',
@@ -2046,6 +2096,10 @@ const REQUIRED_PLANS: PlanDef[] = [
     shortName: 'EMP',
     detect: /\b(EMP|environmental (?:protection|management) plan)\b/i,
     purpose: 'Environmental compliance, spill response, hazardous material handling.',
+    contentTriggers: [
+      { pattern: /\benvironmental (?:consideration|protection|regulation|impact)/i, rationale: 'Environmental protection called out in SOW' },
+      { pattern: /\bminimize site disturbance\b|\bsite disturbance\b/i, rationale: 'Minimize site disturbance required' },
+    ],
   },
   {
     key: 'tcp',
@@ -2054,6 +2108,10 @@ const REQUIRED_PLANS: PlanDef[] = [
     detect: /\b(TCP|MOT|traffic control plan|maintenance of traffic)\b/i,
     purpose: 'Lane closures, flaggers, signage, MUTCD-compliant traffic routing.',
     constructionDefault: true,
+    contentTriggers: [
+      { pattern: /\btraffic control\b|\balternate route(?:s)?\b|\bmaintain access\b|\bobstruct road(?:s|way)?\b|\blane closure\b|\bflagger\b|\bdetour\b/i, rationale: 'Traffic control / alternate routing required' },
+      { pattern: /\brecreating public\b|\bemergency personnel\b/i, rationale: 'Maintain public + emergency access' },
+    ],
   },
 ]
 
@@ -2064,19 +2122,41 @@ function isConstructionNaics(code?: string | null): boolean {
 
 function RequiredPlansTiles({
   compliance,
+  attachmentText,
   naicsCode,
   onOpenPlan,
 }: {
   compliance: ScopeItem[]
+  /** Combined text of every parsed attachment + the opportunity description. */
+  attachmentText: string
   naicsCode?: string | null
   onOpenPlan: (planKey: string) => void
 }) {
   const isConstruction = isConstructionNaics(naicsCode)
-  const detected = REQUIRED_PLANS.filter((p) => {
-    const mentionedInCompliance = compliance.some((c) => p.detect.test(c.text))
-    const constructionDefault = isConstruction && p.constructionDefault
-    return mentionedInCompliance || constructionDefault
-  })
+  const detected = REQUIRED_PLANS
+    .map((plan) => {
+      const rationales: string[] = []
+      // (a) explicit plan-name mention anywhere in the compliance list
+      if (compliance.some((c) => plan.detect.test(c.text))) {
+        rationales.push('Named in the solicitation compliance items')
+      }
+      // (b) construction NAICS default
+      if (isConstruction && plan.constructionDefault) {
+        rationales.push(`Construction default for NAICS ${naicsCode}`)
+      }
+      // (c) content triggers — phrases in the attachment text that imply
+      //     this plan is required
+      if (attachmentText) {
+        for (const trigger of plan.contentTriggers ?? []) {
+          if (trigger.pattern.test(attachmentText)) rationales.push(trigger.rationale)
+        }
+      }
+      // De-dup rationales while preserving order.
+      const unique = Array.from(new Set(rationales))
+      return { plan, rationales: unique }
+    })
+    .filter((row) => row.rationales.length > 0)
+
   if (detected.length === 0) return null
 
   return (
@@ -2086,11 +2166,11 @@ function RequiredPlansTiles({
           Required Plans
         </p>
         <span className="text-[10px] text-stone-400">
-          {isConstruction ? 'Construction NAICS + solicitation compliance' : 'Pulled from solicitation compliance items'}
+          Detected from solicitation attachments + NAICS
         </span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {detected.map((plan) => {
+        {detected.map(({ plan, rationales }) => {
           const clickable = plan.key === 'app'
           return (
             <button
@@ -2111,6 +2191,16 @@ function RequiredPlansTiles({
               </div>
               <p className="text-xs font-medium text-stone-700 mb-1">{plan.label}</p>
               <p className="text-xs text-stone-500 leading-snug">{plan.purpose}</p>
+              {rationales.length > 0 && (
+                <ul className="mt-2 space-y-0.5">
+                  {rationales.slice(0, 3).map((r, i) => (
+                    <li key={i} className="text-[11px] text-stone-600 leading-snug flex items-start gap-1.5">
+                      <span className="text-stone-400 mt-0.5 flex-shrink-0">·</span>
+                      <span>{r}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
               {clickable && (
                 <p className="mt-2 text-[11px] font-medium text-stone-700">
                   Open auto-filled preview →
