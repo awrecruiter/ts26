@@ -270,6 +270,63 @@ function extractCompliance(structured: StructuredContent | undefined, descriptio
   }))
 }
 
+// Site-facility requirements — trailers, dumpsters, porta-johns, storage
+// containers, temporary fencing, temp utilities. Federal SOWs bury these in
+// the general-requirements section and the deliverables list; our earlier
+// compliance scan misses them because they're not FAR clauses or MIL specs.
+// Scan every parsed text block sentence-by-sentence and pull out the ones
+// that mention a facility keyword.
+const SITE_FACILITY_PATTERNS: { tag: string; re: RegExp }[] = [
+  { tag: 'TRAILER', re: /\b(?:job|field|office|construction|site|temporary|temp\.?)\s*(?:trailer|office)\b|\bfield office\b|\bconstruction (?:trailer|office)\b/i },
+  { tag: 'DUMPSTER', re: /\b(?:dumpster|roll[- ]?off|waste (?:container|receptacle|bin)|refuse (?:container|receptacle|bin)|debris box)\b/i },
+  { tag: 'PORTA-JOHN', re: /\b(?:porta[- ]?(?:john|potty|let)s?|portable (?:toilet|restroom|sanitation)|chemical toilet|port[- ]?a[- ]?jane)\b/i },
+  { tag: 'STORAGE', re: /\b(?:conex|storage (?:container|box|trailer)|shipping container)\b/i },
+  { tag: 'FENCING', re: /\btemporary (?:fenc(?:e|ing))\b|\b(?:site|construction|perimeter) fenc(?:e|ing)\b|\bstaging area\b/i },
+  { tag: 'UTILITIES', re: /\btemporary (?:power|water|electric(?:al|ity)?|utilities|sanitation|lighting)\b|\butility hookup\b/i },
+  { tag: 'SIGNAGE', re: /\b(?:project|construction) sign(?:age)?\b|\btemporary sign(?:age)?\b/i },
+]
+
+function extractSiteFacilityRequirements(
+  structured: StructuredContent | undefined,
+  description: string,
+): ScopeItem[] {
+  const blocks = [
+    description ?? '',
+    ...(structured?.scope ?? []),
+    ...(structured?.deliverables ?? []),
+    ...(structured?.compliance ?? []),
+    ...(structured?.qualifications ?? []),
+  ]
+  const seen = new Set<string>()
+  const items: ScopeItem[] = []
+  let idx = 0
+  for (const block of blocks) {
+    if (!block) continue
+    // Split on sentence boundaries and stray bullet chars so we get one
+    // requirement per hit, not a whole paragraph.
+    const sentences = block
+      .split(/(?<=[.!?;:])\s+|\n+|(?:^|\s)(?=[•·▪◦])/g)
+      .map(s => s.replace(/^[•·▪◦\s]+/, '').trim())
+      .filter(s => s.length > 15 && s.length < 400)
+    for (const sentence of sentences) {
+      for (const { tag, re } of SITE_FACILITY_PATTERNS) {
+        if (!re.test(sentence)) continue
+        const dedupeKey = `${tag}::${sentence.toLowerCase().slice(0, 80)}`
+        if (seen.has(dedupeKey)) continue
+        seen.add(dedupeKey)
+        items.push({
+          id: `site-${idx++}`,
+          text: sentence,
+          tags: [tag, 'SITE FACILITY'],
+          critical: false,
+        })
+        break // one tag per sentence
+      }
+    }
+  }
+  return items.slice(0, 15)
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function Tag({ label }: { label: string }) {
@@ -1502,6 +1559,14 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
         }))
       : extractCompliance(structured, opportunity.description || '')
 
+    // Merge site-facility requirements (trailers, dumpsters, porta-johns,
+    // storage containers, temporary fencing / utilities / signage) that the
+    // solicitation calls out. These live in the general-requirements portion
+    // of the SOW and don't come back from the FAR/MIL-clause scan, so we
+    // append them here.
+    const siteFacilities = extractSiteFacilityRequirements(structured, opportunity.description || '')
+    const combined = [...base, ...siteFacilities]
+
     // Required plans (APP, QCP, WMP, Safety, Environmental, Site-Specific)
     // must show the place of performance the plan applies to. We inherit the
     // location from the solicitation brief + opportunity record so subs and
@@ -1510,9 +1575,9 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
     const location = brief?.placeOfPerformance?.location
       || opportunity.state
       || null
-    if (!location) return base
+    if (!location) return combined
     const planRe = /\b(APP|QCP|WMP|SSHP|EMP|SWPPP|accident prevention plan|quality control plan|waste management plan|safety plan|site[- ]specific safety|environmental (?:protection|management) plan|storm ?water|health and safety plan)\b/i
-    return base.map(item => {
+    return combined.map(item => {
       if (!planRe.test(item.text)) return item
       // Skip if the item already names the location
       if (item.text.toLowerCase().includes(location.toLowerCase())) return item
