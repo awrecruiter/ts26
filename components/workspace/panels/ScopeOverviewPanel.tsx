@@ -2147,11 +2147,22 @@ function ComplianceRequirementsFarList({ clauses }: { clauses: FarClause[] }) {
           {filtered.map((c) => {
             const key = `${c.system}-${c.code}`
             const terms = GLOSSARY_TERMS_BY_FAR_CODE.get(c.code) ?? []
-            const hasExplanation = terms.length > 0
+            const hasGlossary = terms.length > 0
             const isOpen = expanded === key
+            const acquisitionUrl = c.system === 'FAR'
+              ? `https://www.acquisition.gov/far/${c.code}`
+              : c.system === 'DFARS'
+                ? `https://www.acquisition.gov/dfars/${c.code}`
+                : null
             return (
-              <div key={key} className="px-4 py-2.5">
-                <div className="flex items-start gap-3">
+              <div key={key}>
+                {/* Whole row is a button so clicking anywhere expands. */}
+                <button
+                  type="button"
+                  onClick={() => setExpanded(isOpen ? null : key)}
+                  className="w-full text-left px-4 py-2.5 hover:bg-stone-50 transition-colors flex items-start gap-3"
+                  aria-expanded={isOpen}
+                >
                   <span className="shrink-0 mt-0.5 text-[10px] font-mono font-semibold text-stone-500 bg-stone-50 border border-stone-200 rounded px-1.5 py-0.5 whitespace-nowrap">
                     {c.ref}
                   </span>
@@ -2159,55 +2170,89 @@ function ComplianceRequirementsFarList({ clauses }: { clauses: FarClause[] }) {
                     <p className={`text-xs leading-snug ${c.known ? 'text-stone-800' : 'text-stone-500 italic'}`}>
                       {c.title || '(no context captured)'}
                     </p>
-                    {hasExplanation && (
-                      <button
-                        type="button"
-                        onClick={() => setExpanded(isOpen ? null : key)}
-                        className="mt-1 text-[11px] font-medium text-stone-600 hover:text-stone-900 flex items-center gap-1"
-                      >
-                        <svg
-                          className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-90' : ''}`}
-                          fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                        {isOpen ? 'Hide explanation' : `What this means${terms.length > 1 ? ` (${terms.length} terms)` : ''}`}
-                      </button>
-                    )}
+                    <p className="mt-0.5 text-[11px] text-stone-500 flex items-center gap-1.5">
+                      {hasGlossary
+                        ? `Reference Library · ${terms.length} term${terms.length > 1 ? 's' : ''}`
+                        : 'Full clause text on acquisition.gov'}
+                    </p>
                   </div>
-                </div>
-                {isOpen && hasExplanation && (
-                  <div className="mt-2 ml-16 space-y-3">
-                    {terms.map((t, i) => (
-                      <div key={i} className="bg-stone-50 border border-stone-200 rounded p-3 space-y-2 text-xs">
-                        <p className="font-semibold text-stone-800">{t.term}</p>
-                        <p className="text-stone-700 leading-relaxed">{t.fullExplanation}</p>
-                        {t.contractorMustDo.length > 0 && (
-                          <div>
-                            <p className="font-semibold text-stone-700 mb-1">What you must do:</p>
-                            <ul className="space-y-1">
-                              {t.contractorMustDo.map((action, j) => (
-                                <li key={j} className="flex items-start gap-1.5 text-stone-600">
-                                  <span className="text-stone-400 mt-0.5 flex-shrink-0">→</span>
-                                  <span>{action}</span>
-                                </li>
+                  <svg
+                    className={`h-3.5 w-3.5 text-stone-400 shrink-0 mt-1 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+
+                {/* Expanded content — glossary explanation if we have one,
+                    otherwise a link out to the official FAR text. */}
+                {isOpen && (
+                  <div className="px-4 pb-4 ml-16 space-y-3">
+                    {hasGlossary ? (
+                      terms.map((t, i) => (
+                        <div key={i} className="bg-stone-50 border border-stone-200 rounded p-3 space-y-2 text-xs">
+                          <p className="font-semibold text-stone-800">{t.term}</p>
+                          <p className="text-stone-700 leading-relaxed">{t.fullExplanation}</p>
+                          {t.contractorMustDo.length > 0 && (
+                            <div>
+                              <p className="font-semibold text-stone-700 mb-1">What you must do:</p>
+                              <ul className="space-y-1">
+                                {t.contractorMustDo.map((action, j) => (
+                                  <li key={j} className="flex items-start gap-1.5 text-stone-600">
+                                    <span className="text-stone-400 mt-0.5 flex-shrink-0">→</span>
+                                    <span>{action}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {t.commonMistakes.length > 0 && (
+                            <div className="bg-amber-50 border border-amber-100 rounded p-2 space-y-1">
+                              <p className="font-semibold text-amber-800 text-[10px] uppercase tracking-wide">Common mistakes</p>
+                              {t.commonMistakes.map((mistake, k) => (
+                                <p key={k} className="text-amber-800 leading-snug">⚠ {mistake}</p>
                               ))}
-                            </ul>
-                          </div>
-                        )}
-                        {t.commonMistakes.length > 0 && (
-                          <div className="bg-amber-50 border border-amber-100 rounded p-2 space-y-1">
-                            <p className="font-semibold text-amber-800 text-[10px] uppercase tracking-wide">Common mistakes</p>
-                            {t.commonMistakes.map((mistake, k) => (
-                              <p key={k} className="text-amber-800 leading-snug">⚠ {mistake}</p>
-                            ))}
-                          </div>
-                        )}
-                        {t.timing && (
-                          <p className="text-[11px] text-stone-500 italic">Timing: {t.timing}</p>
+                            </div>
+                          )}
+                          {t.timing && (
+                            <p className="text-[11px] text-stone-500 italic">Timing: {t.timing}</p>
+                          )}
+                          {acquisitionUrl && (
+                            <a
+                              href={acquisitionUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-700 hover:text-stone-900 underline"
+                            >
+                              Read full clause on acquisition.gov →
+                            </a>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="bg-stone-50 border border-stone-200 rounded p-3 space-y-2 text-xs">
+                        <p className="text-stone-700 leading-relaxed">
+                          No Reference Library term is mapped to this clause yet.
+                          {c.known
+                            ? ' The title above is the canonical FAR short name.'
+                            : ' The title above is a best-effort snippet pulled from the surrounding attachment text.'}
+                        </p>
+                        {acquisitionUrl ? (
+                          <a
+                            href={acquisitionUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-700 hover:text-stone-900 underline"
+                          >
+                            Read full clause on acquisition.gov →
+                          </a>
+                        ) : (
+                          <p className="text-[11px] text-stone-500 italic">
+                            Look up this {c.system} clause on your agency&apos;s regulatory site.
+                          </p>
                         )}
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>
