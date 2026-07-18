@@ -53,6 +53,18 @@ interface ScopeOverviewPanelProps {
     contractType?: string
     rawData?: any
     parsedAttachments?: { structured?: StructuredContent } | any
+    /** Resource plan lines drive the Construction Schedule + SOV viewers. */
+    resourcePlan?: {
+      lines?: Array<{
+        id: string
+        label: string
+        category?: string
+        valueDescription?: string
+        quantity?: string | null
+        basis?: string | null
+        estimatedTotalCost?: number | null
+      }>
+    } | null
   }
   assessment?: {
     estimatedValue?: number
@@ -1495,7 +1507,9 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set())
   const [glossaryQuery, setGlossaryQuery] = useState('')
 
-  // Which plan the user is previewing (auto-filled preview modal).
+  // Which plan the user is previewing (auto-filled preview modal). The
+  // sentinel '__all__' opens the merged package view used by the print-all
+  // download flow.
   const [viewingPlan, setViewingPlan] = useState<string | null>(null)
   // Selected sub responses for populating the plan. Fetched from the
   // /requirements API — the "chosen" sub is whichever sub has a submitted
@@ -1573,6 +1587,93 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
       ...rawAttachments,
     ].join('\n\n')
   }, [opportunity.description, opportunity.parsedAttachments, structured])
+
+  // Auto-filled APP object — reused by both the modal and the completion
+  // percentage math so the "Ready" chip on the tile stays consistent with
+  // what the user sees when they click through.
+  const generatedApp = useMemo(() => generateAccidentPreventionPlan({
+    opportunity: {
+      title: opportunity.title,
+      solicitationNumber: opportunity.solicitationNumber,
+      agency: opportunity.agency ?? null,
+      state: opportunity.state ?? null,
+      placeOfPerformance: brief?.placeOfPerformance?.location ?? opportunity.state ?? null,
+    },
+    primeCompanyName: null,
+    selectedSub: selectedSubForPlan
+      ? {
+          id: selectedSubForPlan.id,
+          name: selectedSubForPlan.name,
+          responses: (selectedSubForPlan.responses ?? {}) as AppSubResponses,
+        }
+      : null,
+  }), [opportunity.title, opportunity.solicitationNumber, opportunity.agency, opportunity.state, brief?.placeOfPerformance?.location, selectedSubForPlan])
+
+  // Per-plan completion — powers the tile progress bars and the overall
+  // "Bid Package Completion" gate. Each plan measures a different thing:
+  //   APP → percent of fields already populated (not "needs input")
+  //   CS  → percent of resource lines with a real duration source
+  //   SOV → percent of resource lines with a real cost
+  //   others (QCP, WMP, TCP, SSHP, SWPPP, EMP) → placeholder 0% until we
+  //   build their generators. Marked so the user sees why it's incomplete.
+  const planCompletion = useMemo((): Record<string, PlanCompletion> => {
+    const out: Record<string, PlanCompletion> = {}
+
+    // APP
+    let appFilled = 0
+    let appTotal = 0
+    for (const section of generatedApp.sections) {
+      for (const field of section.fields) {
+        appTotal++
+        if (!field.needsInput) appFilled++
+      }
+    }
+    out.app = {
+      percent: appTotal === 0 ? 0 : Math.round((appFilled / appTotal) * 100),
+      filled: appFilled,
+      total: appTotal,
+      note: 'Fields filled from sub + opportunity + template',
+    }
+
+    // Construction Schedule + SOV read the resource plan.
+    const lines = opportunity.resourcePlan?.lines ?? []
+    if (lines.length === 0) {
+      out.cs = { percent: 0, filled: 0, total: 0, note: 'Generate a resource plan to seed tasks' }
+      out.sov = { percent: 0, filled: 0, total: 0, note: 'Generate a resource plan to seed line items' }
+    } else {
+      const withDuration = lines.filter(l =>
+        (l.basis && /day|week|month|hr|hour/i.test(l.basis)) ||
+        (l.quantity && /\d/.test(l.quantity)),
+      ).length
+      out.cs = {
+        percent: Math.round((withDuration / lines.length) * 100),
+        filled: withDuration,
+        total: lines.length,
+        note: 'Tasks with an estimated duration',
+      }
+      const withCost = lines.filter(l => l.estimatedTotalCost != null && l.estimatedTotalCost > 0).length
+      out.sov = {
+        percent: Math.round((withCost / lines.length) * 100),
+        filled: withCost,
+        total: lines.length,
+        note: 'Line items with a real cost',
+      }
+    }
+
+    // Placeholder plans — no generator yet.
+    for (const key of ['qcp', 'wmp', 'sshp', 'swppp', 'emp', 'tcp']) {
+      out[key] = { percent: 0, filled: 0, total: 0, note: 'Generator pending' }
+    }
+    return out
+  }, [generatedApp, opportunity.resourcePlan])
+
+  // "Download all plans" fires the browser print dialog after switching the
+  // modal into print-all mode. Users then Save-as-PDF for submission.
+  const handleDownloadPackage = () => {
+    setViewingPlan('__all__')
+    // Give React a beat to mount the merged viewer before opening print.
+    setTimeout(() => window.print(), 200)
+  }
 
   // AI scope wins when present; otherwise fall back to rule-based extraction.
   const deliverables = useMemo(() => {
@@ -1778,7 +1879,9 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
               compliance={compliance}
               attachmentText={fullAttachmentText}
               naicsCode={opportunity.naicsCode}
+              completionByPlan={planCompletion}
               onOpenPlan={(key) => setViewingPlan(key)}
+              onDownloadPackage={handleDownloadPackage}
             />
             {compliance.length > 0 ? (
               <SectionBlock
@@ -1852,26 +1955,30 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
 
       </div>
 
-      {/* Auto-filled plan preview modal */}
+      {/* Auto-filled plan preview modal — one of: APP, Construction Schedule,
+          Schedule of Values, or the print-all package view. */}
       {viewingPlan === 'app' && (
-        <PlanViewerModal
-          plan={generateAccidentPreventionPlan({
-            opportunity: {
-              title: opportunity.title,
-              solicitationNumber: opportunity.solicitationNumber,
-              agency: opportunity.agency ?? null,
-              state: opportunity.state ?? null,
-              placeOfPerformance: brief?.placeOfPerformance?.location ?? opportunity.state ?? null,
-            },
-            primeCompanyName: null,
-            selectedSub: selectedSubForPlan
-              ? {
-                  id: selectedSubForPlan.id,
-                  name: selectedSubForPlan.name,
-                  responses: (selectedSubForPlan.responses ?? {}) as AppSubResponses,
-                }
-              : null,
-          })}
+        <PlanViewerModal plan={generatedApp} onClose={() => setViewingPlan(null)} />
+      )}
+      {viewingPlan === 'cs' && (
+        <ConstructionScheduleModal
+          opportunity={opportunity}
+          brief={brief}
+          onClose={() => setViewingPlan(null)}
+        />
+      )}
+      {viewingPlan === 'sov' && (
+        <ScheduleOfValuesModal
+          opportunity={opportunity}
+          brief={brief}
+          onClose={() => setViewingPlan(null)}
+        />
+      )}
+      {viewingPlan === '__all__' && (
+        <PlanPackageModal
+          plan={generatedApp}
+          opportunity={opportunity}
+          brief={brief}
           onClose={() => setViewingPlan(null)}
         />
       )}
@@ -1968,6 +2075,343 @@ function PlanViewerModal({
 
         <div className="px-6 py-3 border-t border-stone-100 text-[10px] text-stone-400 text-center rounded-b-xl">
           Generated {new Date(plan.generatedAt).toLocaleString('en-US')}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Construction Schedule (Gantt) ─────────────────────────────────────────
+// Reads the resource plan's lines as tasks. Each task infers a duration
+// from `quantity` + `basis` where possible (e.g. quantity "7", basis
+// "days"), otherwise a default 5-day slot. Bars are laid out on a
+// weekly grid spanning from the opportunity's postedDate (or today) to
+// its responseDeadline (or +12 weeks).
+function ConstructionScheduleModal({
+  opportunity,
+  brief,
+  onClose,
+}: {
+  opportunity: ScopeOverviewPanelProps['opportunity']
+  brief: OpportunityBrief | null | undefined
+  onClose: () => void
+}) {
+  const lines = opportunity.resourcePlan?.lines ?? []
+  const start = opportunity.postedDate ? new Date(opportunity.postedDate) : new Date()
+  const end = opportunity.responseDeadline
+    ? new Date(opportunity.responseDeadline)
+    : new Date(start.getTime() + 12 * 7 * 24 * 60 * 60 * 1000)
+  const totalDays = Math.max(7, Math.ceil((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)))
+  const weekMarks = Math.max(1, Math.ceil(totalDays / 7))
+
+  // Derive a duration in days for each task. This is intentionally simple —
+  // once sub_quote.duration_days is stitched in via the resource plan, the
+  // bars will lengthen accordingly.
+  function taskDurationDays(l: NonNullable<typeof lines>[number]): number {
+    const qty = Number((l.quantity ?? '').match(/\d+/)?.[0] ?? '')
+    if (qty > 0 && /day/i.test(l.basis ?? '')) return qty
+    if (qty > 0 && /week/i.test(l.basis ?? '')) return qty * 7
+    if (qty > 0 && /month/i.test(l.basis ?? '')) return qty * 30
+    return 5
+  }
+
+  // Compute serial start offsets so tasks stack in visible order.
+  let cursorDay = 0
+  const tasks = lines.map(l => {
+    const duration = Math.min(taskDurationDays(l), totalDays)
+    const offset = cursorDay
+    cursorDay = Math.min(cursorDay + duration, totalDays)
+    return { line: l, offset, duration }
+  })
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 sm:p-8"
+      onClick={onClose}
+    >
+      <div className="relative bg-white rounded-xl shadow-xl max-w-4xl w-full my-4" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b border-stone-200 rounded-t-xl px-6 py-4 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-0.5">Schedule · Gantt</p>
+            <h2 className="text-lg font-semibold text-stone-900">Construction Schedule</h2>
+            <p className="text-xs text-stone-500 mt-0.5">
+              {opportunity.title} · {opportunity.solicitationNumber}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => window.print()} className="text-xs px-3 py-1.5 border border-stone-200 rounded hover:bg-stone-50">Print</button>
+            <button type="button" onClick={onClose} className="text-stone-400 hover:text-stone-700 p-1" aria-label="Close">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6">
+          <div className="flex items-center justify-between text-[11px] text-stone-500 mb-2">
+            <span>{format(start, 'MMM d, yyyy')}</span>
+            <span>Duration: {totalDays} days · {weekMarks} weeks</span>
+            <span>{format(end, 'MMM d, yyyy')}</span>
+          </div>
+
+          {tasks.length === 0 ? (
+            <div className="text-sm text-stone-500 italic p-8 text-center border border-dashed border-stone-200 rounded">
+              No resource plan yet — generate one on the Summary tab to populate the schedule.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {/* Week header */}
+              <div className="grid" style={{ gridTemplateColumns: `160px repeat(${weekMarks}, 1fr)` }}>
+                <div />
+                {Array.from({ length: weekMarks }).map((_, i) => (
+                  <div key={i} className="text-[10px] text-stone-400 text-center border-l border-stone-100">
+                    W{i + 1}
+                  </div>
+                ))}
+              </div>
+
+              {/* Task rows */}
+              {tasks.map(({ line, offset, duration }) => {
+                const leftPct = (offset / totalDays) * 100
+                const widthPct = (duration / totalDays) * 100
+                return (
+                  <div
+                    key={line.id}
+                    className="grid items-center py-1.5 border-t border-stone-100"
+                    style={{ gridTemplateColumns: `160px 1fr` }}
+                  >
+                    <div className="pr-3 text-xs text-stone-700 truncate" title={line.label}>
+                      {line.label}
+                    </div>
+                    <div className="relative h-5 bg-stone-50 rounded border border-stone-100 overflow-hidden">
+                      <div
+                        className="absolute top-0 bottom-0 bg-stone-800 rounded-sm flex items-center px-1.5"
+                        style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                        title={`Day ${offset + 1} — Day ${offset + duration}`}
+                      >
+                        <span className="text-[10px] text-white truncate">{duration}d</span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {brief?.periodOfPerformance && (
+            <p className="mt-4 text-[11px] text-stone-500">
+              Period of performance: {brief.periodOfPerformance.basePeriod}
+              {brief.periodOfPerformance.optionYears
+                ? ` + ${brief.periodOfPerformance.optionYears} option year${brief.periodOfPerformance.optionYears !== 1 ? 's' : ''}`
+                : ''}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Schedule of Values (SF-1443 style table) ──────────────────────────────
+function ScheduleOfValuesModal({
+  opportunity,
+  brief,
+  onClose,
+}: {
+  opportunity: ScopeOverviewPanelProps['opportunity']
+  brief: OpportunityBrief | null | undefined
+  onClose: () => void
+}) {
+  const lines = opportunity.resourcePlan?.lines ?? []
+  const total = lines.reduce((acc, l) => acc + (l.estimatedTotalCost ?? 0), 0)
+
+  return (
+    <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 sm:p-8" onClick={onClose}>
+      <div className="relative bg-white rounded-xl shadow-xl max-w-4xl w-full my-4" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b border-stone-200 rounded-t-xl px-6 py-4 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-0.5">SF-1443 · Auto-filled preview</p>
+            <h2 className="text-lg font-semibold text-stone-900">Schedule of Values</h2>
+            <p className="text-xs text-stone-500 mt-0.5">
+              {opportunity.title} · {opportunity.solicitationNumber}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => window.print()} className="text-xs px-3 py-1.5 border border-stone-200 rounded hover:bg-stone-50">Print</button>
+            <button type="button" onClick={onClose} className="text-stone-400 hover:text-stone-700 p-1" aria-label="Close">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6">
+          {lines.length === 0 ? (
+            <div className="text-sm text-stone-500 italic p-8 text-center border border-dashed border-stone-200 rounded">
+              No resource plan yet — generate one on the Summary tab to populate the SOV.
+            </div>
+          ) : (
+            <>
+              <table className="w-full text-sm border border-stone-200 rounded overflow-hidden">
+                <thead className="bg-stone-50">
+                  <tr>
+                    <th className="text-left text-[10px] font-semibold text-stone-500 uppercase tracking-wider px-3 py-2">Item</th>
+                    <th className="text-left text-[10px] font-semibold text-stone-500 uppercase tracking-wider px-3 py-2">Description</th>
+                    <th className="text-right text-[10px] font-semibold text-stone-500 uppercase tracking-wider px-3 py-2">Qty</th>
+                    <th className="text-right text-[10px] font-semibold text-stone-500 uppercase tracking-wider px-3 py-2">Amount</th>
+                    <th className="text-right text-[10px] font-semibold text-stone-500 uppercase tracking-wider px-3 py-2">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lines.map((l, i) => {
+                    const pct = total > 0 && l.estimatedTotalCost
+                      ? Math.round((l.estimatedTotalCost / total) * 100)
+                      : 0
+                    return (
+                      <tr key={l.id} className="border-t border-stone-100">
+                        <td className="px-3 py-2 text-stone-700 tabular-nums">{String(i + 1).padStart(4, '0')}</td>
+                        <td className="px-3 py-2 text-stone-800">
+                          <div className="font-medium">{l.label}</div>
+                          {l.valueDescription && (
+                            <div className="text-xs text-stone-500 mt-0.5">{l.valueDescription}</div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right text-stone-700 tabular-nums">
+                          {l.quantity ? `${l.quantity}${l.basis ? ` ${l.basis}` : ''}` : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-right text-stone-900 tabular-nums font-medium">
+                          {l.estimatedTotalCost != null
+                            ? `$${l.estimatedTotalCost.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+                            : 'Needs quote'}
+                        </td>
+                        <td className="px-3 py-2 text-right text-stone-500 tabular-nums text-xs">{pct}%</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-stone-50 border-t-2 border-stone-200">
+                    <td colSpan={3} className="px-3 py-2 text-right text-sm font-semibold text-stone-800">Grand total</td>
+                    <td className="px-3 py-2 text-right text-sm font-semibold text-stone-900 tabular-nums">
+                      ${total.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs text-stone-500 tabular-nums">100%</td>
+                  </tr>
+                </tfoot>
+              </table>
+              {brief?.estimatedValue && (
+                <p className="mt-3 text-[11px] text-stone-500 text-right">
+                  Solicitation estimated value: {brief.estimatedValue}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Package view — all viewers stacked, optimized for print/save-as-PDF ──
+function PlanPackageModal({
+  plan,
+  opportunity,
+  brief,
+  onClose,
+}: {
+  plan: GeneratedPlan
+  opportunity: ScopeOverviewPanelProps['opportunity']
+  brief: OpportunityBrief | null | undefined
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm overflow-y-auto p-4 sm:p-8" onClick={onClose}>
+      <div className="relative bg-white rounded-xl shadow-xl max-w-4xl w-full mx-auto my-4" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b border-stone-200 rounded-t-xl px-6 py-4 flex items-start justify-between gap-4 print:hidden">
+          <div>
+            <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-0.5">Bid Package · All Plans</p>
+            <h2 className="text-lg font-semibold text-stone-900">Print / Save as PDF for submission</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => window.print()} className="text-xs px-3 py-1.5 bg-stone-800 text-white rounded hover:bg-stone-700">Open print dialog</button>
+            <button type="button" onClick={onClose} className="text-stone-400 hover:text-stone-700 p-1" aria-label="Close">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-8">
+          {/* APP */}
+          <section>
+            <h3 className="text-base font-semibold text-stone-900 mb-3">1. Accident Prevention Plan (APP)</h3>
+            {plan.sections.map(section => (
+              <div key={section.key} className="mb-5">
+                <h4 className="text-sm font-semibold text-stone-900 mb-2">{section.title}</h4>
+                {section.intro && <p className="text-xs text-stone-600 mb-2 leading-relaxed">{section.intro}</p>}
+                {section.bullets && section.bullets.length > 0 && (
+                  <ul className="mb-2 space-y-1 text-xs text-stone-700 list-disc list-inside">
+                    {section.bullets.map((b, i) => <li key={i}>{b}</li>)}
+                  </ul>
+                )}
+                {section.fields.map((f, i) => (
+                  <div key={i} className="py-1 text-xs">
+                    <span className="font-medium text-stone-600">{f.label}: </span>
+                    <span className={f.needsInput ? 'text-amber-700 italic' : 'text-stone-800'}>{f.value}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </section>
+
+          {/* CS */}
+          <section className="break-before-page">
+            <h3 className="text-base font-semibold text-stone-900 mb-3">2. Construction Schedule</h3>
+            <p className="text-xs text-stone-500 mb-3">Full Gantt view available in the Construction Schedule preview.</p>
+            {(opportunity.resourcePlan?.lines ?? []).length === 0 ? (
+              <p className="text-xs text-amber-700 italic">Resource plan not generated yet.</p>
+            ) : (
+              <ul className="space-y-1 text-xs">
+                {opportunity.resourcePlan?.lines?.map(l => (
+                  <li key={l.id}>· {l.label}{l.quantity ? ` — ${l.quantity}${l.basis ? ` ${l.basis}` : ''}` : ''}</li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* SOV */}
+          <section className="break-before-page">
+            <h3 className="text-base font-semibold text-stone-900 mb-3">3. Schedule of Values</h3>
+            {(opportunity.resourcePlan?.lines ?? []).length === 0 ? (
+              <p className="text-xs text-amber-700 italic">Resource plan not generated yet.</p>
+            ) : (
+              <table className="w-full text-xs border border-stone-200">
+                <thead className="bg-stone-50">
+                  <tr>
+                    <th className="text-left px-2 py-1">Item</th>
+                    <th className="text-left px-2 py-1">Description</th>
+                    <th className="text-right px-2 py-1">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {opportunity.resourcePlan?.lines?.map((l, i) => (
+                    <tr key={l.id} className="border-t border-stone-100">
+                      <td className="px-2 py-1 tabular-nums">{String(i + 1).padStart(4, '0')}</td>
+                      <td className="px-2 py-1">{l.label}</td>
+                      <td className="px-2 py-1 text-right tabular-nums">
+                        {l.estimatedTotalCost != null ? `$${l.estimatedTotalCost.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {brief?.estimatedValue && (
+              <p className="mt-2 text-[11px] text-stone-500">Solicitation estimated value: {brief.estimatedValue}</p>
+            )}
+          </section>
         </div>
       </div>
     </div>
@@ -2113,6 +2557,30 @@ const REQUIRED_PLANS: PlanDef[] = [
       { pattern: /\brecreating public\b|\bemergency personnel\b/i, rationale: 'Maintain public + emergency access' },
     ],
   },
+  {
+    key: 'cs',
+    label: 'Construction Schedule (Gantt)',
+    shortName: 'Schedule',
+    detect: /\b(construction schedule|project schedule|CPM schedule|critical path|milestone schedule|Gantt|baseline schedule)\b/i,
+    purpose: 'Sequenced tasks with start / finish dates, dependencies, and float — driven by scope + sub duration inputs.',
+    constructionDefault: true,
+    contentTriggers: [
+      { pattern: /\b(?:construction|project|baseline|master) schedule\b|\bcritical path\b|\bCPM\b|\bmilestone\b/i, rationale: 'Schedule / milestone tracking required' },
+      { pattern: /\bcalendar days\b|\bperformance period\b|\bcompletion date\b/i, rationale: 'Fixed performance window in the solicitation' },
+    ],
+  },
+  {
+    key: 'sov',
+    label: 'Schedule of Values (SF-1443)',
+    shortName: 'SOV',
+    detect: /\b(schedule of values|SOV|SF[- ]?1443|cost breakdown|line[- ]item pric)/i,
+    purpose: 'Line-item cost breakdown of the bid — labor, materials, equipment, overhead per CLIN.',
+    constructionDefault: true,
+    contentTriggers: [
+      { pattern: /\bschedule of values\b|\bSF[- ]?1443\b/i, rationale: 'SOV / SF-1443 required by solicitation' },
+      { pattern: /\bunit price\b|\blump sum\b|\bCLIN\b|\bcost breakdown\b/i, rationale: 'Line-item pricing structure called out' },
+    ],
+  },
 ]
 
 function isConstructionNaics(code?: string | null): boolean {
@@ -2120,44 +2588,57 @@ function isConstructionNaics(code?: string | null): boolean {
   return /^23/.test(code.trim())
 }
 
+export interface PlanCompletion {
+  percent: number
+  filled: number
+  total: number
+  /** Optional caption explaining what's missing / where the % came from. */
+  note?: string
+}
+
 function RequiredPlansTiles({
   compliance,
   attachmentText,
   naicsCode,
+  completionByPlan,
   onOpenPlan,
+  onDownloadPackage,
 }: {
   compliance: ScopeItem[]
-  /** Combined text of every parsed attachment + the opportunity description. */
   attachmentText: string
   naicsCode?: string | null
+  completionByPlan: Record<string, PlanCompletion>
   onOpenPlan: (planKey: string) => void
+  onDownloadPackage: () => void
 }) {
   const isConstruction = isConstructionNaics(naicsCode)
   const detected = REQUIRED_PLANS
     .map((plan) => {
       const rationales: string[] = []
-      // (a) explicit plan-name mention anywhere in the compliance list
       if (compliance.some((c) => plan.detect.test(c.text))) {
         rationales.push('Named in the solicitation compliance items')
       }
-      // (b) construction NAICS default
       if (isConstruction && plan.constructionDefault) {
         rationales.push(`Construction default for NAICS ${naicsCode}`)
       }
-      // (c) content triggers — phrases in the attachment text that imply
-      //     this plan is required
       if (attachmentText) {
         for (const trigger of plan.contentTriggers ?? []) {
           if (trigger.pattern.test(attachmentText)) rationales.push(trigger.rationale)
         }
       }
-      // De-dup rationales while preserving order.
       const unique = Array.from(new Set(rationales))
       return { plan, rationales: unique }
     })
     .filter((row) => row.rationales.length > 0)
 
   if (detected.length === 0) return null
+
+  // Overall bid-package completion — average of every surfaced plan's percent.
+  const overallPercent = Math.round(
+    detected.reduce((acc, { plan }) => acc + (completionByPlan[plan.key]?.percent ?? 0), 0) /
+      detected.length,
+  )
+  const readyToSubmit = overallPercent >= 100
 
   return (
     <div className="bg-white rounded-xl border border-stone-200 p-4">
@@ -2169,28 +2650,88 @@ function RequiredPlansTiles({
           Detected from solicitation attachments + NAICS
         </span>
       </div>
+
+      {/* Overall bid-package completion + download gate */}
+      <div className="mb-4 p-3 rounded-lg border border-stone-200 bg-stone-50">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div>
+            <p className="text-xs font-semibold text-stone-800">Bid Package Completion</p>
+            <p className="text-[11px] text-stone-500 mt-0.5">
+              {readyToSubmit
+                ? 'All plans are ready — you can package and download for submission.'
+                : `${100 - overallPercent}% still to complete across ${detected.length} plans.`}
+            </p>
+          </div>
+          <span className={`text-lg font-semibold tabular-nums ${readyToSubmit ? 'text-emerald-600' : 'text-stone-700'}`}>
+            {overallPercent}%
+          </span>
+        </div>
+        <div className="h-2 bg-stone-200 rounded-full overflow-hidden mb-3">
+          <div
+            className={`h-full transition-all ${readyToSubmit ? 'bg-emerald-500' : 'bg-stone-600'}`}
+            style={{ width: `${overallPercent}%` }}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={onDownloadPackage}
+          disabled={!readyToSubmit}
+          className={`w-full text-sm font-medium px-3 py-2 rounded transition-colors ${
+            readyToSubmit
+              ? 'bg-stone-800 text-white hover:bg-stone-700'
+              : 'bg-stone-100 text-stone-400 cursor-not-allowed'
+          }`}
+          title={readyToSubmit ? 'Open every plan for print / save as PDF' : 'All plans must be 100% to enable download'}
+        >
+          {readyToSubmit ? 'Download all plans for submission' : `Download locked · ${overallPercent}% complete`}
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {detected.map(({ plan, rationales }) => {
-          const clickable = plan.key === 'app'
+          const hasViewer = plan.key === 'app' || plan.key === 'cs' || plan.key === 'sov'
+          const c = completionByPlan[plan.key] ?? { percent: 0, filled: 0, total: 0 }
+          const isDone = c.percent >= 100
           return (
             <button
               key={plan.key}
               type="button"
-              onClick={() => clickable && onOpenPlan(plan.key)}
-              disabled={!clickable}
+              onClick={() => hasViewer && onOpenPlan(plan.key)}
+              disabled={!hasViewer}
               className={`text-left border border-stone-200 rounded-lg p-3 bg-stone-50/50 transition-colors ${
-                clickable ? 'hover:border-stone-400 hover:bg-white cursor-pointer' : 'cursor-default'
+                hasViewer ? 'hover:border-stone-400 hover:bg-white cursor-pointer' : 'cursor-default'
               }`}
-              title={clickable ? `Open the ${plan.shortName} preview` : undefined}
+              title={hasViewer ? `Open the ${plan.shortName} preview` : undefined}
             >
               <div className="flex items-start justify-between gap-2 mb-1">
                 <p className="text-sm font-semibold text-stone-900">{plan.shortName}</p>
-                <span className="text-[10px] font-medium text-stone-500 bg-white border border-stone-200 px-1.5 py-0.5 rounded">
-                  Required
+                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${
+                  isDone
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-white text-stone-500 border-stone-200'
+                }`}>
+                  {isDone ? 'Ready' : 'Required'}
                 </span>
               </div>
               <p className="text-xs font-medium text-stone-700 mb-1">{plan.label}</p>
               <p className="text-xs text-stone-500 leading-snug">{plan.purpose}</p>
+
+              {/* Completion strip */}
+              <div className="mt-2">
+                <div className="flex items-center justify-between text-[10px] text-stone-500 mb-1">
+                  <span>{c.note ?? (hasViewer ? 'Fields filled' : 'Awaiting generator')}</span>
+                  <span className="tabular-nums">
+                    {c.percent}%{c.total > 0 && ` · ${c.filled}/${c.total}`}
+                  </span>
+                </div>
+                <div className="h-1 bg-stone-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all ${isDone ? 'bg-emerald-500' : 'bg-stone-500'}`}
+                    style={{ width: `${c.percent}%` }}
+                  />
+                </div>
+              </div>
+
               {rationales.length > 0 && (
                 <ul className="mt-2 space-y-0.5">
                   {rationales.slice(0, 3).map((r, i) => (
@@ -2201,9 +2742,9 @@ function RequiredPlansTiles({
                   ))}
                 </ul>
               )}
-              {clickable && (
+              {hasViewer && (
                 <p className="mt-2 text-[11px] font-medium text-stone-700">
-                  Open auto-filled preview →
+                  Open preview →
                 </p>
               )}
             </button>
