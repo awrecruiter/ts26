@@ -141,6 +141,7 @@ model Opportunity {
   aiArtifacts        Json? // Unified AI artifacts blob: { brief, callChecklist, scopeOverview, agentBriefing, generatedAt, partial }
   resourcePlan       Json? // AI-decomposed team plan: roles, trades, materials, equipment, prime overhead — with per-professional JDs
   pricingSheet       Json? // Derived from resourcePlan: cost basis, risk score, target margin, recommended bid (see lib/pricing.ts)
+  planOverrides      Json? // Per-plan admin edits: { app: { overrides: { [fieldId]: string }, checks: { [key]: boolean } }, ... }
 
   // Contract-type classification (see lib/opportunity-classification.ts)
   contractType         String  @default("SERVICES") // "SERVICES" | "PRODUCT"

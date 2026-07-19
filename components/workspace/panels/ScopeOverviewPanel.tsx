@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect, type ReactNode } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { format, differenceInDays, addMonths, startOfMonth } from 'date-fns'
 import { complianceGlossary } from '@/lib/data/compliance-glossary'
@@ -57,6 +57,10 @@ interface ScopeOverviewPanelProps {
     contractType?: string
     rawData?: any
     parsedAttachments?: { structured?: StructuredContent } | any
+    /** Per-plan admin overrides + checkbox state, keyed by plan key. */
+    planOverrides?: {
+      [planKey: string]: { overrides?: Record<string, string>; checks?: Record<string, boolean> }
+    } | null
     /** Resource plan lines drive the Construction Schedule + SOV viewers. */
     resourcePlan?: {
       lines?: Array<{
@@ -1592,6 +1596,40 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
     ].join('\n\n')
   }, [opportunity.description, opportunity.parsedAttachments, structured])
 
+  // Local mirror of the APP admin overrides + checkbox state. Seeded from
+  // opportunity.planOverrides on mount; every edit / toggle patches this
+  // local copy for instant UI feedback, then fires a debounced PATCH so
+  // the change survives a refresh.
+  const [appOverrides, setAppOverrides] = useState<Record<string, string>>(
+    () => (opportunity.planOverrides?.app?.overrides as Record<string, string>) ?? {},
+  )
+  const [appChecks, setAppChecks] = useState<Record<string, boolean>>(
+    () => (opportunity.planOverrides?.app?.checks as Record<string, boolean>) ?? {},
+  )
+
+  const saveAppField = useCallback((fieldId: string, value: string) => {
+    setAppOverrides((prev) => {
+      const next = { ...prev }
+      if (value === '') delete next[fieldId]
+      else next[fieldId] = value
+      return next
+    })
+    fetch(`/api/opportunities/${opportunity.id}/plan-overrides`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ planKey: 'app', overrides: { [fieldId]: value === '' ? null : value } }),
+    }).catch(() => {})
+  }, [opportunity.id])
+
+  const saveAppCheck = useCallback((key: string, checked: boolean) => {
+    setAppChecks((prev) => ({ ...prev, [key]: checked }))
+    fetch(`/api/opportunities/${opportunity.id}/plan-overrides`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ planKey: 'app', checks: { [key]: checked } }),
+    }).catch(() => {})
+  }, [opportunity.id])
+
   // Auto-filled APP object — reused by both the modal and the completion
   // percentage math so the "Ready" chip on the tile stays consistent with
   // what the user sees when they click through.
@@ -1611,7 +1649,9 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
           responses: (selectedSubForPlan.responses ?? {}) as AppSubResponses,
         }
       : null,
-  }), [opportunity.title, opportunity.solicitationNumber, opportunity.agency, opportunity.state, brief?.placeOfPerformance?.location, selectedSubForPlan])
+    overrides: appOverrides,
+    checks: appChecks,
+  }), [opportunity.title, opportunity.solicitationNumber, opportunity.agency, opportunity.state, brief?.placeOfPerformance?.location, selectedSubForPlan, appOverrides, appChecks])
 
   // Per-plan completion — powers the tile progress bars and the overall
   // "Bid Package Completion" gate. Each plan measures a different thing:
@@ -1951,7 +1991,12 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
       {/* Auto-filled plan preview modal — one of: APP, Construction Schedule,
           Schedule of Values, or the print-all package view. */}
       {viewingPlan === 'app' && (
-        <PlanViewerModal plan={generatedApp} onClose={() => setViewingPlan(null)} />
+        <PlanViewerModal
+          plan={generatedApp}
+          onClose={() => setViewingPlan(null)}
+          onSaveField={saveAppField}
+          onSaveCheck={saveAppCheck}
+        />
       )}
       {viewingPlan === 'cs' && (
         <ConstructionScheduleModal
@@ -1973,6 +2018,8 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
           opportunity={opportunity}
           brief={brief}
           onClose={() => setViewingPlan(null)}
+          onSaveField={saveAppField}
+          onSaveCheck={saveAppCheck}
         />
       )}
       {/* Template-outline modal for plans without a full generator (QCP,
@@ -2112,9 +2159,13 @@ function PlanTemplateOutlineModal({
 function PlanViewerModal({
   plan,
   onClose,
+  onSaveField,
+  onSaveCheck,
 }: {
   plan: GeneratedPlan
   onClose: () => void
+  onSaveField: (fieldId: string, value: string) => void
+  onSaveCheck: (key: string, checked: boolean) => void
 }) {
   return (
     <ModalPortal>
@@ -2123,7 +2174,7 @@ function PlanViewerModal({
       onClick={onClose}
     >
       <div
-        className="relative bg-white rounded-xl shadow-xl max-w-3xl w-full my-4"
+        className="relative bg-white rounded-xl shadow-xl max-w-4xl w-full my-4"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -2169,14 +2220,21 @@ function PlanViewerModal({
           <span className="inline-flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded bg-amber-400" />Needs admin input</span>
         </div>
 
-        {/* Sections — rendered to mirror the USACE APP template structure:
-            lettered sections (b., c., d., …), numbered items (1., 2., …),
-            and lettered subitems (A., B., … or a., b., …). Signature Sheet
-            and Weekly Safety Meeting appendices render as printable tables. */}
-        <div className="px-6 py-5 space-y-7">
-          {plan.sections.map((section) => (
-            <PlanSectionRender key={section.key} section={section} />
-          ))}
+        {/* Sections — rendered to mirror the USACE APP printed template:
+            typewriter-style headings, bordered form sections, numbered
+            items with hanging indents, editable admin blanks, and real
+            checkboxes for the Weekly Safety Meeting subject list. */}
+        <div className="px-8 py-6 bg-white text-stone-900 font-serif">
+          <div className="space-y-6">
+            {plan.sections.map((section) => (
+              <PlanSectionRender
+                key={section.key}
+                section={section}
+                onSaveField={onSaveField}
+                onSaveCheck={onSaveCheck}
+              />
+            ))}
+          </div>
         </div>
 
         <div className="px-6 py-3 border-t border-stone-100 text-[10px] text-stone-400 text-center rounded-b-xl">
@@ -2623,11 +2681,15 @@ function PlanPackageModal({
   opportunity,
   brief,
   onClose,
+  onSaveField,
+  onSaveCheck,
 }: {
   plan: GeneratedPlan
   opportunity: ScopeOverviewPanelProps['opportunity']
   brief: OpportunityBrief | null | undefined
   onClose: () => void
+  onSaveField: (fieldId: string, value: string) => void
+  onSaveCheck: (key: string, checked: boolean) => void
 }) {
   return (
     <ModalPortal>
@@ -2654,7 +2716,12 @@ function PlanPackageModal({
             <h3 className="text-base font-semibold text-stone-900 mb-3">1. Accident Prevention Plan (APP)</h3>
             <div className="space-y-5">
               {plan.sections.map(section => (
-                <PlanSectionRender key={section.key} section={section} />
+                <PlanSectionRender
+                  key={section.key}
+                  section={section}
+                  onSaveField={onSaveField}
+                  onSaveCheck={onSaveCheck}
+                />
               ))}
             </div>
           </section>
@@ -2712,69 +2779,144 @@ function PlanPackageModal({
   )
 }
 
-function sourceDotClass(field: PlanField): string {
-  if (field.needsInput) return 'bg-amber-400'
-  switch (field.source) {
-    case 'opportunity': return 'bg-stone-800'
-    case 'sub': return 'bg-emerald-500'
-    case 'template': return 'bg-stone-300'
-    default: return 'bg-amber-400'
+// EditableField — admin blanks render as a click-to-edit textarea that
+// saves on blur. Non-admin fields render as read-only text with a source
+// pill. All fields are inline so items read like "1. Foo: <value>".
+function EditableField({
+  field,
+  onSaveField,
+  block = false,
+}: {
+  field: PlanField
+  onSaveField: (fieldId: string, value: string) => void
+  /** true → render on its own line as a boxed form input. */
+  block?: boolean
+}) {
+  const isAdmin = field.source === 'admin' && !!field.id
+  const [value, setValue] = useState(field.overridden ? field.value : '')
+  const [editing, setEditing] = useState(false)
+  const initial = useRef<string>(field.overridden ? field.value : '')
+
+  // Keep local value in sync when the field's persisted value changes
+  // (e.g., after a parent refetch).
+  useEffect(() => {
+    const next = field.overridden ? field.value : ''
+    setValue(next)
+    initial.current = next
+  }, [field.overridden, field.value, field.id])
+
+  const commit = () => {
+    setEditing(false)
+    const trimmed = value.trim()
+    if (trimmed === initial.current) return
+    onSaveField(field.id!, trimmed)
+    initial.current = trimmed
   }
-}
 
-// Inline value chip — shown to the right (or below on mobile) of an item
-// so the "1. Foo:" reads like "1. Foo: <value>" with a source dot.
-function PlanValueChip({ field }: { field: PlanField }) {
-  return (
-    <span className="inline-flex items-baseline gap-1.5 align-baseline">
-      <span className={`inline-block w-1.5 h-1.5 rounded ${sourceDotClass(field)} shrink-0 translate-y-[-1px]`} aria-hidden="true" />
-      <span className={`${field.needsInput ? 'text-amber-700 italic' : 'text-stone-800'}`}>
-        {field.value}
+  if (isAdmin) {
+    const displayed = value || (field.overridden ? '' : field.value)
+    const emptyStyle = !value ? 'text-amber-700 italic' : 'text-stone-900'
+    if (editing || field.multiline || block) {
+      return (
+        <textarea
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={commit}
+          onFocus={() => setEditing(true)}
+          rows={field.multiline ? 2 : 1}
+          placeholder={field.overridden ? '' : field.value}
+          className="mt-1 w-full px-2 py-1.5 text-sm bg-yellow-50/40 border-b border-stone-400 focus:border-stone-800 focus:outline-none focus:bg-yellow-50 font-serif resize-y min-h-[2rem]"
+          autoFocus={editing}
+        />
+      )
+    }
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className={`inline text-sm ${emptyStyle} underline decoration-dotted underline-offset-4 hover:decoration-solid hover:text-stone-900 text-left align-baseline`}
+        title="Click to edit"
+      >
+        {displayed || field.value}
+      </button>
+    )
+  }
+
+  // Sub-sourced empty → show which sub we're waiting on, in a warm tone.
+  if (field.source === 'sub' && field.needsInput) {
+    return (
+      <span className="text-sm italic text-amber-700">
+        {field.awaitedFrom ? `Waiting on ${field.awaitedFrom}` : 'Waiting — no sub selected for bid yet'}
       </span>
-    </span>
-  )
+    )
+  }
+
+  // Filled sub or opportunity or template — show the value inline.
+  const tone =
+    field.source === 'opportunity' ? 'text-stone-900 font-medium' :
+    field.source === 'sub' ? 'text-emerald-800' :
+    'text-stone-700'
+  return <span className={`text-sm ${tone}`}>{field.value}</span>
 }
 
-// Standalone field row (used on the Cover and where items don't apply).
-function PlanFieldRow({ field }: { field: PlanField }) {
+// Boxed labeled form input (used on the cover page).
+function CoverFieldRow({
+  field,
+  onSaveField,
+}: {
+  field: PlanField
+  onSaveField: (fieldId: string, value: string) => void
+}) {
   return (
-    <div className="flex items-start gap-2.5 py-1.5 border-b border-stone-50 last:border-b-0">
-      <span className={`mt-1.5 inline-block w-2 h-2 rounded ${sourceDotClass(field)} shrink-0`} aria-hidden="true" />
-      <div className="flex-1 min-w-0">
-        <p className="text-[11px] font-medium text-stone-500 uppercase tracking-wide">{field.label}</p>
-        <p className={`text-sm leading-snug ${field.needsInput ? 'text-amber-700 italic' : 'text-stone-800'}`}>
-          {field.value}
-        </p>
-      </div>
+    <div className="border-b border-stone-400 pb-1.5">
+      <p className="text-[10px] font-sans font-semibold text-stone-500 uppercase tracking-widest mb-0.5">
+        {field.label}
+      </p>
+      <EditableField field={field} onSaveField={onSaveField} block />
     </div>
   )
 }
 
-// A single numbered / lettered item — indented per depth so 4.A sits under 4.
-function PlanItemRender({ item, depth = 0 }: { item: PlanItem; depth?: number }) {
+// A single numbered / lettered item. Renders "1. Foo: <field>" inline,
+// with 4.A / 4.B sitting under 4 via a nested ordered list.
+function PlanItemRender({
+  item,
+  depth = 0,
+  onSaveField,
+}: {
+  item: PlanItem
+  depth?: number
+  onSaveField: (fieldId: string, value: string) => void
+}) {
   const prefix = item.number ? `${item.number}.` : ''
+  const isBlock = item.field?.source === 'admin' && (item.field.multiline || !item.number)
   return (
-    <li className={depth === 0 ? '' : 'mt-1'}>
+    <li className={depth === 0 ? 'mb-1.5' : 'mt-1'}>
       <div className="flex items-baseline gap-2">
         {prefix && (
-          <span className="text-xs font-semibold text-stone-500 tabular-nums shrink-0 min-w-[1.5rem]">
+          <span className={`shrink-0 tabular-nums text-sm ${depth === 0 ? 'font-semibold text-stone-800 min-w-[1.75rem]' : 'font-medium text-stone-600 min-w-[1.5rem]'}`}>
             {prefix}
           </span>
         )}
         <div className="flex-1 min-w-0">
-          <p className={`text-sm leading-snug ${depth === 0 ? 'text-stone-800' : 'text-stone-700'}`}>
+          <span className={`text-sm leading-relaxed ${depth === 0 ? 'text-stone-900' : 'text-stone-800'}`}>
             {item.text}
-            {item.field && (
+            {item.field && !isBlock && (
               <>
                 {' '}
-                <PlanValueChip field={item.field} />
+                <EditableField field={item.field} onSaveField={onSaveField} />
               </>
             )}
-          </p>
+          </span>
+          {item.field && isBlock && (
+            <div className="mt-1 pl-1">
+              <EditableField field={item.field} onSaveField={onSaveField} block />
+            </div>
+          )}
           {item.subitems && item.subitems.length > 0 && (
-            <ol className="mt-1.5 pl-2 space-y-1.5 border-l border-stone-100">
+            <ol className="mt-2 pl-3 space-y-1.5 border-l-2 border-stone-100">
               {item.subitems.map((s, i) => (
-                <PlanItemRender key={i} item={s} depth={depth + 1} />
+                <PlanItemRender key={i} item={s} depth={depth + 1} onSaveField={onSaveField} />
               ))}
             </ol>
           )}
@@ -2787,13 +2929,13 @@ function PlanItemRender({ item, depth = 0 }: { item: PlanItem; depth?: number })
 // Blank signature grid — printable, 20 rows by default.
 function PlanSignatureGrid({ columns, rows }: { columns: string[]; rows: number }) {
   return (
-    <div className="border border-stone-200 rounded-lg overflow-hidden">
-      <table className="w-full text-xs">
-        <thead className="bg-stone-50">
+    <div className="border border-stone-400 overflow-hidden">
+      <table className="w-full text-sm border-collapse">
+        <thead className="bg-stone-100">
           <tr>
-            <th className="w-8 px-2 py-1.5 text-left font-medium text-stone-500 border-r border-stone-200">#</th>
+            <th className="w-10 px-2 py-2 text-left text-[11px] font-sans font-semibold text-stone-600 uppercase tracking-wider border border-stone-400">#</th>
             {columns.map((c) => (
-              <th key={c} className="px-3 py-1.5 text-left font-medium text-stone-500 border-r border-stone-200 last:border-r-0">
+              <th key={c} className="px-3 py-2 text-left text-[11px] font-sans font-semibold text-stone-600 uppercase tracking-wider border border-stone-400">
                 {c}
               </th>
             ))}
@@ -2801,10 +2943,10 @@ function PlanSignatureGrid({ columns, rows }: { columns: string[]; rows: number 
         </thead>
         <tbody>
           {Array.from({ length: rows }).map((_, i) => (
-            <tr key={i} className="border-t border-stone-100">
-              <td className="w-8 px-2 py-2 text-stone-400 tabular-nums border-r border-stone-100">{i + 1}</td>
+            <tr key={i}>
+              <td className="w-10 px-2 py-3 text-stone-400 tabular-nums text-xs border border-stone-300">{i + 1}</td>
               {columns.map((c) => (
-                <td key={c} className="px-3 py-2 border-r border-stone-100 last:border-r-0">&nbsp;</td>
+                <td key={c} className="px-3 py-3 border border-stone-300">&nbsp;</td>
               ))}
             </tr>
           ))}
@@ -2814,33 +2956,44 @@ function PlanSignatureGrid({ columns, rows }: { columns: string[]; rows: number 
   )
 }
 
-// Weekly Safety Meeting–style topic checklist.
+// Weekly Safety Meeting checklist — real checkboxes wired to onSaveCheck.
 function PlanChecklistRender({
   fields,
   categories,
+  onSaveField,
+  onSaveCheck,
 }: {
   fields?: PlanField[]
-  categories: Array<{ heading?: string; items: string[] }>
+  categories: Array<{ heading?: string; items: Array<{ key: string; label: string; checked: boolean }> }>
+  onSaveField: (fieldId: string, value: string) => void
+  onSaveCheck: (key: string, checked: boolean) => void
 }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {fields && fields.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-          {fields.map((f, i) => <PlanFieldRow key={i} field={f} />)}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {fields.map((f, i) => <CoverFieldRow key={i} field={f} onSaveField={onSaveField} />)}
         </div>
       )}
       {categories.map((cat, ci) => (
         <div key={ci}>
           {cat.heading && (
-            <p className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider mb-2">
+            <p className="text-[11px] font-sans font-semibold text-stone-600 uppercase tracking-wider mb-2">
               {cat.heading}
             </p>
           )}
-          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-            {cat.items.map((topic, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs text-stone-700 leading-snug">
-                <span className="inline-block w-3 h-3 border border-stone-300 rounded-sm shrink-0 mt-0.5" aria-hidden="true" />
-                <span>{topic}</span>
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+            {cat.items.map((topic) => (
+              <li key={topic.key}>
+                <label className="flex items-start gap-2 text-sm text-stone-800 leading-snug cursor-pointer hover:bg-stone-50 -mx-1 px-1 py-0.5 rounded">
+                  <input
+                    type="checkbox"
+                    checked={topic.checked}
+                    onChange={(e) => onSaveCheck(topic.key, e.target.checked)}
+                    className="mt-1 h-4 w-4 border-stone-400 rounded shrink-0 accent-stone-800"
+                  />
+                  <span>{topic.label}</span>
+                </label>
               </li>
             ))}
           </ul>
@@ -2850,39 +3003,87 @@ function PlanChecklistRender({
   )
 }
 
-// Section render — handles fields, items, signature table, and checklist.
-function PlanSectionRender({ section }: { section: PlanSection }) {
+// Section render — styled like a printed government form: bordered box,
+// centered SHOUTED headings for the cover / emergency / signature pages,
+// left-aligned lettered headings (b., c., d., …) elsewhere.
+function PlanSectionRender({
+  section,
+  onSaveField,
+  onSaveCheck,
+}: {
+  section: PlanSection
+  onSaveField: (fieldId: string, value: string) => void
+  onSaveCheck: (key: string, checked: boolean) => void
+}) {
+  const isUppercaseTitle = section.title === section.title.toUpperCase() && !section.letter
+  const isAppendix = !!section.appendix
   const heading = section.letter ? `${section.letter}. ${section.title}` : section.title
+
   return (
-    <section className={section.appendix ? 'border-t border-stone-200 pt-5' : ''}>
-      <h3 className={`font-semibold text-stone-900 mb-2 ${section.appendix ? 'text-xs uppercase tracking-widest text-stone-500' : 'text-sm'}`}>
+    <section
+      className={
+        isAppendix
+          ? 'border-2 border-stone-400 p-5 rounded'
+          : isUppercaseTitle
+            ? 'border border-stone-300 p-5 rounded bg-stone-50/30'
+            : ''
+      }
+    >
+      <h3
+        className={
+          isUppercaseTitle
+            ? 'text-center text-base font-bold tracking-wide text-stone-900 mb-4 pb-2 border-b border-stone-400'
+            : isAppendix
+              ? 'text-center text-xs font-sans font-semibold uppercase tracking-widest text-stone-500 mb-3'
+              : 'text-base font-bold text-stone-900 mb-2'
+        }
+      >
         {heading}
       </h3>
       {section.intro && (
-        <p className="text-xs text-stone-600 mb-3 leading-relaxed">{section.intro}</p>
+        <p className="text-sm text-stone-700 mb-4 leading-relaxed italic">{section.intro}</p>
       )}
       {section.bullets && section.bullets.length > 0 && (
-        <ul className="mb-3 space-y-1 text-xs text-stone-700 list-disc list-inside">
+        <ul className="mb-3 space-y-1 text-sm text-stone-800 list-disc list-inside">
           {section.bullets.map((b, i) => <li key={i}>{b}</li>)}
         </ul>
       )}
       {section.fields && section.fields.length > 0 && (
-        <div className="space-y-1 mb-3">
-          {section.fields.map((f, i) => <PlanFieldRow key={i} field={f} />)}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          {section.fields.map((f, i) => <CoverFieldRow key={i} field={f} onSaveField={onSaveField} />)}
         </div>
       )}
       {section.items && section.items.length > 0 && (
         <ol className="space-y-2.5">
-          {section.items.map((it, i) => <PlanItemRender key={i} item={it} />)}
+          {section.items.map((it, i) => <PlanItemRender key={i} item={it} onSaveField={onSaveField} />)}
         </ol>
       )}
       {section.signatureTable && (
         <PlanSignatureGrid columns={section.signatureTable.columns} rows={section.signatureTable.rows} />
       )}
       {section.checklist && (
-        <PlanChecklistRender fields={section.checklist.fields} categories={section.checklist.categories} />
+        <PlanChecklistRender
+          fields={section.checklist.fields}
+          categories={section.checklist.categories}
+          onSaveField={onSaveField}
+          onSaveCheck={onSaveCheck}
+        />
       )}
     </section>
+  )
+}
+
+// Backward-compat: kept because a few call sites still reference it.
+function PlanFieldRow({ field }: { field: PlanField }) {
+  return (
+    <div className="flex items-start gap-2.5 py-1.5">
+      <div className="flex-1 min-w-0">
+        <p className="text-[11px] font-medium text-stone-500 uppercase tracking-wide">{field.label}</p>
+        <p className={`text-sm leading-snug ${field.needsInput ? 'text-amber-700 italic' : 'text-stone-800'}`}>
+          {field.value}
+        </p>
+      </div>
+    </div>
   )
 }
 
