@@ -93,7 +93,7 @@ export function buildSowDeliveryEmail(input: SowDeliveryInput): { subject: strin
     `• Your point of contact (name, title, email, direct phone)\n\n` +
     `A few quick screening questions:\n${ctx.screening_questions}\n\n` +
     `Let me know if anything in the attached SOW needs clarification before you price.\n\n` +
-    `Thanks,\n[Your Name]`
+    `Thanks,\n[Your Name]\nhttps://www.1stdirectionco.com/`
 
   return { subject, body }
 }

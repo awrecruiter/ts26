@@ -79,7 +79,8 @@ A few quick screening questions:
 The full SOW and supporting docs are attached for reference.
 
 Thanks,
-[Your Name]`,
+[Your Name]
+https://www.1stdirectionco.com/`,
   },
   follow_up: {
     subject: 'Following Up — {{title}}',
@@ -90,7 +91,8 @@ Following up on the quote request I sent for {{title}} ({{solicitation}}).
 Our internal deadline to assemble the bid is {{quote_due}} — if you're not able to quote, a quick reply lets me move on. If you are quoting, let me know when I can expect numbers back.
 
 Thanks,
-[Your Name]`,
+[Your Name]
+https://www.1stdirectionco.com/`,
   },
   custom: {
     subject: '',

@@ -140,6 +140,11 @@ export async function POST(req: Request) {
       .filter((s): s is string => Boolean(s && s.trim()))
       .join('\n')
     let bodyText = (body.body || '').replace(/\[Your Name\]/g, senderLines || senderName)
+    // Safety net: ensure the company website closes every signature, even
+    // for a hand-composed email that skipped a template placeholder.
+    if (!bodyText.includes('1stdirectionco.com')) {
+      bodyText = `${bodyText.trimEnd()}\nhttps://www.1stdirectionco.com/`
+    }
 
     // ── Prework provisioning ────────────────────────────────────────────────
     // When the caller wants us to attach prework portal links, provision the

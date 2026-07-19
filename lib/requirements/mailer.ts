@@ -100,6 +100,7 @@ The link takes you straight to a short form. You can attach files, save partial 
 
 Thanks,
 ${primeLabel}
+https://www.1stdirectionco.com/
 `
 }
 
@@ -144,7 +145,11 @@ function renderHtml({ template, link, dueLabel, primeLabel, input, groupName }: 
       Or copy this link: ${link}
     </p>
     <hr style="border: none; border-top: 1px solid #e7e5e4; margin: 20px 0;" />
-    <p style="margin: 0; font-size: 12px; color: #a8a29e;">
+    <p style="margin: 0 0 8px; font-size: 13px; color: #57534e;">
+      Thanks,<br />${esc(primeLabel)}<br />
+      <a href="https://www.1stdirectionco.com/" style="color: #57534e;">https://www.1stdirectionco.com/</a>
+    </p>
+    <p style="margin: 12px 0 0; font-size: 12px; color: #a8a29e;">
       This is a one-time secure link tied to your submission. No login required.
     </p>
   </div>
