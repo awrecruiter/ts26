@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { format, differenceInDays, addMonths, startOfMonth } from 'date-fns'
 import { complianceGlossary } from '@/lib/data/compliance-glossary'
 import type { GlossaryTerm } from '@/lib/data/compliance-glossary'
@@ -1996,6 +1997,17 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
   )
 }
 
+// WorkspaceLayout wraps every panel in a translateX() container, which
+// becomes the containing block for `fixed` descendants — that pushes any
+// modal opened from a non-first panel off-screen. Portal the modal to
+// document.body so `fixed inset-0` resolves against the viewport.
+function ModalPortal({ children }: { children: ReactNode }) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  if (!mounted) return null
+  return createPortal(children, document.body)
+}
+
 // ─── Plan Template Outline Modal ──────────────────────────────────────────
 // Shown when the user clicks a plan tile that doesn't have a full generator
 // yet (QCP, WMP, SSHP, SWPPP, EMP, TCP). Renders the plan's declared
@@ -2010,6 +2022,7 @@ function PlanTemplateOutlineModal({
 }) {
   const outline = plan.templateOutline ?? []
   return (
+    <ModalPortal>
     <div
       className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 sm:p-8"
       onClick={onClose}
@@ -2091,6 +2104,7 @@ function PlanTemplateOutlineModal({
         </div>
       </div>
     </div>
+    </ModalPortal>
   )
 }
 
@@ -2106,6 +2120,7 @@ function PlanViewerModal({
   onClose: () => void
 }) {
   return (
+    <ModalPortal>
     <div
       className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 sm:p-8"
       onClick={onClose}
@@ -2186,6 +2201,7 @@ function PlanViewerModal({
         </div>
       </div>
     </div>
+    </ModalPortal>
   )
 }
 
@@ -2426,6 +2442,7 @@ function ConstructionScheduleModal({
   })
 
   return (
+    <ModalPortal>
     <div
       className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 sm:p-8"
       onClick={onClose}
@@ -2510,6 +2527,7 @@ function ConstructionScheduleModal({
         </div>
       </div>
     </div>
+    </ModalPortal>
   )
 }
 
@@ -2527,6 +2545,7 @@ function ScheduleOfValuesModal({
   const total = lines.reduce((acc, l) => acc + (l.estimatedTotalCost ?? 0), 0)
 
   return (
+    <ModalPortal>
     <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 sm:p-8" onClick={onClose}>
       <div className="relative bg-white rounded-xl shadow-xl max-w-4xl w-full my-4" onClick={(e) => e.stopPropagation()}>
         <div className="sticky top-0 bg-white border-b border-stone-200 rounded-t-xl px-6 py-4 flex items-start justify-between gap-4">
@@ -2611,6 +2630,7 @@ function ScheduleOfValuesModal({
         </div>
       </div>
     </div>
+    </ModalPortal>
   )
 }
 
@@ -2627,6 +2647,7 @@ function PlanPackageModal({
   onClose: () => void
 }) {
   return (
+    <ModalPortal>
     <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm overflow-y-auto p-4 sm:p-8" onClick={onClose}>
       <div className="relative bg-white rounded-xl shadow-xl max-w-4xl w-full mx-auto my-4" onClick={(e) => e.stopPropagation()}>
         <div className="sticky top-0 bg-white border-b border-stone-200 rounded-t-xl px-6 py-4 flex items-start justify-between gap-4 print:hidden">
@@ -2716,6 +2737,7 @@ function PlanPackageModal({
         </div>
       </div>
     </div>
+    </ModalPortal>
   )
 }
 
