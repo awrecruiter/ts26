@@ -8,9 +8,12 @@ import type { GlossaryTerm } from '@/lib/data/compliance-glossary'
 import type { OpportunityBrief, ScopeOverviewArtifact } from '@/lib/openai'
 import {
   generateAccidentPreventionPlan,
+  collectPlanFields,
   type AppSubResponses,
   type GeneratedPlan,
   type PlanField,
+  type PlanItem,
+  type PlanSection,
 } from '@/lib/plans/app-plan'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -1620,19 +1623,13 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
   const planCompletion = useMemo((): Record<string, PlanCompletion> => {
     const out: Record<string, PlanCompletion> = {}
 
-    // APP
-    let appFilled = 0
-    let appTotal = 0
-    for (const section of generatedApp.sections) {
-      for (const field of section.fields) {
-        appTotal++
-        if (!field.needsInput) appFilled++
-      }
-    }
+    // APP — walk every field (top-level, items, subitems, and checklist).
+    const appFields = collectPlanFields(generatedApp)
+    const appFilled = appFields.filter((f) => !f.needsInput).length
     out.app = {
-      percent: appTotal === 0 ? 0 : Math.round((appFilled / appTotal) * 100),
+      percent: appFields.length === 0 ? 0 : Math.round((appFilled / appFields.length) * 100),
       filled: appFilled,
-      total: appTotal,
+      total: appFields.length,
       note: 'Fields filled from sub + opportunity + template',
     }
 
@@ -2172,27 +2169,13 @@ function PlanViewerModal({
           <span className="inline-flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded bg-amber-400" />Needs admin input</span>
         </div>
 
-        {/* Sections */}
-        <div className="px-6 py-5 space-y-6">
+        {/* Sections — rendered to mirror the USACE APP template structure:
+            lettered sections (b., c., d., …), numbered items (1., 2., …),
+            and lettered subitems (A., B., … or a., b., …). Signature Sheet
+            and Weekly Safety Meeting appendices render as printable tables. */}
+        <div className="px-6 py-5 space-y-7">
           {plan.sections.map((section) => (
-            <section key={section.key}>
-              <h3 className="text-sm font-semibold text-stone-900 mb-2">{section.title}</h3>
-              {section.intro && (
-                <p className="text-xs text-stone-600 mb-3 leading-relaxed">{section.intro}</p>
-              )}
-              {section.bullets && section.bullets.length > 0 && (
-                <ul className="mb-3 space-y-1 text-xs text-stone-700 list-disc list-inside">
-                  {section.bullets.map((b, i) => <li key={i}>{b}</li>)}
-                </ul>
-              )}
-              {section.fields.length > 0 && (
-                <div className="space-y-2">
-                  {section.fields.map((f, i) => (
-                    <PlanFieldRow key={i} field={f} />
-                  ))}
-                </div>
-              )}
-            </section>
+            <PlanSectionRender key={section.key} section={section} />
           ))}
         </div>
 
@@ -2669,23 +2652,11 @@ function PlanPackageModal({
           {/* APP */}
           <section>
             <h3 className="text-base font-semibold text-stone-900 mb-3">1. Accident Prevention Plan (APP)</h3>
-            {plan.sections.map(section => (
-              <div key={section.key} className="mb-5">
-                <h4 className="text-sm font-semibold text-stone-900 mb-2">{section.title}</h4>
-                {section.intro && <p className="text-xs text-stone-600 mb-2 leading-relaxed">{section.intro}</p>}
-                {section.bullets && section.bullets.length > 0 && (
-                  <ul className="mb-2 space-y-1 text-xs text-stone-700 list-disc list-inside">
-                    {section.bullets.map((b, i) => <li key={i}>{b}</li>)}
-                  </ul>
-                )}
-                {section.fields.map((f, i) => (
-                  <div key={i} className="py-1 text-xs">
-                    <span className="font-medium text-stone-600">{f.label}: </span>
-                    <span className={f.needsInput ? 'text-amber-700 italic' : 'text-stone-800'}>{f.value}</span>
-                  </div>
-                ))}
-              </div>
-            ))}
+            <div className="space-y-5">
+              {plan.sections.map(section => (
+                <PlanSectionRender key={section.key} section={section} />
+              ))}
+            </div>
           </section>
 
           {/* CS */}
@@ -2741,19 +2712,34 @@ function PlanPackageModal({
   )
 }
 
+function sourceDotClass(field: PlanField): string {
+  if (field.needsInput) return 'bg-amber-400'
+  switch (field.source) {
+    case 'opportunity': return 'bg-stone-800'
+    case 'sub': return 'bg-emerald-500'
+    case 'template': return 'bg-stone-300'
+    default: return 'bg-amber-400'
+  }
+}
+
+// Inline value chip — shown to the right (or below on mobile) of an item
+// so the "1. Foo:" reads like "1. Foo: <value>" with a source dot.
+function PlanValueChip({ field }: { field: PlanField }) {
+  return (
+    <span className="inline-flex items-baseline gap-1.5 align-baseline">
+      <span className={`inline-block w-1.5 h-1.5 rounded ${sourceDotClass(field)} shrink-0 translate-y-[-1px]`} aria-hidden="true" />
+      <span className={`${field.needsInput ? 'text-amber-700 italic' : 'text-stone-800'}`}>
+        {field.value}
+      </span>
+    </span>
+  )
+}
+
+// Standalone field row (used on the Cover and where items don't apply).
 function PlanFieldRow({ field }: { field: PlanField }) {
-  const sourceStyle = field.needsInput
-    ? 'bg-amber-400'
-    : field.source === 'opportunity'
-      ? 'bg-stone-800'
-      : field.source === 'sub'
-        ? 'bg-emerald-500'
-        : field.source === 'template'
-          ? 'bg-stone-300'
-          : 'bg-amber-400'
   return (
     <div className="flex items-start gap-2.5 py-1.5 border-b border-stone-50 last:border-b-0">
-      <span className={`mt-1.5 inline-block w-2 h-2 rounded ${sourceStyle} shrink-0`} aria-hidden="true" />
+      <span className={`mt-1.5 inline-block w-2 h-2 rounded ${sourceDotClass(field)} shrink-0`} aria-hidden="true" />
       <div className="flex-1 min-w-0">
         <p className="text-[11px] font-medium text-stone-500 uppercase tracking-wide">{field.label}</p>
         <p className={`text-sm leading-snug ${field.needsInput ? 'text-amber-700 italic' : 'text-stone-800'}`}>
@@ -2761,6 +2747,142 @@ function PlanFieldRow({ field }: { field: PlanField }) {
         </p>
       </div>
     </div>
+  )
+}
+
+// A single numbered / lettered item — indented per depth so 4.A sits under 4.
+function PlanItemRender({ item, depth = 0 }: { item: PlanItem; depth?: number }) {
+  const prefix = item.number ? `${item.number}.` : ''
+  return (
+    <li className={depth === 0 ? '' : 'mt-1'}>
+      <div className="flex items-baseline gap-2">
+        {prefix && (
+          <span className="text-xs font-semibold text-stone-500 tabular-nums shrink-0 min-w-[1.5rem]">
+            {prefix}
+          </span>
+        )}
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm leading-snug ${depth === 0 ? 'text-stone-800' : 'text-stone-700'}`}>
+            {item.text}
+            {item.field && (
+              <>
+                {' '}
+                <PlanValueChip field={item.field} />
+              </>
+            )}
+          </p>
+          {item.subitems && item.subitems.length > 0 && (
+            <ol className="mt-1.5 pl-2 space-y-1.5 border-l border-stone-100">
+              {item.subitems.map((s, i) => (
+                <PlanItemRender key={i} item={s} depth={depth + 1} />
+              ))}
+            </ol>
+          )}
+        </div>
+      </div>
+    </li>
+  )
+}
+
+// Blank signature grid — printable, 20 rows by default.
+function PlanSignatureGrid({ columns, rows }: { columns: string[]; rows: number }) {
+  return (
+    <div className="border border-stone-200 rounded-lg overflow-hidden">
+      <table className="w-full text-xs">
+        <thead className="bg-stone-50">
+          <tr>
+            <th className="w-8 px-2 py-1.5 text-left font-medium text-stone-500 border-r border-stone-200">#</th>
+            {columns.map((c) => (
+              <th key={c} className="px-3 py-1.5 text-left font-medium text-stone-500 border-r border-stone-200 last:border-r-0">
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: rows }).map((_, i) => (
+            <tr key={i} className="border-t border-stone-100">
+              <td className="w-8 px-2 py-2 text-stone-400 tabular-nums border-r border-stone-100">{i + 1}</td>
+              {columns.map((c) => (
+                <td key={c} className="px-3 py-2 border-r border-stone-100 last:border-r-0">&nbsp;</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// Weekly Safety Meeting–style topic checklist.
+function PlanChecklistRender({
+  fields,
+  categories,
+}: {
+  fields?: PlanField[]
+  categories: Array<{ heading?: string; items: string[] }>
+}) {
+  return (
+    <div className="space-y-4">
+      {fields && fields.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+          {fields.map((f, i) => <PlanFieldRow key={i} field={f} />)}
+        </div>
+      )}
+      {categories.map((cat, ci) => (
+        <div key={ci}>
+          {cat.heading && (
+            <p className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider mb-2">
+              {cat.heading}
+            </p>
+          )}
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+            {cat.items.map((topic, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs text-stone-700 leading-snug">
+                <span className="inline-block w-3 h-3 border border-stone-300 rounded-sm shrink-0 mt-0.5" aria-hidden="true" />
+                <span>{topic}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Section render — handles fields, items, signature table, and checklist.
+function PlanSectionRender({ section }: { section: PlanSection }) {
+  const heading = section.letter ? `${section.letter}. ${section.title}` : section.title
+  return (
+    <section className={section.appendix ? 'border-t border-stone-200 pt-5' : ''}>
+      <h3 className={`font-semibold text-stone-900 mb-2 ${section.appendix ? 'text-xs uppercase tracking-widest text-stone-500' : 'text-sm'}`}>
+        {heading}
+      </h3>
+      {section.intro && (
+        <p className="text-xs text-stone-600 mb-3 leading-relaxed">{section.intro}</p>
+      )}
+      {section.bullets && section.bullets.length > 0 && (
+        <ul className="mb-3 space-y-1 text-xs text-stone-700 list-disc list-inside">
+          {section.bullets.map((b, i) => <li key={i}>{b}</li>)}
+        </ul>
+      )}
+      {section.fields && section.fields.length > 0 && (
+        <div className="space-y-1 mb-3">
+          {section.fields.map((f, i) => <PlanFieldRow key={i} field={f} />)}
+        </div>
+      )}
+      {section.items && section.items.length > 0 && (
+        <ol className="space-y-2.5">
+          {section.items.map((it, i) => <PlanItemRender key={i} item={it} />)}
+        </ol>
+      )}
+      {section.signatureTable && (
+        <PlanSignatureGrid columns={section.signatureTable.columns} rows={section.signatureTable.rows} />
+      )}
+      {section.checklist && (
+        <PlanChecklistRender fields={section.checklist.fields} categories={section.checklist.categories} />
+      )}
+    </section>
   )
 }
 
