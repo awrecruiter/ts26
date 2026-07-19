@@ -1,98 +1,21 @@
 /**
  * Accident Prevention Plan (APP) auto-fill.
  *
- * Mirrors the USACE / EM 385-1-1 standard APP template section-for-section:
- *   Cover · Emergency Phone Numbers & Medical Facility Map · Signature Sheet
- *   b. Background Information
- *   c. Statement of Safety and Health Policy   (with A–I subitems)
- *   d. Responsibilities and Lines of Authority (1–6)
- *   e. Subcontractors and Suppliers            (1–2)
- *   f. Training                                (1–6, with 4.A–G, 5.a–b)
- *   g. Safety and Health Inspections           (1–3)
- *   h. Mishap Reporting and Investigation      (1–3)
- *   i. Plans, Programs, and Procedures         (A–J)
- *   APPENDIX — Weekly Safety Meeting (blank form)
- *   APPENDIX — ENG Form 3394 (Accident Investigation Report reference)
- *
- * Every editable slot carries a stable `id` so admin edits can be persisted
- * back via /api/opportunities/[id]/plan-overrides. Sub-sourced blanks
- * include the name of the sub the input is expected from ("Waiting on
- * DPR Construction") instead of a generic "selected sub".
+ * Mirrors the USACE / EM 385-1-1 standard APP template section-for-section.
+ * See /docs/plans/app-template.md (or the source template PDF) for the
+ * full section list. Every editable slot carries a stable `id` so admin
+ * edits can be persisted back via /api/opportunities/[id]/plan-overrides.
  */
 
-export type PlanFieldSource = 'opportunity' | 'sub' | 'template' | 'admin'
-
-export interface PlanField {
-  /** Stable key for persisted overrides (admin fields only). */
-  id?: string
-  label: string
-  value: string
-  source: PlanFieldSource
-  /** True when the field is missing / needs admin or sub input. */
-  needsInput?: boolean
-  /** For sub-sourced fields with no value yet — the sub name we're waiting on. */
-  awaitedFrom?: string
-  /** True when this admin field should be edited as a multi-line textarea. */
-  multiline?: boolean
-  /** True when the user has overridden the default value. */
-  overridden?: boolean
-}
-
-/** A single numbered or lettered item within a section. */
-export interface PlanItem {
-  /** "1", "2", "A", "B", "a", "b" — rendered as a prefix with a period. */
-  number?: string
-  /** Body text — usually ends with a colon when a value follows. */
-  text: string
-  /** Value that fills the blank for this item. */
-  field?: PlanField
-  /** Nested items (e.g., section c item 1 has A–I subitems). */
-  subitems?: PlanItem[]
-}
-
-/** Blank signature grid — rendered as a printable table for wet signatures. */
-export interface PlanSignatureTable {
-  columns: string[]
-  rows: number
-}
-
-/** Weekly Safety Meeting–style checkable topic list. */
-export interface PlanChecklistCategory {
-  heading?: string
-  items: Array<{ key: string; label: string; checked: boolean }>
-}
-
-export interface PlanChecklist {
-  categories: PlanChecklistCategory[]
-  fields?: PlanField[]
-}
-
-export interface PlanSection {
-  key: string
-  /** Section letter (b, c, d, …) shown before the title. */
-  letter?: string
-  title: string
-  intro?: string
-  items?: PlanItem[]
-  signatureTable?: PlanSignatureTable
-  checklist?: PlanChecklist
-  /** Standalone fields (used on the cover / emergency page). */
-  fields?: PlanField[]
-  /** Free-form bullet list (kept for backwards compatibility). */
-  bullets?: string[]
-  /** True to render as a boxed appendix (Weekly Safety Meeting, ENG 3394). */
-  appendix?: boolean
-}
-
-export interface GeneratedPlan {
-  key: string
-  displayName: string
-  planCode: string
-  sections: PlanSection[]
-  generatedAt: string
-  sourceSubcontractorId: string | null
-  sourceSubcontractorName: string | null
-}
+// Types + helpers are shared across all plan generators.
+export type {
+  PlanFieldSource, PlanField, PlanItem, PlanSignatureTable,
+  PlanChecklistCategory, PlanChecklist, PlanSection, GeneratedPlan,
+  PlanGenerateInput,
+} from './types'
+export { collectPlanFields } from './helpers'
+import type { PlanItem, GeneratedPlan, PlanSection } from './types'
+import { makePlanHelpers } from './helpers'
 
 // ── Sub responses shape (subset of sub_quote fields we care about) ─────────
 export interface AppSubResponses {
@@ -110,6 +33,7 @@ export interface AppSubResponses {
   duration_days?: string | number
   qc_officer_name?: string
   qc_officer_phone?: string
+  [key: string]: string | number | undefined | null
 }
 
 export interface AppSelectedSub {
@@ -129,9 +53,7 @@ export interface AppGenerateInput {
   primeCompanyName?: string | null
   selectedSub?: AppSelectedSub | null
   otherAnticipatedSubs?: Array<{ name: string; role?: string | null }>
-  /** Admin edits keyed by PlanField.id. Wins over any default value. */
   overrides?: Record<string, string>
-  /** Weekly-meeting (and other) checkbox state keyed by check key. */
   checks?: Record<string, boolean>
 }
 
@@ -204,62 +126,16 @@ const WEEKLY_MEETING_SUBJECTS = [
 // ── Generator ──────────────────────────────────────────────────────────────
 export function generateAccidentPreventionPlan(input: AppGenerateInput): GeneratedPlan {
   const { opportunity, primeCompanyName, selectedSub, otherAnticipatedSubs } = input
-  const overrides = input.overrides ?? {}
-  const checks = input.checks ?? {}
   const r: AppSubResponses = selectedSub?.responses ?? {}
   const contractor = (primeCompanyName ?? '').trim() || 'the Prime Contractor'
-  const subName = selectedSub?.name ?? null
+  const { opp, sub, tpl, admin, checked, subName } = makePlanHelpers({
+    overrides: input.overrides,
+    checks: input.checks,
+    selectedSubName: selectedSub?.name,
+  })
   const ssho = (r.safety_officer_name ?? '').trim()
   const sshoDisplay = ssho || (subName ? `[${subName}'s SSHO]` : '[SSHO name]')
   const location = (opportunity.placeOfPerformance || opportunity.state || '').trim()
-
-  // Closures — each helper checks for an admin override by field id so any
-  // slot can be edited in place and the edit wins over the default.
-  const opp = (v: string | null | undefined, label: string, id?: string): PlanField => {
-    const overridden = id != null && overrides[id] != null
-    const value = overridden ? overrides[id]! : (v ?? '').trim()
-    return {
-      id, label,
-      value: value || 'Needs input',
-      source: 'opportunity',
-      needsInput: !value,
-      overridden,
-    }
-  }
-  const sub = (v: string | number | null | undefined, label: string, id?: string): PlanField => {
-    const overridden = id != null && overrides[id] != null
-    const raw = v == null ? '' : String(v).trim()
-    const value = overridden ? overrides[id]! : raw
-    return {
-      id, label,
-      value: value || (subName ? `Waiting on ${subName}` : 'Waiting — no sub selected for bid yet'),
-      source: 'sub',
-      needsInput: !value,
-      awaitedFrom: subName ?? undefined,
-      overridden,
-    }
-  }
-  const tpl = (v: string, label: string, id?: string): PlanField => {
-    const overridden = id != null && overrides[id] != null
-    return {
-      id, label,
-      value: overridden ? overrides[id]! : v,
-      source: 'template',
-      needsInput: false,
-      overridden,
-    }
-  }
-  const admin = (label: string, id: string, opts: { placeholder?: string; multiline?: boolean } = {}): PlanField => {
-    const value = overrides[id] ?? ''
-    return {
-      id, label,
-      value: value || (opts.placeholder ?? 'Click to add'),
-      source: 'admin',
-      needsInput: !value,
-      multiline: opts.multiline ?? false,
-      overridden: !!value,
-    }
-  }
 
   const sections: PlanSection[] = [
     // ── Cover ─────────────────────────────────────────────────────────────
@@ -604,7 +480,7 @@ export function generateAccidentPreventionPlan(input: AppGenerateInput): Generat
             heading: 'Subjects Discussed (check items covered during meeting)',
             items: WEEKLY_MEETING_SUBJECTS.map((label, i) => {
               const key = `weekly.subject.${i}`
-              return { key, label, checked: !!checks[key] }
+              return { key, label, checked: checked(key) }
             }),
           },
         ],
@@ -647,17 +523,5 @@ export function generateAccidentPreventionPlan(input: AppGenerateInput): Generat
   }
 }
 
-// ── Completion — walks items + subitems + fields so callers can compute a %.
-export function collectPlanFields(plan: GeneratedPlan): PlanField[] {
-  const out: PlanField[] = []
-  const visit = (item: PlanItem) => {
-    if (item.field) out.push(item.field)
-    for (const s of item.subitems ?? []) visit(s)
-  }
-  for (const section of plan.sections) {
-    for (const f of section.fields ?? []) out.push(f)
-    for (const i of section.items ?? []) visit(i)
-    for (const f of section.checklist?.fields ?? []) out.push(f)
-  }
-  return out
-}
+// collectPlanFields lives in ./helpers and is re-exported at the top of
+// this file for callers that already imported it from '@/lib/plans/app-plan'.

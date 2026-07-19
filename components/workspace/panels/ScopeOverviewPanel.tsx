@@ -15,6 +15,12 @@ import {
   type PlanItem,
   type PlanSection,
 } from '@/lib/plans/app-plan'
+import { generateQualityControlPlan } from '@/lib/plans/qcp-plan'
+import { generateWasteManagementPlan } from '@/lib/plans/wmp-plan'
+import { generateSiteSpecificSafetyPlan } from '@/lib/plans/sshp-plan'
+import { generateSWPPP } from '@/lib/plans/swppp-plan'
+import { generateEnvironmentalPlan } from '@/lib/plans/emp-plan'
+import { generateTrafficControlPlan } from '@/lib/plans/tcp-plan'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -1596,50 +1602,64 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
     ].join('\n\n')
   }, [opportunity.description, opportunity.parsedAttachments, structured])
 
-  // Local mirror of the APP admin overrides + checkbox state. Seeded from
-  // opportunity.planOverrides on mount; every edit / toggle patches this
-  // local copy for instant UI feedback, then fires a debounced PATCH so
-  // the change survives a refresh.
-  const [appOverrides, setAppOverrides] = useState<Record<string, string>>(
-    () => (opportunity.planOverrides?.app?.overrides as Record<string, string>) ?? {},
-  )
-  const [appChecks, setAppChecks] = useState<Record<string, boolean>>(
-    () => (opportunity.planOverrides?.app?.checks as Record<string, boolean>) ?? {},
-  )
+  // Local mirror of every plan's admin overrides + checkbox state, keyed
+  // by plan (app / qcp / wmp / sshp / swppp / emp / tcp). Seeded from
+  // opportunity.planOverrides on mount; every edit / toggle patches the
+  // local copy for instant UI feedback and PATCHes the endpoint so the
+  // change survives a refresh.
+  type PlanState = { overrides: Record<string, string>; checks: Record<string, boolean> }
+  const seedPlanState = (): Record<string, PlanState> => {
+    const seeded: Record<string, PlanState> = {}
+    const src = (opportunity.planOverrides ?? {}) as Record<string, { overrides?: Record<string, string>; checks?: Record<string, boolean> }>
+    for (const key of Object.keys(src)) {
+      seeded[key] = {
+        overrides: src[key]?.overrides ?? {},
+        checks: src[key]?.checks ?? {},
+      }
+    }
+    return seeded
+  }
+  const [planState, setPlanState] = useState<Record<string, PlanState>>(seedPlanState)
 
-  const saveAppField = useCallback((fieldId: string, value: string) => {
-    setAppOverrides((prev) => {
-      const next = { ...prev }
-      if (value === '') delete next[fieldId]
-      else next[fieldId] = value
-      return next
+  const savePlanField = useCallback((planKey: string, fieldId: string, value: string) => {
+    setPlanState((prev) => {
+      const cur = prev[planKey] ?? { overrides: {}, checks: {} }
+      const nextOverrides = { ...cur.overrides }
+      if (value === '') delete nextOverrides[fieldId]
+      else nextOverrides[fieldId] = value
+      return { ...prev, [planKey]: { overrides: nextOverrides, checks: cur.checks } }
     })
     fetch(`/api/opportunities/${opportunity.id}/plan-overrides`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ planKey: 'app', overrides: { [fieldId]: value === '' ? null : value } }),
+      body: JSON.stringify({ planKey, overrides: { [fieldId]: value === '' ? null : value } }),
     }).catch(() => {})
   }, [opportunity.id])
 
-  const saveAppCheck = useCallback((key: string, checked: boolean) => {
-    setAppChecks((prev) => ({ ...prev, [key]: checked }))
+  const savePlanCheck = useCallback((planKey: string, key: string, checked: boolean) => {
+    setPlanState((prev) => {
+      const cur = prev[planKey] ?? { overrides: {}, checks: {} }
+      return { ...prev, [planKey]: { overrides: cur.overrides, checks: { ...cur.checks, [key]: checked } } }
+    })
     fetch(`/api/opportunities/${opportunity.id}/plan-overrides`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ planKey: 'app', checks: { [key]: checked } }),
+      body: JSON.stringify({ planKey, checks: { [key]: checked } }),
     }).catch(() => {})
   }, [opportunity.id])
 
-  // Auto-filled APP object — reused by both the modal and the completion
-  // percentage math so the "Ready" chip on the tile stays consistent with
-  // what the user sees when they click through.
-  const generatedApp = useMemo(() => generateAccidentPreventionPlan({
+  // Every plan is generated on-the-fly so tile-completion percentages,
+  // preview modals, and the print-all package are always driven by the
+  // same source of truth. Each plan reads its own overrides / checks
+  // slice off `planState` — no cross-plan interference.
+  const planInputBase = useMemo(() => ({
     opportunity: {
       title: opportunity.title,
       solicitationNumber: opportunity.solicitationNumber,
       agency: opportunity.agency ?? null,
       state: opportunity.state ?? null,
       placeOfPerformance: brief?.placeOfPerformance?.location ?? opportunity.state ?? null,
+      naicsCode: opportunity.naicsCode ?? null,
     },
     primeCompanyName: null,
     selectedSub: selectedSubForPlan
@@ -1649,9 +1669,26 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
           responses: (selectedSubForPlan.responses ?? {}) as AppSubResponses,
         }
       : null,
-    overrides: appOverrides,
-    checks: appChecks,
-  }), [opportunity.title, opportunity.solicitationNumber, opportunity.agency, opportunity.state, brief?.placeOfPerformance?.location, selectedSubForPlan, appOverrides, appChecks])
+  }), [opportunity.title, opportunity.solicitationNumber, opportunity.agency, opportunity.state, opportunity.naicsCode, brief?.placeOfPerformance?.location, selectedSubForPlan])
+
+  const generatedPlans = useMemo(() => {
+    const forPlan = (key: string) => ({
+      ...planInputBase,
+      overrides: planState[key]?.overrides ?? {},
+      checks: planState[key]?.checks ?? {},
+    })
+    return {
+      app: generateAccidentPreventionPlan(forPlan('app')),
+      qcp: generateQualityControlPlan(forPlan('qcp')),
+      wmp: generateWasteManagementPlan(forPlan('wmp')),
+      sshp: generateSiteSpecificSafetyPlan(forPlan('sshp')),
+      swppp: generateSWPPP(forPlan('swppp')),
+      emp: generateEnvironmentalPlan(forPlan('emp')),
+      tcp: generateTrafficControlPlan(forPlan('tcp')),
+    } as const
+  }, [planInputBase, planState])
+
+  const generatedApp = generatedPlans.app
 
   // Per-plan completion — powers the tile progress bars and the overall
   // "Bid Package Completion" gate. Each plan measures a different thing:
@@ -1663,14 +1700,19 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
   const planCompletion = useMemo((): Record<string, PlanCompletion> => {
     const out: Record<string, PlanCompletion> = {}
 
-    // APP — walk every field (top-level, items, subitems, and checklist).
-    const appFields = collectPlanFields(generatedApp)
-    const appFilled = appFields.filter((f) => !f.needsInput).length
-    out.app = {
-      percent: appFields.length === 0 ? 0 : Math.round((appFilled / appFields.length) * 100),
-      filled: appFilled,
-      total: appFields.length,
-      note: 'Fields filled from sub + opportunity + template',
+    // Every generator-backed plan — walk every field so the tile bar
+    // reflects real completion instead of a hardcoded 0%.
+    for (const key of ['app', 'qcp', 'wmp', 'sshp', 'swppp', 'emp', 'tcp'] as const) {
+      const p = generatedPlans[key]
+      if (!p) continue
+      const fs = collectPlanFields(p)
+      const filled = fs.filter((f) => !f.needsInput).length
+      out[key] = {
+        percent: fs.length === 0 ? 0 : Math.round((filled / fs.length) * 100),
+        filled,
+        total: fs.length,
+        note: 'Fields filled from sub + opportunity + template',
+      }
     }
 
     // Construction Schedule + SOV read the resource plan.
@@ -1698,12 +1740,8 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
       }
     }
 
-    // Placeholder plans — no generator yet.
-    for (const key of ['qcp', 'wmp', 'sshp', 'swppp', 'emp', 'tcp']) {
-      out[key] = { percent: 0, filled: 0, total: 0, note: 'Generator pending' }
-    }
     return out
-  }, [generatedApp, opportunity.resourcePlan])
+  }, [generatedPlans, opportunity.resourcePlan])
 
   // "Download all plans" fires the browser print dialog after switching the
   // modal into print-all mode. Users then Save-as-PDF for submission.
@@ -1988,14 +2026,17 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
 
       </div>
 
-      {/* Auto-filled plan preview modal — one of: APP, Construction Schedule,
-          Schedule of Values, or the print-all package view. */}
-      {viewingPlan === 'app' && (
+      {/* Auto-filled plan preview modal. Every generator-backed plan (app,
+          qcp, wmp, sshp, swppp, emp, tcp) routes through the shared
+          PlanViewerModal with its own overrides namespace. CS and SOV
+          keep their bespoke visual modals; '__all__' is the print-all
+          package view. */}
+      {viewingPlan && generatedPlans[viewingPlan as keyof typeof generatedPlans] && (
         <PlanViewerModal
-          plan={generatedApp}
+          plan={generatedPlans[viewingPlan as keyof typeof generatedPlans]!}
           onClose={() => setViewingPlan(null)}
-          onSaveField={saveAppField}
-          onSaveCheck={saveAppCheck}
+          onSaveField={(id, v) => savePlanField(viewingPlan, id, v)}
+          onSaveCheck={(k, c) => savePlanCheck(viewingPlan, k, c)}
         />
       )}
       {viewingPlan === 'cs' && (
@@ -2018,25 +2059,10 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
           opportunity={opportunity}
           brief={brief}
           onClose={() => setViewingPlan(null)}
-          onSaveField={saveAppField}
-          onSaveCheck={saveAppCheck}
+          onSaveField={(id, v) => savePlanField('app', id, v)}
+          onSaveCheck={(k, c) => savePlanCheck('app', k, c)}
         />
       )}
-      {/* Template-outline modal for plans without a full generator (QCP,
-          WMP, SSHP, SWPPP, EMP, TCP). Shows sections + expected fields
-          so the user can see exactly what the plan will contain. */}
-      {viewingPlan &&
-        !['app', 'cs', 'sov', '__all__'].includes(viewingPlan) &&
-        (() => {
-          const planDef = REQUIRED_PLANS.find((p) => p.key === viewingPlan)
-          if (!planDef?.templateOutline?.length) return null
-          return (
-            <PlanTemplateOutlineModal
-              plan={planDef}
-              onClose={() => setViewingPlan(null)}
-            />
-          )
-        })()}
     </div>
   )
 }
@@ -3768,7 +3794,10 @@ function RequiredPlansTiles({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {detected.map(({ plan, rationales }) => {
-          const hasGenerator = plan.key === 'app' || plan.key === 'cs' || plan.key === 'sov'
+          // Every plan is now generator-backed (app / qcp / wmp / sshp /
+          // swppp / emp / tcp) plus the two data-driven views (cs / sov).
+          // Anything with a templateOutline is a safety-net fallback.
+          const hasGenerator = ['app', 'cs', 'sov', 'qcp', 'wmp', 'sshp', 'swppp', 'emp', 'tcp'].includes(plan.key)
           const hasOutline = !!plan.templateOutline?.length
           const isClickable = hasGenerator || hasOutline
           const c = completionByPlan[plan.key] ?? { percent: 0, filled: 0, total: 0 }
