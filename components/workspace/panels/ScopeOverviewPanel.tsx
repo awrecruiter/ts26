@@ -2174,7 +2174,7 @@ function PlanViewerModal({
       onClick={onClose}
     >
       <div
-        className="relative bg-white rounded-xl shadow-xl max-w-4xl w-full my-4"
+        className="relative bg-white rounded-xl shadow-xl max-w-3xl w-full my-4"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -2224,8 +2224,8 @@ function PlanViewerModal({
             typewriter-style headings, bordered form sections, numbered
             items with hanging indents, editable admin blanks, and real
             checkboxes for the Weekly Safety Meeting subject list. */}
-        <div className="px-8 py-6 bg-white text-stone-900 font-serif">
-          <div className="space-y-6">
+        <div className="px-12 sm:px-16 py-10 bg-white text-stone-900 font-serif">
+          <div className="max-w-2xl mx-auto space-y-6">
             {plan.sections.map((section) => (
               <PlanSectionRender
                 key={section.key}
@@ -2815,7 +2815,7 @@ function EditableField({
 
   if (isAdmin) {
     const displayed = value || (field.overridden ? '' : field.value)
-    const emptyStyle = !value ? 'text-amber-700 italic' : 'text-stone-900'
+    const emptyStyle = !value ? 'text-sky-700 italic bg-sky-50/70 px-1 rounded-sm' : 'text-stone-900'
     if (editing || field.multiline || block) {
       return (
         <textarea
@@ -2825,7 +2825,7 @@ function EditableField({
           onFocus={() => setEditing(true)}
           rows={field.multiline ? 2 : 1}
           placeholder={field.overridden ? '' : field.value}
-          className="mt-1 w-full px-2 py-1.5 text-sm bg-yellow-50/40 border-b border-stone-400 focus:border-stone-800 focus:outline-none focus:bg-yellow-50 font-serif resize-y min-h-[2rem]"
+          className="mt-1 w-full px-2 py-1.5 text-sm bg-sky-50/70 border-b border-sky-300 focus:border-sky-600 focus:outline-none focus:bg-sky-100/80 focus:ring-1 focus:ring-sky-200 rounded-sm font-serif resize-y min-h-[2rem] transition-colors"
           autoFocus={editing}
         />
       )
