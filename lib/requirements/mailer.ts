@@ -142,7 +142,7 @@ function renderHtml({ template, link, dueLabel, primeLabel, input, groupName }: 
       Due by <strong>${esc(dueLabel)}</strong>
     </p>
     <p style="margin: 0 0 20px; font-size: 12px; color: #a8a29e; word-break: break-all;">
-      Or copy this link: ${link}
+      Or copy this link: <a href="${link}" style="color: #a8a29e;">${esc(link)}</a>
     </p>
     <hr style="border: none; border-top: 1px solid #e7e5e4; margin: 20px 0;" />
     <p style="margin: 0 0 8px; font-size: 13px; color: #57534e;">
