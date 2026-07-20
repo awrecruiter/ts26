@@ -225,6 +225,15 @@ export default function SubcontractorPanel({
   const [selectingForBid, setSelectingForBid] = useState<string | null>(null)
   const [selectError, setSelectError] = useState<string | null>(null)
 
+  // Active persistent super-portal token per selected sub. Populated on mount
+  // for known selected subs; refreshed after mint/rotate. `null` in the map
+  // means we've checked and there is no active token yet.
+  const [superLinkBySub, setSuperLinkBySub] = useState<
+    Record<string, { token: string; sentToEmail: string | null; lastUsedAt: string | null } | null>
+  >({})
+  const [mintingSuperFor, setMintingSuperFor] = useState<string | null>(null)
+  const [superFlash, setSuperFlash] = useState<Record<string, string>>({})
+
   useEffect(() => {
     let cancelled = false
     fetch(`/api/opportunities/${opportunityId}/requirements`)
@@ -380,6 +389,90 @@ export default function SubcontractorPanel({
       setSelectingForBid(null)
     }
   }, [opportunityId])
+
+  // Fetch existing super-portal tokens for each selected-for-bid sub so the
+  // tile can show "Sent to X" vs. an empty "Send link" state without the user
+  // clicking around.
+  useEffect(() => {
+    const ids = Array.from(selectedForBidSubs)
+    if (ids.length === 0) return
+    let cancelled = false
+    void Promise.all(
+      ids.map(async id => {
+        try {
+          const res = await fetch(`/api/opportunities/${opportunityId}/subcontractors/${id}/super-link`)
+          if (!res.ok) return [id, null] as const
+          const data = await res.json()
+          const t = data?.token as { token: string; sentToEmail?: string | null; lastUsedAt?: string | null } | null
+          if (!t) return [id, null] as const
+          return [id, { token: t.token, sentToEmail: t.sentToEmail ?? null, lastUsedAt: t.lastUsedAt ?? null }] as const
+        } catch {
+          return [id, null] as const
+        }
+      }),
+    ).then(results => {
+      if (cancelled) return
+      setSuperLinkBySub(prev => {
+        const next = { ...prev }
+        for (const [id, val] of results) next[id] = val
+        return next
+      })
+    })
+    return () => { cancelled = true }
+  }, [selectedForBidSubs, opportunityId])
+
+  const flashSuper = useCallback((subId: string, msg: string, ms = 1800) => {
+    setSuperFlash(prev => ({ ...prev, [subId]: msg }))
+    setTimeout(() => {
+      setSuperFlash(prev => {
+        if (prev[subId] !== msg) return prev
+        const next = { ...prev }
+        delete next[subId]
+        return next
+      })
+    }, ms)
+  }, [])
+
+  const handleMintSuperLink = useCallback(async (sub: Subcontractor) => {
+    setMintingSuperFor(sub.id)
+    try {
+      const res = await fetch(
+        `/api/opportunities/${opportunityId}/subcontractors/${sub.id}/super-link`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sendInvite: true }),
+        },
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.success) {
+        flashSuper(sub.id, data?.error || `Failed (${res.status})`, 3000)
+        return
+      }
+      const email = sub.contactEmail ?? sub.email ?? null
+      setSuperLinkBySub(prev => ({
+        ...prev,
+        [sub.id]: { token: data.token, sentToEmail: email, lastUsedAt: null },
+      }))
+      const emailed = !!email && data.email?.success !== false
+      flashSuper(
+        sub.id,
+        emailed ? (data.rotated ? 'Rotated + emailed ✓' : 'Sent ✓') : (data.rotated ? 'Rotated (no email)' : 'Minted (no email)'),
+      )
+    } catch (e) {
+      flashSuper(sub.id, e instanceof Error ? e.message : 'Failed', 3000)
+    } finally {
+      setMintingSuperFor(null)
+    }
+  }, [opportunityId, flashSuper])
+
+  const copySuperLink = useCallback((sub: Subcontractor, token: string) => {
+    const url = `${window.location.origin}/super/${token}`
+    void navigator.clipboard.writeText(url).then(
+      () => flashSuper(sub.id, 'Copied ✓', 1200),
+      () => flashSuper(sub.id, 'Copy failed', 2000),
+    )
+  }, [flashSuper])
 
   // Outreach tiles — subs where a SOW / quote request has actually gone out.
   // Grouped by trade (resource line) so the admin can see progress per
@@ -1009,11 +1102,68 @@ export default function SubcontractorPanel({
                               {isSelecting ? 'Selecting…' : 'Select for bid'}
                             </button>
                           )}
-                          {isSelected && (
-                            <p className="mt-3 text-[11px] text-stone-500">
-                              Payment package invite sent — awaiting monthly submissions.
-                            </p>
-                          )}
+                          {isSelected && (() => {
+                            const superLink = superLinkBySub[sub.id]
+                            const busy = mintingSuperFor === sub.id
+                            const flash = superFlash[sub.id]
+                            const hasEmail = !!(sub.contactEmail ?? sub.email)
+                            return (
+                              <div className="mt-3 space-y-2">
+                                <p className="text-[11px] text-stone-500">
+                                  Payment package invite sent — awaiting monthly submissions.
+                                </p>
+                                <div className="border-t border-stone-100 pt-2 space-y-1.5">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[10px] uppercase tracking-wide text-stone-400">
+                                      Daily-reports link
+                                    </span>
+                                    {flash && (
+                                      <span className="text-[10px] font-medium text-emerald-700">{flash}</span>
+                                    )}
+                                  </div>
+                                  {superLink ? (
+                                    <>
+                                      <p className="text-[11px] text-stone-600 line-clamp-1">
+                                        {superLink.sentToEmail ? `Sent to ${superLink.sentToEmail}` : 'Active link (no email)'}
+                                        {' · '}
+                                        {superLink.lastUsedAt
+                                          ? `opened ${new Date(superLink.lastUsedAt).toLocaleDateString('en-US')}`
+                                          : 'not opened yet'}
+                                      </p>
+                                      <div className="flex gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); copySuperLink(sub, superLink.token) }}
+                                          className="flex-1 text-[11px] font-medium border border-stone-300 text-stone-700 hover:bg-stone-50 rounded px-2 py-1"
+                                        >
+                                          Copy link
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); void handleMintSuperLink(sub) }}
+                                          disabled={busy}
+                                          className="flex-1 text-[11px] font-medium border border-stone-300 text-stone-700 hover:bg-stone-50 rounded px-2 py-1 disabled:opacity-50"
+                                          title={hasEmail ? 'Revoke the current link and email a fresh one to the super.' : 'Revoke the current link and mint a fresh one. No email on file — copy the new link manually.'}
+                                        >
+                                          {busy ? 'Rotating…' : 'Rotate + resend'}
+                                        </button>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); void handleMintSuperLink(sub) }}
+                                      disabled={busy}
+                                      className="w-full text-[11px] font-medium bg-white border border-stone-800 text-stone-800 hover:bg-stone-50 rounded px-2 py-1 disabled:opacity-50"
+                                      title={hasEmail ? 'Mint a persistent daily-reports link and email it to the super.' : 'Mint a persistent daily-reports link. No email on file — copy the link manually after minting.'}
+                                    >
+                                      {busy ? 'Sending…' : hasEmail ? 'Send daily-reports link' : 'Mint daily-reports link'}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })()}
                         </div>
                       )
                     })}

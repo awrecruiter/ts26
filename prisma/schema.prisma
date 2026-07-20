@@ -163,6 +163,8 @@ model Opportunity {
   comparables         OpportunityComparable[]
   requirements        RequirementInstance[]
   paymentCycles       PaymentCycle[]
+  dailyReports        DailyReport[]
+  superPortalTokens   SuperPortalToken[]
 
   @@index([solicitationNumber])
   @@index([responseDeadline])
@@ -399,9 +401,11 @@ model Subcontractor {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  opportunity   Opportunity           @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  requirements  RequirementInstance[]
-  paymentCycles PaymentCycle[]
+  opportunity       Opportunity           @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  requirements      RequirementInstance[]
+  paymentCycles     PaymentCycle[]
+  dailyReports      DailyReport[]
+  superPortalTokens SuperPortalToken[]
 
   @@index([opportunityId])
   @@index([verificationStatus])
@@ -909,6 +913,91 @@ model PaymentCyclePortalToken {
   @@index([token])
   @@index([paymentCycleId])
   @@map("payment_cycle_portal_tokens")
+}
+
+// ============ DAILY REPORTS (Super Portal) ============
+// One DailyReport per (opportunity, sub, calendar day). Filled by the sub's
+// on-site superintendent via a persistent magic link. Rolls up into the
+// payment_daily_logs task at cycle close.
+
+model DailyReport {
+  id              String @id @default(cuid())
+  opportunityId   String
+  subcontractorId String
+
+  reportDate DateTime // Midnight UTC on the calendar day being reported.
+
+  // Weather / site conditions
+  weatherConditions String? // "Partly cloudy", "Rain"
+  weatherTempHigh   String? // "84°F"
+  weatherTempLow    String?
+  precipitation     String?
+  windSpeed         String?
+
+  workHoursStart String? // "07:00"
+  workHoursEnd   String? // "16:30"
+  hoursWorked    Float?
+
+  // Crew + equipment (arrays of { label, count, hours })
+  personnel Json?
+  equipment Json?
+
+  // Work performed
+  workPerformed   String? @db.Text
+  clinsWorked     String? // Free text — "CLIN 0001, 0003"
+  percentComplete Int?    // 0–100 for the day's scope
+
+  // Materials
+  materialsReceived String? @db.Text
+  materialsUsed     String? @db.Text
+
+  // Issues
+  safetyIncidents String? @db.Text
+  delays          String? @db.Text
+  visitors        String? @db.Text // Owner reps, inspectors, other trades
+
+  // Attachments
+  photoUrls      String[] // Vercel Blob URLs — before/during/after
+  attachmentUrls String[] // Signed daily-report PDFs, delivery tickets, etc.
+
+  // Certification
+  superintendentName String
+  submittedAt        DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  opportunity   Opportunity   @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  subcontractor Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+
+  @@unique([opportunityId, subcontractorId, reportDate])
+  @@index([opportunityId, subcontractorId])
+  @@index([reportDate])
+  @@map("daily_reports")
+}
+
+// Persistent magic link scoped to (opportunity, subcontractor). Different from
+// the payment cycle portal token: this one doesn't expire per cycle — the
+// super uses the same URL every day for the life of the project. Revocable
+// via revokedAt if it needs to be rotated.
+
+model SuperPortalToken {
+  id              String @id @default(cuid())
+  opportunityId   String
+  subcontractorId String
+  token           String @unique
+
+  sentToEmail String?
+  sentToName  String?
+
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  opportunity   Opportunity   @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  subcontractor Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([opportunityId, subcontractorId])
+  @@map("super_portal_tokens")
 }
 
 // ============ ATTACHMENT FORM DATA ============
