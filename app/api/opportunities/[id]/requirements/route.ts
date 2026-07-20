@@ -65,6 +65,15 @@ export async function POST(
     return NextResponse.json({ error: `Unknown template: ${templateKey}` }, { status: 400 })
   }
 
+  // payment_package tasks are cycle-scoped and get spawned by the
+  // payment-cycles route, not by this generic requirements endpoint.
+  if (template.submittalGroup === 'payment_package') {
+    return NextResponse.json({
+      error: 'payment_package_via_cycle',
+      message: 'Payment tasks are spawned by opening a PaymentCycle. POST /api/opportunities/[id]/subcontractors/[subId]/payment-cycles instead.',
+    }, { status: 400 })
+  }
+
   const [opportunity, subcontractor, userProfile] = await Promise.all([
     prisma.opportunity.findUnique({
       where: { id: opportunityId },
@@ -96,30 +105,29 @@ export async function POST(
     ? new Date(body.dueAt)
     : new Date(Date.now() + (template.defaultDueDays ?? 14) * 24 * 60 * 60 * 1000)
 
-  // Upsert requirement (unique on opportunity + sub + template)
-  const requirement = await prisma.requirementInstance.upsert({
-    where: {
-      opportunityId_subcontractorId_templateKey: {
-        opportunityId,
-        subcontractorId,
-        templateKey,
-      },
-    },
-    create: {
-      opportunityId,
-      subcontractorId,
-      templateKey,
-      submittalGroup: template.submittalGroup,
-      assignedEmail,
-      assignedName,
-      dueAt,
-    },
-    update: {
-      assignedEmail,
-      assignedName,
-      dueAt,
-    },
+  // Non-cycle templates are one-per-(opp, sub, template). Find-then-update
+  // avoids relying on a Prisma composite unique that no longer exists (the
+  // DB constraint now includes paymentCycleId and enforces NULLS NOT
+  // DISTINCT for the non-cycle case).
+  const existing = await prisma.requirementInstance.findFirst({
+    where: { opportunityId, subcontractorId, templateKey, paymentCycleId: null },
   })
+  const requirement = existing
+    ? await prisma.requirementInstance.update({
+        where: { id: existing.id },
+        data: { assignedEmail, assignedName, dueAt },
+      })
+    : await prisma.requirementInstance.create({
+        data: {
+          opportunityId,
+          subcontractorId,
+          templateKey,
+          submittalGroup: template.submittalGroup,
+          assignedEmail,
+          assignedName,
+          dueAt,
+        },
+      })
 
   // Mint magic-link token
   const { token } = await issueMagicToken({

@@ -251,7 +251,10 @@ export default function SubcontractorPanel({
           if (req.status === 'SUBMITTED' || req.status === 'APPROVED') agg[subId].submitted += 1
           if (req.status === 'APPROVED') agg[subId].approved += 1
 
-          if (req.templateKey === 'payment_package') {
+          // Any payment_* task instance means this sub is in a pay cycle
+          // (i.e. was selected for bid). All 10 payment templates share the
+          // "payment_" prefix.
+          if (typeof req.templateKey === 'string' && req.templateKey.startsWith('payment_')) {
             selected.add(subId)
           }
 
@@ -354,15 +357,17 @@ export default function SubcontractorPanel({
     setSelectError(null)
     setSelectingForBid(sub.id)
     try {
-      const res = await fetch(`/api/opportunities/${opportunityId}/requirements`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subcontractorId: sub.id,
-          templateKey: 'payment_package',
-          sendInvite: true,
-        }),
-      })
+      // Opens the first PaymentCycle (current month) and spawns one
+      // RequirementInstance per payment_package task. Idempotent — clicking
+      // twice returns the existing cycle rather than duplicating.
+      const res = await fetch(
+        `/api/opportunities/${opportunityId}/subcontractors/${sub.id}/payment-cycles`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sendInvite: true }),
+        },
+      )
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.success) {
         setSelectError(data?.error || `Select failed (${res.status})`)

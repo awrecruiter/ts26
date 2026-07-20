@@ -1,5 +1,6 @@
 import { resolveMagicToken } from '@/lib/requirements/tokens'
 import { getTemplate } from '@/lib/requirements/templates'
+import { prisma } from '@/lib/db'
 import RequirementForm from './RequirementForm'
 
 interface PageProps {
@@ -45,6 +46,27 @@ export default async function RequirementAccessPage({ params }: PageProps) {
       </div>
     )
   }
+  // Once the prime picks this sub, a PaymentCycle opens and the sub gets
+  // their own portal magic link by email. If they come back to the original
+  // quote link, surface a callout so they can jump straight in without
+  // hunting for that email.
+  const openPaymentCycle = await prisma.paymentCycle.findFirst({
+    where: {
+      subcontractorId: req_.subcontractor.id,
+      status: { in: ['OPEN', 'SUBMITTED'] },
+    },
+    orderBy: { periodStart: 'desc' },
+    include: {
+      tokens: {
+        where: { expiresAt: { gt: new Date() } },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { token: true },
+      },
+    },
+  })
+  const portalToken = openPaymentCycle?.tokens[0]?.token ?? null
+
   // Prefill from what we already know about this specific sub. Only used when
   // the sub hasn't started answering yet — otherwise their prior responses win.
   // Keyed to the field keys defined in each template's formSchema.
@@ -66,6 +88,30 @@ export default async function RequirementAccessPage({ params }: PageProps) {
   return (
     <div className="min-h-[100dvh] bg-stone-50">
       <div className="max-w-5xl mx-auto p-4 sm:p-8">
+        {openPaymentCycle && portalToken && (
+          <a
+            href={`/portal/${portalToken}`}
+            className="mb-4 flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 hover:bg-emerald-100 transition-colors"
+          >
+            <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500 text-white flex-shrink-0">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-emerald-900">
+                You&apos;ve been selected for this project
+              </p>
+              <p className="text-xs text-emerald-800 mt-0.5">
+                Your payment package for {openPaymentCycle.periodLabel} is open — submit invoice, payroll,
+                daily reports, and more.
+              </p>
+            </div>
+            <span className="text-sm font-medium text-emerald-900 flex-shrink-0">
+              Open portal →
+            </span>
+          </a>
+        )}
         <header className="mb-6">
           <h1 className="text-2xl font-semibold text-stone-900 mb-1">
             {req_.subcontractor.name}

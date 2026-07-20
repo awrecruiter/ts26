@@ -1551,8 +1551,11 @@ export default function ScopeOverviewPanel({ opportunity, assessment, brief, aiS
         }
         const reqs = data.requirements as Req[]
         const paymentPackageSubs = new Set(
-          reqs.filter(r => r.templateKey === 'payment_package' && r.subcontractorId)
-              .map(r => r.subcontractorId as string),
+          reqs.filter(r =>
+            typeof r.templateKey === 'string' &&
+            r.templateKey.startsWith('payment_') &&
+            r.subcontractorId,
+          ).map(r => r.subcontractorId as string),
         )
         const isDone = (s?: string | null) => s === 'SUBMITTED' || s === 'APPROVED'
         // Prefer a sub who has been Selected for bid AND has a submitted quote.

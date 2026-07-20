@@ -2,6 +2,22 @@ import { sendEmail } from '@/lib/email'
 import { getTemplate, SUBMITTAL_GROUPS } from './templates'
 import type { RequirementTemplate } from './types'
 
+interface PortalInviteInput {
+  toEmail: string
+  toName?: string | null
+  token: string
+  opportunityTitle: string
+  solicitationNumber?: string | null
+  agency?: string | null
+  companyName: string
+  periodLabel: string
+  dueAt?: Date | null
+  taskCount: number
+  primeName?: string | null
+  primeOrganization?: string | null
+  primeReplyTo?: string | null
+}
+
 interface InviteInput {
   toEmail: string
   toName?: string | null
@@ -76,6 +92,95 @@ interface RenderInput {
   primeLabel: string
   input: InviteInput
   groupName: string
+}
+
+export async function sendPaymentCycleInvite(input: PortalInviteInput) {
+  const link = `${baseUrl()}/portal/${input.token}`
+  const dueLabel = fmtDate(input.dueAt)
+  const primeLabel = input.primeOrganization || input.primeName || 'the prime contractor'
+
+  const subject = `You're selected — payment package for ${input.periodLabel} (${input.opportunityTitle})`
+
+  const esc = (s: string) => s.replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
+  ))
+
+  const text = `Hello${input.toName ? ` ${input.toName}` : ''},
+
+${primeLabel} has selected ${input.companyName} for "${input.opportunityTitle}"${
+    input.solicitationNumber ? ` (Solicitation ${input.solicitationNumber})` : ''
+  }${input.agency ? ` — ${input.agency}` : ''}.
+
+Your payment package for ${input.periodLabel} is now open. There are ${input.taskCount} tasks to complete before this period can be included in the pay application (invoice, certified payroll, daily reports, testing, photos, safety, and more).
+
+Open your portal — no login required:
+${link}
+
+Due by: ${dueLabel}
+
+You can return to the same link any time to keep filling in tasks. Each task is reviewed individually.
+
+Thanks,
+${primeLabel}
+https://www.1stdirectionco.com/
+`
+
+  const html = `<!DOCTYPE html>
+<html>
+<body style="font-family: -apple-system, system-ui, sans-serif; color: #292524; max-width: 560px; margin: 0 auto; padding: 24px; background: #fafaf9;">
+  <div style="background: #fff; border: 1px solid #e7e5e4; border-radius: 8px; padding: 24px;">
+    <p style="color: #78716c; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px;">
+      Payment Package · ${esc(input.periodLabel)}
+    </p>
+    <h1 style="font-size: 20px; margin: 0 0 16px; color: #1c1917;">
+      You've been selected
+    </h1>
+    <p style="margin: 0 0 16px; line-height: 1.5;">
+      Hello${input.toName ? ` ${esc(input.toName)}` : ''},
+    </p>
+    <p style="margin: 0 0 16px; line-height: 1.5;">
+      <strong>${esc(primeLabel)}</strong> has selected
+      <strong>${esc(input.companyName)}</strong> for
+      <em>${esc(input.opportunityTitle)}</em>${
+        input.solicitationNumber ? ` (Solicitation ${esc(input.solicitationNumber)})` : ''
+      }.
+    </p>
+    <div style="background: #f5f5f4; border-left: 3px solid #78716c; padding: 12px 16px; margin: 0 0 20px;">
+      <p style="margin: 0; font-size: 14px; color: #57534e;">
+        Your payment package for <strong>${esc(input.periodLabel)}</strong> is open.
+        ${input.taskCount} tasks to complete — invoice, payroll, daily reports, testing, photos, safety, and more.
+      </p>
+    </div>
+    <p style="margin: 0 0 20px;">
+      <a href="${link}" style="background: #292524; color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 6px; display: inline-block; font-weight: 500;">
+        Open payment portal
+      </a>
+    </p>
+    <p style="margin: 0 0 4px; font-size: 13px; color: #78716c;">
+      Due by <strong>${esc(dueLabel)}</strong>
+    </p>
+    <p style="margin: 0 0 20px; font-size: 12px; color: #a8a29e; word-break: break-all;">
+      Or copy this link: <a href="${link}" style="color: #a8a29e;">${esc(link)}</a>
+    </p>
+    <hr style="border: none; border-top: 1px solid #e7e5e4; margin: 20px 0;" />
+    <p style="margin: 0 0 8px; font-size: 13px; color: #57534e;">
+      Thanks,<br />${esc(primeLabel)}<br />
+      <a href="https://www.1stdirectionco.com/" style="color: #57534e;">https://www.1stdirectionco.com/</a>
+    </p>
+    <p style="margin: 12px 0 0; font-size: 12px; color: #a8a29e;">
+      Your portal link stays valid throughout this pay period — come back any time.
+    </p>
+  </div>
+</body>
+</html>`
+
+  return sendEmail({
+    to: input.toEmail,
+    subject,
+    body: text,
+    html,
+    replyTo: input.primeReplyTo || undefined,
+  })
 }
 
 function renderText({ template, link, dueLabel, primeLabel, input, groupName }: RenderInput): string {

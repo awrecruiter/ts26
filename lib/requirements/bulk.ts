@@ -91,28 +91,29 @@ export async function bulkProvisionRequirements(
       Date.now() + (template.defaultDueDays ?? 14) * 24 * 60 * 60 * 1000,
     )
 
-    const requirement = await prisma.requirementInstance.upsert({
-      where: {
-        opportunityId_subcontractorId_templateKey: {
-          opportunityId,
-          subcontractorId,
-          templateKey,
-        },
-      },
-      create: {
-        opportunityId,
-        subcontractorId,
-        templateKey,
-        submittalGroup: template.submittalGroup,
-        assignedEmail,
-        assignedName,
-        dueAt,
-      },
-      update: {
-        assignedEmail,
-        assignedName,
-      },
+    // Bulk provisioning only handles non-cycle templates (quote, insurance,
+    // APP, etc.). Find-then-update because the composite unique now includes
+    // paymentCycleId — NULLS NOT DISTINCT at the DB level still enforces
+    // one-per-(opp, sub, template) for these.
+    const existing = await prisma.requirementInstance.findFirst({
+      where: { opportunityId, subcontractorId, templateKey, paymentCycleId: null },
     })
+    const requirement = existing
+      ? await prisma.requirementInstance.update({
+          where: { id: existing.id },
+          data: { assignedEmail, assignedName },
+        })
+      : await prisma.requirementInstance.create({
+          data: {
+            opportunityId,
+            subcontractorId,
+            templateKey,
+            submittalGroup: template.submittalGroup,
+            assignedEmail,
+            assignedName,
+            dueAt,
+          },
+        })
 
     const { token, expiresAt } = await issueMagicToken({
       requirementInstanceId: requirement.id,

@@ -570,32 +570,36 @@ REQUIREMENT_TEMPLATES.push({
 })
 
 // ─── Payment Package (recurring monthly pay-application intake) ───────────
-// Fires once the sub has been selected for the bid. Structured as tasks
-// (not "upload documents") — invoice + certified payroll + testing +
-// tickets + photos + safety + change orders. Each submission cycle for
-// a sub creates a fresh instance of this template.
-REQUIREMENT_TEMPLATES.push({
-  key: 'payment_package',
-  submittalGroup: 'payment_package',
-  displayName: 'Monthly payment package',
-  purpose: 'Submit the documentation the prime needs to include your work in this month\'s pay application.',
-  suggestedRole: 'admin',
-  defaultDueDays: 14,
-  formSchema: [
-    // ─── 1. Cycle ──────────────────────────────────────────────────
-    {
-      title: 'Pay Period',
-      description: 'Tell us which work week or month this package covers.',
-      fields: [
-        { key: 'period_label', label: 'Pay period label', type: 'text', required: true,
-          placeholder: 'e.g. Week 4, or Month of August 2026' },
-        { key: 'period_start', label: 'Period start date', type: 'date', required: true },
-        { key: 'period_end', label: 'Period end date', type: 'date', required: true },
-      ],
-    },
+// One RequirementInstance per task per PaymentCycle. The sub sees the full
+// checklist through a single portal magic link; the prime approves/rejects
+// each task independently. Adding or removing a task here changes what
+// spawns for the NEXT cycle — existing open cycles retain the task set
+// they were opened with.
 
-    // ─── 2. Invoice ────────────────────────────────────────────────
-    {
+/** Ordered list of payment_package template keys. Cycle spawn code loops
+ *  this to create one RequirementInstance per task. */
+export const PAYMENT_PACKAGE_TEMPLATE_KEYS = [
+  'payment_invoice',
+  'payment_payroll',
+  'payment_daily_logs',
+  'payment_testing',
+  'payment_materials',
+  'payment_photos',
+  'payment_safety',
+  'payment_change_orders',
+  'payment_waste',
+  'payment_lien_waiver',
+] as const
+
+REQUIREMENT_TEMPLATES.push(
+  {
+    key: 'payment_invoice',
+    submittalGroup: 'payment_package',
+    displayName: 'Invoice',
+    purpose: 'Submit your invoice and percent-complete for this pay period.',
+    suggestedRole: 'admin',
+    defaultDueDays: 14,
+    formSchema: [{
       title: 'Invoice',
       fields: [
         { key: 'invoice_number', label: 'Invoice number', type: 'text', required: true },
@@ -606,35 +610,77 @@ REQUIREMENT_TEMPLATES.push({
         { key: 'invoice_upload', label: 'Invoice PDF', type: 'file',
           accept: 'application/pdf', required: true },
       ],
-    },
-
-    // ─── 3. Certified Payroll ──────────────────────────────────────
-    {
+    }],
+  },
+  {
+    key: 'payment_payroll',
+    submittalGroup: 'payment_package',
+    displayName: 'Certified Payroll',
+    purpose: 'Weekly WH-347 plus signed statement of compliance for Davis-Bacon / SCA.',
+    suggestedRole: 'payroll',
+    defaultDueDays: 14,
+    formSchema: [{
       title: 'Certified Payroll',
-      description: 'Davis-Bacon / SCA compliance — WH-347 + statement of compliance.',
+      description: 'One weekly payroll per work week in this cycle. You can upload multiple.',
       fields: [
         { key: 'payroll_week_ending', label: 'Week ending date', type: 'date', required: true },
         { key: 'wh347_upload', label: 'WH-347 Certified Payroll', type: 'file',
-          accept: 'application/pdf', required: true },
+          accept: 'application/pdf', required: true, multiple: true },
         { key: 'payroll_compliance_upload', label: 'Statement of Compliance', type: 'file',
-          accept: 'application/pdf', required: true },
+          accept: 'application/pdf', required: true, multiple: true },
       ],
-    },
-
-    // ─── 4. Testing ────────────────────────────────────────────────
-    {
-      title: 'Testing / QC',
-      description: 'Skip this section if your scope had no testing this period.',
+    }],
+  },
+  {
+    key: 'payment_daily_logs',
+    submittalGroup: 'payment_package',
+    displayName: 'Daily Reports',
+    purpose: 'One daily work log per work day in this pay period.',
+    suggestedRole: 'super',
+    defaultDueDays: 14,
+    formSchema: [{
+      title: 'Daily Reports',
       fields: [
+        { key: 'daily_logs_upload', label: 'Daily work logs', type: 'file',
+          accept: 'application/pdf', multiple: true, required: true,
+          helpText: 'Upload one per work day. Missing days will be flagged during review.' },
+        { key: 'work_days_covered', label: 'Number of work days covered', type: 'number',
+          helpText: 'Optional — helps us cross-check against your uploads.' },
+      ],
+    }],
+  },
+  {
+    key: 'payment_testing',
+    submittalGroup: 'payment_package',
+    displayName: 'Testing / QC',
+    purpose: 'Test and inspection reports for work performed in this period.',
+    suggestedRole: 'qc',
+    defaultDueDays: 14,
+    formSchema: [{
+      title: 'Testing / QC',
+      description: 'Skip if your scope had no testing this period.',
+      fields: [
+        { key: 'testing_none', label: 'No testing this period?', type: 'select',
+          options: [
+            { value: '', label: 'Select…' },
+            { value: 'no', label: 'Testing performed — reports attached' },
+            { value: 'yes', label: 'No testing this period' },
+          ] },
         { key: 'testing_company', label: 'Testing company', type: 'text' },
         { key: 'testing_date', label: 'Testing date', type: 'date' },
         { key: 'testing_reports_upload', label: 'Test / QC reports', type: 'file',
           accept: 'application/pdf', multiple: true },
       ],
-    },
-
-    // ─── 5. Materials ──────────────────────────────────────────────
-    {
+    }],
+  },
+  {
+    key: 'payment_materials',
+    submittalGroup: 'payment_package',
+    displayName: 'Materials',
+    purpose: 'Delivery tickets and material receipts for the period.',
+    suggestedRole: 'admin',
+    defaultDueDays: 14,
+    formSchema: [{
       title: 'Materials',
       fields: [
         { key: 'delivery_tickets_upload', label: 'Material delivery tickets', type: 'file',
@@ -642,22 +688,18 @@ REQUIREMENT_TEMPLATES.push({
         { key: 'material_receipts_upload', label: 'Receipts', type: 'file',
           accept: 'application/pdf,image/*', multiple: true },
       ],
-    },
-
-    // ─── 6. Daily Reports ──────────────────────────────────────────
-    {
-      title: 'Daily Reports',
-      fields: [
-        { key: 'daily_logs_upload', label: 'Daily work logs', type: 'file',
-          accept: 'application/pdf', multiple: true, required: true,
-          helpText: 'One per work day for the period. We\'ll flag any missing days.' },
-      ],
-    },
-
-    // ─── 7. Photos ─────────────────────────────────────────────────
-    {
+    }],
+  },
+  {
+    key: 'payment_photos',
+    submittalGroup: 'payment_package',
+    displayName: 'Progress Photos',
+    purpose: 'Before / during / after progress photos for the period.',
+    suggestedRole: 'super',
+    defaultDueDays: 14,
+    formSchema: [{
       title: 'Progress Photos',
-      description: 'Before / during / after — as many as you have.',
+      description: 'Upload as many as you have — before, during, and after.',
       fields: [
         { key: 'photos_before_upload', label: 'Before photos', type: 'file',
           accept: 'image/*', multiple: true },
@@ -666,10 +708,16 @@ REQUIREMENT_TEMPLATES.push({
         { key: 'photos_after_upload', label: 'After photos', type: 'file',
           accept: 'image/*', multiple: true },
       ],
-    },
-
-    // ─── 8. Safety ─────────────────────────────────────────────────
-    {
+    }],
+  },
+  {
+    key: 'payment_safety',
+    submittalGroup: 'payment_package',
+    displayName: 'Safety',
+    purpose: 'Confirm safety status and attach incident reports if any.',
+    suggestedRole: 'safety',
+    defaultDueDays: 14,
+    formSchema: [{
       title: 'Safety',
       fields: [
         { key: 'safety_incidents', label: 'Any safety incidents this period?', type: 'select',
@@ -682,10 +730,16 @@ REQUIREMENT_TEMPLATES.push({
         { key: 'safety_report_upload', label: 'Incident report (if any)', type: 'file',
           accept: 'application/pdf', multiple: true },
       ],
-    },
-
-    // ─── 9. Change Orders ──────────────────────────────────────────
-    {
+    }],
+  },
+  {
+    key: 'payment_change_orders',
+    submittalGroup: 'payment_package',
+    displayName: 'Change Orders',
+    purpose: 'Log any extra / out-of-scope work performed in this period.',
+    suggestedRole: 'estimator',
+    defaultDueDays: 14,
+    formSchema: [{
       title: 'Change Orders',
       fields: [
         { key: 'change_orders_any', label: 'Any extra work / change orders this period?', type: 'select',
@@ -699,29 +753,41 @@ REQUIREMENT_TEMPLATES.push({
         { key: 'change_orders_photos_upload', label: 'Supporting photos', type: 'file',
           accept: 'image/*', multiple: true },
       ],
-    },
-
-    // ─── 10. Waste ─────────────────────────────────────────────────
-    {
+    }],
+  },
+  {
+    key: 'payment_waste',
+    submittalGroup: 'payment_package',
+    displayName: 'Waste Disposal',
+    purpose: 'Waste hauler tickets for the period.',
+    suggestedRole: 'admin',
+    defaultDueDays: 14,
+    formSchema: [{
       title: 'Waste Disposal',
       description: 'Skip if not applicable to your scope.',
       fields: [
         { key: 'waste_tickets_upload', label: 'Waste disposal tickets', type: 'file',
           accept: 'application/pdf,image/*', multiple: true },
       ],
-    },
-
-    // ─── 11. Lien Waiver ───────────────────────────────────────────
-    {
+    }],
+  },
+  {
+    key: 'payment_lien_waiver',
+    submittalGroup: 'payment_package',
+    displayName: 'Lien Waiver',
+    purpose: 'Signed lien waiver for amounts previously paid.',
+    suggestedRole: 'principal',
+    defaultDueDays: 14,
+    formSchema: [{
       title: 'Lien Waiver',
       description: 'If required by the prime\'s subcontract.',
       fields: [
         { key: 'lien_waiver_upload', label: 'Signed lien waiver', type: 'file',
           accept: 'application/pdf' },
       ],
-    },
-  ],
-})
+    }],
+  },
+)
 
 export function getTemplate(key: string): RequirementTemplate | undefined {
   return REQUIREMENT_TEMPLATES.find(t => t.key === key)

@@ -162,6 +162,7 @@ model Opportunity {
   bidApprovalRequests BidApprovalRequest[]
   comparables         OpportunityComparable[]
   requirements        RequirementInstance[]
+  paymentCycles       PaymentCycle[]
 
   @@index([solicitationNumber])
   @@index([responseDeadline])
@@ -398,8 +399,9 @@ model Subcontractor {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  opportunity  Opportunity           @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  requirements RequirementInstance[]
+  opportunity   Opportunity           @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  requirements  RequirementInstance[]
+  paymentCycles PaymentCycle[]
 
   @@index([opportunityId])
   @@index([verificationStatus])
@@ -796,14 +798,22 @@ model RequirementInstance {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  // For recurring templates (currently just payment_package tasks) each
+  // RequirementInstance is scoped to a PaymentCycle. Non-cycle templates
+  // (quote, insurance, APP, etc.) leave this NULL and rely on
+  // NULLS NOT DISTINCT to preserve "one per (opp, sub, template)".
+  paymentCycleId  String?
+
   opportunity     Opportunity   @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   subcontractor   Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+  paymentCycle    PaymentCycle? @relation(fields: [paymentCycleId], references: [id], onDelete: Cascade)
   tokens          RequirementMagicToken[]
 
-  @@unique([opportunityId, subcontractorId, templateKey])
+  @@unique([opportunityId, subcontractorId, templateKey, paymentCycleId], name: "req_per_cycle", map: "req_per_cycle")
   @@index([opportunityId])
   @@index([subcontractorId])
   @@index([status])
+  @@index([paymentCycleId])
   @@map("requirement_instances")
 }
 
@@ -834,6 +844,71 @@ model RequirementMagicToken {
   @@index([token])
   @@index([requirementInstanceId])
   @@map("requirement_magic_tokens")
+}
+
+// ============ PAYMENT CYCLES (Sub Portal) ============
+// One PaymentCycle = one pay-application submission window for one sub on one
+// project (e.g. "August 2026"). When a sub is selected for the bid, the
+// system opens Cycle 1 and spawns one RequirementInstance per payment task
+// template (invoice, payroll, testing, ...). Sub uses a single portal magic
+// link to fill in all tasks. Cycles are recurring — each month gets a new one.
+
+model PaymentCycle {
+  id              String @id @default(cuid())
+  opportunityId   String
+  subcontractorId String
+
+  periodLabel String   // "Month of August 2026", "Week 4"
+  periodStart DateTime
+  periodEnd   DateTime
+
+  status      PaymentCycleStatus @default(OPEN)
+  openedAt    DateTime  @default(now())
+  submittedAt DateTime?
+  approvedAt  DateTime?
+  paidAt      DateTime?
+  archivedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  opportunity   Opportunity              @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  subcontractor Subcontractor            @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+  requirements  RequirementInstance[]
+  tokens        PaymentCyclePortalToken[]
+
+  @@unique([opportunityId, subcontractorId, periodStart])
+  @@index([opportunityId, subcontractorId])
+  @@index([status])
+  @@map("payment_cycles")
+}
+
+enum PaymentCycleStatus {
+  OPEN       // Sub is filling in
+  SUBMITTED  // Sub has submitted all required tasks
+  APPROVED   // PM has approved for inclusion in pay app
+  PAID       // Government paid; sub paid
+  ARCHIVED
+}
+
+// Single portal magic link per PaymentCycle. Same shape as
+// RequirementMagicToken but scoped to a whole cycle so the sub gets ONE URL
+// per month instead of one per task.
+
+model PaymentCyclePortalToken {
+  id             String    @id @default(cuid())
+  paymentCycleId String
+  token          String    @unique
+  expiresAt      DateTime
+  sentToEmail    String
+  createdAt      DateTime  @default(now())
+  lastUsedAt     DateTime?
+
+  cycle PaymentCycle @relation(fields: [paymentCycleId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([paymentCycleId])
+  @@map("payment_cycle_portal_tokens")
 }
 
 // ============ ATTACHMENT FORM DATA ============
