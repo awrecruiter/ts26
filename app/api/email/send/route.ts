@@ -154,17 +154,59 @@ export async function POST(req: Request) {
     // surface a diagnostic when the flag was set but couldn't be honored.
     let preworkProvisioned: Array<{ templateKey: string; url: string; templateDisplayName: string }> = []
     let preworkDiagnostic: string | null = null
+    let autoCreatedSubcontractorId: string | null = null
     const preworkRequested = Array.isArray(attachPreworkTemplates) && attachPreworkTemplates.length > 0
     let renderedBlock = ''
     if (preworkRequested) {
-      if (!opportunityId || !subcontractorId) {
+      // When the user typed a recipient manually (no sub card selected) we
+      // still need a Subcontractor row to scope the magic-link token to. Find
+      // one on this opportunity that matches the typed email, or create a
+      // lightweight row so it shows up in the Subs panel for follow-up. Falls
+      // back to the diagnostic if we can't derive an opportunity at all.
+      let effectiveSubcontractorId = subcontractorId
+      if (!subcontractorId && opportunityId && to) {
+        const typedEmail = to.trim().toLowerCase()
+        try {
+          const existing = await prisma.subcontractor.findFirst({
+            where: {
+              opportunityId,
+              OR: [
+                { email: { equals: typedEmail, mode: 'insensitive' } },
+                { contactEmail: { equals: typedEmail, mode: 'insensitive' } },
+              ],
+            },
+            select: { id: true },
+          })
+          if (existing) {
+            effectiveSubcontractorId = existing.id
+          } else {
+            const localPart = typedEmail.split('@')[0] || typedEmail
+            const derivedName = localPart.charAt(0).toUpperCase() + localPart.slice(1)
+            const created = await prisma.subcontractor.create({
+              data: {
+                opportunityId,
+                name: derivedName,
+                email: typedEmail,
+                verificationStatus: 'unverified',
+              },
+              select: { id: true },
+            })
+            effectiveSubcontractorId = created.id
+            autoCreatedSubcontractorId = created.id
+          }
+        } catch (e) {
+          console.error('[email/send] Auto-create/find subcontractor failed:', e)
+        }
+      }
+
+      if (!opportunityId || !effectiveSubcontractorId) {
         preworkDiagnostic =
-          'Prework links skipped — no subcontractor selected. Open the Email panel by clicking Request Quote on a sub card so the link can be scoped to them.'
+          'Prework links skipped — could not scope the link to a subcontractor. Try clicking Request Quote on a sub card, or make sure the recipient email is valid.'
       } else {
         try {
           const { provisioned, skipped } = await bulkProvisionRequirements({
             opportunityId,
-            subcontractorId,
+            subcontractorId: effectiveSubcontractorId,
             templateKeys: attachPreworkTemplates ?? [],
           })
           if (skipped.length > 0) {
@@ -270,12 +312,14 @@ export async function POST(req: Request) {
     }
 
     // Stamp the subcontractor as "quote requested" whenever a send goes out
-    // against a subcontractor id. Wrapped in try/catch so a failed stamp never
+    // against a subcontractor id — including one we auto-created above for a
+    // manually-typed recipient. Wrapped in try/catch so a failed stamp never
     // fails the user's email.
-    if (subcontractorId) {
+    const stampSubId = subcontractorId || autoCreatedSubcontractorId
+    if (stampSubId) {
       try {
         await prisma.subcontractor.update({
-          where: { id: subcontractorId },
+          where: { id: stampSubId },
           data: { sowSentAt: new Date() },
         })
       } catch (e) {
@@ -290,6 +334,7 @@ export async function POST(req: Request) {
       attachmentFailures: attachmentFailures.length ? attachmentFailures : undefined,
       preworkProvisioned: preworkProvisioned.length ? preworkProvisioned : undefined,
       preworkDiagnostic: preworkDiagnostic ?? undefined,
+      autoCreatedSubcontractorId: autoCreatedSubcontractorId ?? undefined,
     })
   } catch (error) {
     console.error('[email/send] Error:', error)
