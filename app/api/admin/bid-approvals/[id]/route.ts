@@ -124,7 +124,7 @@ export async function PATCH(
 
     const agentEmail = existing.submittedBy.email
     const opportunityTitle = existing.opportunity.title
-    const workspaceUrl = `${process.env.NEXTAUTH_URL}/opportunities/${existing.opportunityId}?panel=bid`
+    const workspaceUrl = `${(process.env.NEXTAUTH_URL ?? '').replace(/\s+/g, '').replace(/\/$/, '')}/opportunities/${existing.opportunityId}?panel=bid`
 
     if (action === 'APPROVE') {
       await sendEmail({

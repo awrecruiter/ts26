@@ -61,7 +61,7 @@ export async function POST(
       ? format(new Date(opportunity.responseDeadline), 'MMMM d, yyyy')
       : 'Not specified'
     const priceStr = `$${bid.recommendedPrice.toLocaleString()}`
-    const reviewUrl = `${process.env.NEXTAUTH_URL}/admin/bid-approvals/${request.id}`
+    const reviewUrl = `${(process.env.NEXTAUTH_URL ?? '').replace(/\s+/g, '').replace(/\/$/, '')}/admin/bid-approvals/${request.id}`
 
     const emailBody = `${agentName} has submitted a bid package for your review.
 

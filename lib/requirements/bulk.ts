@@ -25,13 +25,16 @@ export interface BulkProvisionResult {
   skipped: { templateKey: string; reason: string }[]
 }
 
-/** Build the fully-qualified base URL for magic-link portal URLs. */
+/** Build the fully-qualified base URL for magic-link portal URLs.
+ *  Trim ALL whitespace — Vercel env-var pastes often carry a trailing
+ *  newline, which was ending up inside the outbound magic-link URL and
+ *  splitting the anchor at the "/req/" boundary. */
 export function portalBaseUrl(): string {
-  return (
+  const raw =
     process.env.NEXTAUTH_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     'http://localhost:3000'
-  ).replace(/\/$/, '')
+  return raw.replace(/\s+/g, '').replace(/\/$/, '')
 }
 
 /**

@@ -18,11 +18,11 @@ interface InviteInput {
 }
 
 function baseUrl(): string {
-  return (
+  const raw =
     process.env.NEXTAUTH_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     'http://localhost:3000'
-  ).replace(/\/$/, '')
+  return raw.replace(/\s+/g, '').replace(/\/$/, '')
 }
 
 function fmtDate(d?: Date | null): string {
