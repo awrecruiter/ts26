@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import type { RequirementTemplate, FormField } from '@/lib/requirements/types'
 
 interface Attachment {
@@ -53,7 +53,6 @@ export default function RequirementForm({
   const [autoFilled, setAutoFilled] = useState<string[]>([])
   const [activeIdx, setActiveIdx] = useState(0)
   const [certified, setCertified] = useState(false)
-  const tabsRef = useRef<HTMLDivElement | null>(null)
 
   const sections = template.formSchema
   const activeSection = sections[activeIdx] ?? sections[0]
@@ -100,16 +99,6 @@ export default function RequirementForm({
     const pct = total === 0 ? 0 : Math.round((filled / total) * 100)
     return { total, filled, pct, requiredTotal, requiredFilled }
   }, [sections, values])
-
-  // Keep the active pill visible inside its horizontal strip. We deliberately
-  // do NOT scroll the page — Prev/Next live inside the sticky header, so the
-  // sub advances without having to hunt for the button each time.
-  useEffect(() => {
-    const container = tabsRef.current
-    if (!container) return
-    const active = container.querySelector<HTMLButtonElement>(`[data-idx="${activeIdx}"]`)
-    if (active) active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
-  }, [activeIdx])
 
   const uploadFile = useCallback(async (field: FormField, file: File) => {
     setUploadingField(field.key)
@@ -225,100 +214,57 @@ export default function RequirementForm({
   const goNext = () => setActiveIdx(i => Math.min(i + 1, sections.length - 1))
 
   return (
-    <div>
-      {/* Sticky header — pill switcher, progress bar, and Prev/Next all
-          live here so the sub never has to scroll up to navigate or to
-          check completion. */}
-      <div className="sticky top-0 z-30 -mx-4 sm:-mx-8 px-4 sm:px-8 pt-2 pb-3 bg-stone-50/95 backdrop-blur border-b border-stone-200">
-        <div className="bg-white border border-stone-200 rounded-lg p-3 shadow-sm">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={goPrev}
-              disabled={activeIdx === 0}
-              className="shrink-0 text-sm text-stone-600 hover:text-stone-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors px-2 min-h-[36px]"
-              title="Previous section"
-            >
-              ←
-            </button>
-
-            <div
-              ref={tabsRef}
-              className="flex-1 flex gap-2 overflow-x-auto scroll-smooth snap-x snap-mandatory"
-              style={{ scrollbarWidth: 'thin' }}
-            >
-              {sections.map((sec, i) => {
-                const state = perSection[i]
-                const isActive = i === activeIdx
-                return (
-                  <button
-                    key={sec.title}
-                    type="button"
-                    data-idx={i}
-                    onClick={() => setActiveIdx(i)}
-                    className={`snap-start shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+    <div className="grid gap-6 md:grid-cols-[200px_1fr]">
+      {/* Left sidebar — vertical section list + progress. Sticks on desktop
+          so the sub can jump between sections without scrolling. On mobile
+          it stacks above the main body. */}
+      <aside className="md:sticky md:top-4 md:self-start">
+        <div className="bg-white border border-stone-200 rounded-lg p-2 shadow-sm">
+          <nav className="flex flex-col gap-0.5">
+            {sections.map((sec, i) => {
+              const state = perSection[i]
+              const isActive = i === activeIdx
+              return (
+                <button
+                  key={sec.title}
+                  type="button"
+                  onClick={() => setActiveIdx(i)}
+                  className={`flex items-center gap-2 px-2.5 py-2 rounded-md text-left text-xs font-medium transition-colors ${
+                    isActive
+                      ? 'bg-stone-800 text-white'
+                      : 'bg-white text-stone-700 hover:bg-stone-50'
+                  }`}
+                  title={sec.title}
+                >
+                  <span
+                    className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-semibold flex-shrink-0 ${
                       isActive
-                        ? 'bg-stone-800 text-white border-stone-800'
-                        : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-50'
+                        ? state.complete
+                          ? 'bg-emerald-400 text-white'
+                          : 'bg-white/20 text-white'
+                        : state.complete
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-stone-100 text-stone-500'
                     }`}
-                    title={sec.title}
+                    aria-hidden="true"
                   >
-                    <span
-                      className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-semibold ${
-                        isActive
-                          ? state.complete
-                            ? 'bg-emerald-400 text-white'
-                            : 'bg-white/20 text-white'
-                          : state.complete
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-stone-100 text-stone-500'
-                      }`}
-                      aria-hidden="true"
-                    >
-                      {state.complete ? (
-                        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <span>{i + 1}</span>
-                      )}
-                    </span>
-                    <span className="whitespace-nowrap">{sec.title}</span>
-                  </button>
-                )
-              })}
-            </div>
-
-            {isLast ? (
-              <button
-                type="button"
-                onClick={() => void handleSubmit()}
-                disabled={submitting || !certified}
-                className="shrink-0 bg-stone-800 hover:bg-stone-700 text-white text-sm font-medium px-4 py-2 rounded-md disabled:opacity-50 min-h-[36px]"
-                title={!certified ? 'Certify your answers below to enable Submit' : undefined}
-              >
-                {submitting ? 'Submitting…' : 'Submit'}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={goNext}
-                className="shrink-0 bg-stone-800 hover:bg-stone-700 text-white text-sm font-medium px-4 py-2 rounded-md min-h-[36px]"
-              >
-                Next →
-              </button>
-            )}
-          </div>
-
-          {/* Progress bar */}
-          <div className="mt-3">
-            <div className="flex items-center justify-between text-[11px] text-stone-500 mb-1">
-              <span>
-                Section {activeIdx + 1} of {sections.length} · {activeSection.title}
-              </span>
-              <span>
-                {totals.pct}% complete · {totals.filled} of {totals.total} fields
-              </span>
+                    {state.complete ? (
+                      <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <span>{i + 1}</span>
+                    )}
+                  </span>
+                  <span className="flex-1 leading-snug">{sec.title}</span>
+                </button>
+              )
+            })}
+          </nav>
+          <div className="mt-3 pt-3 border-t border-stone-100 px-1">
+            <div className="flex items-center justify-between text-[11px] text-stone-500 mb-1.5">
+              <span>{totals.pct}%</span>
+              <span>{totals.filled}/{totals.total}</span>
             </div>
             <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
               <div
@@ -328,15 +274,20 @@ export default function RequirementForm({
             </div>
           </div>
         </div>
-      </div>
+      </aside>
 
-      {/* Active section body */}
-      <div className="mt-5">
+      {/* Main body */}
+      <div>
         <section className="bg-white border border-stone-200 rounded-lg p-5 sm:p-6">
-          <h2 className="text-base font-semibold text-stone-900 mb-1">{activeSection.title}</h2>
-          {activeSection.description && (
-            <p className="text-xs text-stone-500 mb-4">{activeSection.description}</p>
-          )}
+          <div className="mb-4">
+            <div className="text-[11px] uppercase tracking-wide text-stone-400 mb-1">
+              Section {activeIdx + 1} of {sections.length}
+            </div>
+            <h2 className="text-base font-semibold text-stone-900">{activeSection.title}</h2>
+            {activeSection.description && (
+              <p className="text-xs text-stone-500 mt-1">{activeSection.description}</p>
+            )}
+          </div>
           <div className="space-y-4">
             {activeSection.fields.map(field => (
               <FieldRenderer
@@ -395,6 +346,38 @@ export default function RequirementForm({
             </label>
           </div>
         )}
+
+        {/* Bottom nav — Prev/Next/Submit moved here now that the pill
+            switcher lives in the left sidebar. */}
+        <div className="mt-5 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={goPrev}
+            disabled={activeIdx === 0}
+            className="text-sm text-stone-600 hover:text-stone-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors px-3 py-2"
+          >
+            ← Previous
+          </button>
+          {isLast ? (
+            <button
+              type="button"
+              onClick={() => void handleSubmit()}
+              disabled={submitting || !certified}
+              className="bg-stone-800 hover:bg-stone-700 text-white text-sm font-medium px-5 py-2 rounded-md disabled:opacity-50"
+              title={!certified ? 'Certify your answers above to enable Submit' : undefined}
+            >
+              {submitting ? 'Submitting…' : 'Submit'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={goNext}
+              className="bg-stone-800 hover:bg-stone-700 text-white text-sm font-medium px-5 py-2 rounded-md"
+            >
+              Next →
+            </button>
+          )}
+        </div>
 
         {attachments.length > 0 && (
           <p className="mt-3 text-xs text-stone-500 text-right">
