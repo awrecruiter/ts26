@@ -58,6 +58,17 @@ function encodeHeader(value: string): string {
 }
 
 /**
+ * Base64-encode a string with CRLF-wrapped 76-char lines, per RFC 2045.
+ * We use this for text/plain and text/html MIME parts so long lines (like
+ * an HTML body that collapses newlines into <br>) never trigger downstream
+ * SMTP soft-wrapping, which was splitting long portal URLs mid-anchor.
+ */
+function base64MimeBody(input: string): string {
+  const raw = Buffer.from(input, 'utf-8').toString('base64')
+  return raw.match(/.{1,76}/g)?.join('\r\n') ?? raw
+}
+
+/**
  * Build an RFC 2822 MIME message and base64url-encode it for the Gmail API.
  */
 function buildRawMessage(opts: GmailSendOptions, fromAddress: string): string {
@@ -81,18 +92,28 @@ function buildRawMessage(opts: GmailSendOptions, fromAddress: string): string {
     // threadId is passed separately in the API call; no header needed
   }
 
+  const textBody = base64MimeBody(opts.body)
+  const htmlBody = opts.html ? base64MimeBody(opts.html) : ''
+
+  const textHeaders =
+    'Content-Type: text/plain; charset=UTF-8\r\n' +
+    'Content-Transfer-Encoding: base64'
+  const htmlHeaders =
+    'Content-Type: text/html; charset=UTF-8\r\n' +
+    'Content-Transfer-Encoding: base64'
+
   let body: string
 
   if (!isMultipart) {
-    headers.push('Content-Type: text/plain; charset=UTF-8')
-    body = opts.body
+    headers.push(textHeaders)
+    body = textBody
   } else if (hasAttachments) {
     headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`)
     const innerBoundary = `${boundary}_alt`
 
-    const textPart = `--${innerBoundary}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${opts.body}`
+    const textPart = `--${innerBoundary}\r\n${textHeaders}\r\n\r\n${textBody}`
     const htmlPart = opts.html
-      ? `\r\n--${innerBoundary}\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n${opts.html}`
+      ? `\r\n--${innerBoundary}\r\n${htmlHeaders}\r\n\r\n${htmlBody}`
       : ''
     const altPart = `--${boundary}\r\nContent-Type: multipart/alternative; boundary="${innerBoundary}"\r\n\r\n${textPart}${htmlPart}\r\n--${innerBoundary}--`
 
@@ -106,7 +127,10 @@ function buildRawMessage(opts: GmailSendOptions, fromAddress: string): string {
     body = `${altPart}${attachParts}\r\n--${boundary}--`
   } else {
     headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`)
-    body = `--${boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${opts.body}\r\n--${boundary}\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n${opts.html}\r\n--${boundary}--`
+    body =
+      `--${boundary}\r\n${textHeaders}\r\n\r\n${textBody}` +
+      `\r\n--${boundary}\r\n${htmlHeaders}\r\n\r\n${htmlBody}` +
+      `\r\n--${boundary}--`
   }
 
   const raw = `${headers.join('\r\n')}\r\n\r\n${body}`
