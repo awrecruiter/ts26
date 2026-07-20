@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { sendEmail, type EmailAttachment } from '@/lib/email'
 import { extractAttachmentsFromRawData } from '@/lib/samgov'
-import { bulkProvisionRequirements, renderPreworkLinksBlock } from '@/lib/requirements/bulk'
+import { bulkProvisionRequirements, renderPreworkLinksBlock, MAGIC_LINK_PLACEHOLDER } from '@/lib/requirements/bulk'
 
 /**
  * Convert the plain-text email body into an HTML alternative so mail clients
@@ -155,6 +155,7 @@ export async function POST(req: Request) {
     let preworkProvisioned: Array<{ templateKey: string; url: string; templateDisplayName: string }> = []
     let preworkDiagnostic: string | null = null
     const preworkRequested = Array.isArray(attachPreworkTemplates) && attachPreworkTemplates.length > 0
+    let renderedBlock = ''
     if (preworkRequested) {
       if (!opportunityId || !subcontractorId) {
         preworkDiagnostic =
@@ -169,10 +170,7 @@ export async function POST(req: Request) {
           if (skipped.length > 0) {
             console.warn('[email/send] Some prework templates skipped:', skipped)
           }
-          const block = renderPreworkLinksBlock(provisioned)
-          if (block) {
-            bodyText = `${bodyText.trimEnd()}\n\n${block}\n`
-          }
+          renderedBlock = renderPreworkLinksBlock(provisioned)
           preworkProvisioned = provisioned.map(p => ({
             templateKey: p.templateKey,
             url: p.url,
@@ -187,6 +185,17 @@ export async function POST(req: Request) {
           preworkDiagnostic = `Prework provisioning failed — email sent without portal links. ${msg}`
         }
       }
+    }
+
+    // If the client dropped the visible placeholder into the body (Option 1 —
+    // user sees where the link will land before sending), swap it for the real
+    // block. Strip the placeholder either way so the sub never sees the marker
+    // text. Fall back to appending the block for custom bodies that omit the
+    // placeholder, preserving prior behavior.
+    if (bodyText.includes(MAGIC_LINK_PLACEHOLDER)) {
+      bodyText = bodyText.replace(MAGIC_LINK_PLACEHOLDER, renderedBlock)
+    } else if (renderedBlock) {
+      bodyText = `${bodyText.trimEnd()}\n\n${renderedBlock}\n`
     }
 
     if (!to || !subject || !bodyText) {

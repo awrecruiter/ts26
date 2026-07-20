@@ -132,6 +132,18 @@ export async function bulkProvisionRequirements(
 }
 
 /**
+ * Visible placeholder the outreach template drops into the body so the user
+ * can see, before sending, where the secure portal link will land. The server
+ * swaps this exact block for the real `renderPreworkLinksBlock(...)` output at
+ * send-time (or strips it if provisioning fails), so the sub never sees the
+ * placeholder text itself.
+ */
+export const MAGIC_LINK_PLACEHOLDER =
+  '-----------------------------------------------\n' +
+  'QUOTE SUBMISSION PORTAL — secure link inserted on send\n' +
+  '-----------------------------------------------'
+
+/**
  * Render the "Complete your info" block appended to outbound sub emails.
  * URLs are placed on their own dedicated lines with no leading whitespace
  * or Unicode bullets — this keeps Gmail's autolinker AND our own HTML

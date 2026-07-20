@@ -6,6 +6,7 @@ import { previousBusinessDay } from '@/lib/business-days'
 import type { RichAttachment } from '@/lib/types/attachment'
 import type { OpportunityBrief, AttachmentRelevanceMap } from '@/lib/openai'
 import AttachmentPreviewModal from '@/components/shared/AttachmentPreviewModal'
+import { MAGIC_LINK_PLACEHOLDER } from '@/lib/requirements/bulk'
 
 interface EmailDraftPanelProps {
   recipientName?: string
@@ -73,11 +74,9 @@ WHAT I NEED FROM YOU BY {{quote_due}}
 • Any exceptions, assumptions, or clarifying questions
 • Your point of contact (name, title, email, direct phone)
 
-A few quick screening questions:
-{{screening_questions}}
-
 The full SOW and supporting docs are attached for reference.
 
+{{magic_link}}
 Thanks,
 [Your Name]
 https://www.1stdirectionco.com/`,
@@ -254,7 +253,10 @@ export default function EmailDraftPanel({
       '{{what_we_need}}': briefCtx.what_we_need,
       '{{deliverables_block}}': briefCtx.deliverables_block,
       '{{qualifications_block}}': briefCtx.qualifications_block,
-      '{{screening_questions}}': briefCtx.screening_questions,
+      '{{magic_link}}':
+        includePrework && preworkTemplates.length > 0
+          ? `${MAGIC_LINK_PLACEHOLDER}\n\n`
+          : '',
     }
 
     let newSubject = template.subject
@@ -267,7 +269,7 @@ export default function EmailDraftPanel({
 
     setSubject(newSubject)
     setBody(newBody)
-  }, [selectedTemplate, recipientName, opportunityTitle, solicitationNumber, bidAmount, deadline, agency, responseNeeded, brief, callChecklist, quoteDeadline])
+  }, [selectedTemplate, recipientName, opportunityTitle, solicitationNumber, bidAmount, deadline, agency, responseNeeded, brief, callChecklist, quoteDeadline, includePrework, preworkTemplates])
 
   const handleSend = async () => {
     if (!to || !subject || !body) return
