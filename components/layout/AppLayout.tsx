@@ -14,16 +14,18 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const pathname = usePathname()
   const { status } = useSession()
 
-  // Don't show navigation on login, register, root page, or on the
-  // subcontractor-facing magic-link portal (/req/*) — even if the prime is
-  // signed in while previewing, subs must never see the internal app chrome.
+  // Don't show navigation on login, register, root page, or on any
+  // external-facing magic-link portal (/req/* for sub tasks, /super/* for
+  // the daily-reports portal) — even if the prime is signed in while
+  // previewing, outside users must never see the internal app chrome.
   const hideNavigation =
     pathname === '/' ||
     pathname === '/login' ||
     pathname === '/register' ||
     pathname === '/auth/signin' ||
     pathname === '/auth/error' ||
-    pathname.startsWith('/req/')
+    pathname.startsWith('/req/') ||
+    pathname.startsWith('/super/')
 
   // Don't show navigation if not authenticated
   const showNavigation = status === 'authenticated' && !hideNavigation
