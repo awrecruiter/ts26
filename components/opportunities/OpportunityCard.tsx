@@ -51,6 +51,7 @@ interface OpportunityCardProps {
     agency?: string | null
     naicsCode?: string | null
     pscCode?: string | null
+    state?: string | null
     responseDeadline?: Date | null
     postedDate?: Date | null
     status: string
@@ -145,6 +146,37 @@ function WIPStatusTile({ progress }: { progress?: OpportunityCardProgress | null
       )}
     </div>
   )
+}
+
+// SAM.gov ships POP as a nested { city, state, country } object on rawData.
+// US opps get "City, ST"; international opps get "City, Country" so a bidder
+// spots foreign-based work at a glance without opening the record.
+function formatPlaceOfPerformance(rawData: unknown, fallbackState?: string | null): string | null {
+  const pop = (rawData as { placeOfPerformance?: {
+    city?: { name?: string | null } | null
+    cityName?: string | null
+    state?: { code?: string | null; name?: string | null } | null
+    country?: { code?: string | null; name?: string | null } | null
+  } | null } | null)?.placeOfPerformance ?? null
+
+  if (!pop) return fallbackState || null
+
+  const city = pop.city?.name || pop.cityName || null
+  const stateStr = pop.state?.code || pop.state?.name || null
+  const countryName = pop.country?.name || null
+  const countryCode = pop.country?.code || null
+  const isUS = !countryCode && !countryName
+    ? true
+    : /^(us|usa)$/i.test(countryCode ?? '') || /^united states/i.test(countryName ?? '')
+
+  const parts = [
+    city,
+    stateStr,
+    isUS ? null : (countryName || countryCode),
+  ].filter(Boolean)
+
+  if (parts.length > 0) return parts.join(', ')
+  return fallbackState || null
 }
 
 function formatCompact(n: number): string {
@@ -292,6 +324,11 @@ export default function OpportunityCard({
   const daysUntilDeadline = deadline
     ? Math.ceil((deadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     : null
+
+  // Place of performance for the meta row. Prefer SAM.gov rawData because it
+  // has structured city/state/country; fall back to the denormalized `state`
+  // column so older records without rawData still show something.
+  const popLabel = formatPlaceOfPerformance(opportunity.rawData, opportunity.state)
 
   const savedEstimate =
     assessment?.estimatedValue && assessment.estimatedValue > 0
@@ -450,6 +487,18 @@ export default function OpportunityCard({
                   <span className="ml-2 text-stone-700">{opportunity.pscCode}</span>
                 </>
               )}
+            </div>
+          )}
+          {popLabel && (
+            <div className="sm:col-span-2 flex items-center gap-1.5">
+              <svg className="h-3.5 w-3.5 text-stone-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                      d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0L6.343 16.657A8 8 0 1117.657 16.657z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                      d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span className="text-stone-400">Place of performance:</span>
+              <span className="text-stone-700">{popLabel}</span>
             </div>
           )}
         </div>
