@@ -171,6 +171,13 @@ export default function EmailDraftPanel({
   const [selectedTemplate, setSelectedTemplate] = useState(templateType)
   const [previewAttachment, setPreviewAttachment] = useState<RichAttachment | null>(null)
 
+  // Guards the template-materialize effect below from clobbering user edits
+  // whenever the parent re-renders (deadline, brief, preworkTemplates default,
+  // etc. can be new references on every render). We only re-materialize when
+  // the user actually switches template — never mid-typing.
+  const hasUserEditedRef = useRef(false)
+  const lastMaterializedTemplateRef = useRef<string>('')
+
   // Prework portal links toggle. Default: on for quote_request templates,
   // off otherwise (follow-ups + custom). Prop wins over that heuristic.
   const initialIncludePrework =
@@ -239,6 +246,17 @@ export default function EmailDraftPanel({
     const template = TEMPLATES[selectedTemplate]
     if (!template) return
 
+    // If the user has typed in subject/body and the template hasn't changed,
+    // do NOT overwrite their edits. This effect's deps include several props
+    // that can be new references on each parent render (e.g. preworkTemplates,
+    // deadline) — without this guard they'd wipe the field on every keystroke.
+    if (
+      hasUserEditedRef.current &&
+      lastMaterializedTemplateRef.current === selectedTemplate
+    ) {
+      return
+    }
+
     const briefCtx = buildBriefContext(brief, callChecklist)
 
     const replacements: Record<string, string> = {
@@ -269,6 +287,8 @@ export default function EmailDraftPanel({
 
     setSubject(newSubject)
     setBody(newBody)
+    hasUserEditedRef.current = false
+    lastMaterializedTemplateRef.current = selectedTemplate
   }, [selectedTemplate, recipientName, opportunityTitle, solicitationNumber, bidAmount, deadline, agency, responseNeeded, brief, callChecklist, quoteDeadline, includePrework, preworkTemplates])
 
   const handleSend = async () => {
@@ -379,7 +399,7 @@ export default function EmailDraftPanel({
               <input
                 type="text"
                 value={subject}
-                onChange={(e) => setSubject(e.target.value)}
+                onChange={(e) => { hasUserEditedRef.current = true; setSubject(e.target.value) }}
                 placeholder="Email subject"
                 className="flex-1 text-sm text-stone-800 bg-transparent border-0 outline-none placeholder-stone-300"
               />
@@ -387,7 +407,7 @@ export default function EmailDraftPanel({
             <div className="p-4">
               <textarea
                 value={body}
-                onChange={(e) => setBody(e.target.value)}
+                onChange={(e) => { hasUserEditedRef.current = true; setBody(e.target.value) }}
                 rows={12}
                 placeholder="Email content..."
                 className="w-full text-sm text-stone-800 bg-transparent border-0 outline-none resize-none placeholder-stone-300 leading-relaxed"
