@@ -49,6 +49,10 @@ interface EmailDraftPanelProps {
   /** Prework requirement template keys to provision + link when the checkbox
    *  is on. Defaults to the sub-list entry + SOV/pricing breakdown pair. */
   preworkTemplates?: string[]
+  /** When set (with opportunityId), user edits to subject/body auto-save
+   *  server-side and reload on refresh. Draft is deleted after a successful
+   *  send. Without a subcontractor selected, drafts aren't persisted. */
+  subcontractorId?: string
 }
 
 const TEMPLATES: Record<string, { subject: string; body: string }> = {
@@ -158,6 +162,7 @@ export default function EmailDraftPanel({
   quoteDeadline,
   defaultIncludePrework,
   preworkTemplates = ['sub_quote'],
+  subcontractorId,
 }: EmailDraftPanelProps) {
   const [to, setTo] = useState(recipientEmail)
   const [subject, setSubject] = useState('')
@@ -177,6 +182,14 @@ export default function EmailDraftPanel({
   // the user actually switches template — never mid-typing.
   const hasUserEditedRef = useRef(false)
   const lastMaterializedTemplateRef = useRef<string>('')
+
+  // Draft persistence — only when we have a full (opp, sub, template) scope.
+  // draftFetchResolved gates the materialize effect below so a saved draft
+  // doesn't flash the hardcoded template on first paint.
+  const canPersistDraft = !!(opportunityId && subcontractorId)
+  const [draftFetchResolved, setDraftFetchResolved] = useState<boolean>(!canPersistDraft)
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null)
+  const saveDraftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Prework portal links toggle. Default: on for quote_request templates,
   // off otherwise (follow-ups + custom). Prop wins over that heuristic.
@@ -246,6 +259,10 @@ export default function EmailDraftPanel({
     const template = TEMPLATES[selectedTemplate]
     if (!template) return
 
+    // Wait until the draft fetch settles so a saved draft doesn't get
+    // stomped by first-paint materialization.
+    if (!draftFetchResolved) return
+
     // If the user has typed in subject/body and the template hasn't changed,
     // do NOT overwrite their edits. This effect's deps include several props
     // that can be new references on each parent render (e.g. preworkTemplates,
@@ -289,7 +306,65 @@ export default function EmailDraftPanel({
     setBody(newBody)
     hasUserEditedRef.current = false
     lastMaterializedTemplateRef.current = selectedTemplate
-  }, [selectedTemplate, recipientName, opportunityTitle, solicitationNumber, bidAmount, deadline, agency, responseNeeded, brief, callChecklist, quoteDeadline, includePrework, preworkTemplates])
+  }, [selectedTemplate, recipientName, opportunityTitle, solicitationNumber, bidAmount, deadline, agency, responseNeeded, brief, callChecklist, quoteDeadline, includePrework, preworkTemplates, draftFetchResolved])
+
+  // Load persisted draft (if any) when scope changes. Applying a saved draft
+  // sets hasUserEditedRef=true so the materialize effect above won't clobber
+  // it on the very next render.
+  useEffect(() => {
+    if (!canPersistDraft || !opportunityId || !subcontractorId) {
+      setDraftFetchResolved(true)
+      return
+    }
+    setDraftFetchResolved(false)
+    let cancelled = false
+    const url = `/api/email/drafts?opportunityId=${encodeURIComponent(opportunityId)}&subcontractorId=${encodeURIComponent(subcontractorId)}&templateType=${encodeURIComponent(selectedTemplate)}`
+    fetch(url)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (cancelled) return
+        const draft = data?.draft as { subject?: string; body?: string; updatedAt?: string } | null | undefined
+        if (draft && (draft.subject || draft.body)) {
+          setSubject(draft.subject ?? '')
+          setBody(draft.body ?? '')
+          hasUserEditedRef.current = true
+          lastMaterializedTemplateRef.current = selectedTemplate
+          if (draft.updatedAt) setDraftSavedAt(new Date(draft.updatedAt))
+        }
+        setDraftFetchResolved(true)
+      })
+      .catch(() => { if (!cancelled) setDraftFetchResolved(true) })
+    return () => { cancelled = true }
+  }, [canPersistDraft, opportunityId, subcontractorId, selectedTemplate])
+
+  // Debounced auto-save. Only saves user-authored edits — the materialize
+  // effect resets hasUserEditedRef to false immediately after writing the
+  // template, so materialized content never round-trips to the server.
+  useEffect(() => {
+    if (!canPersistDraft || !opportunityId || !subcontractorId) return
+    if (!draftFetchResolved) return
+    if (!hasUserEditedRef.current) return
+    if (saveDraftTimerRef.current) clearTimeout(saveDraftTimerRef.current)
+    saveDraftTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/email/drafts', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            opportunityId,
+            subcontractorId,
+            templateType: selectedTemplate,
+            subject,
+            body,
+          }),
+        })
+        if (res.ok) setDraftSavedAt(new Date())
+      } catch { /* transient — next keystroke will retry */ }
+    }, 800)
+    return () => {
+      if (saveDraftTimerRef.current) clearTimeout(saveDraftTimerRef.current)
+    }
+  }, [subject, body, canPersistDraft, opportunityId, subcontractorId, selectedTemplate, draftFetchResolved])
 
   const handleSend = async () => {
     if (!to || !subject || !body) return
@@ -331,6 +406,15 @@ export default function EmailDraftPanel({
         }
         if (result.preworkDiagnostic) {
           setSendPreworkDiagnostic(result.preworkDiagnostic)
+        }
+        // Wipe the saved draft — the email is out, no reason to keep it
+        // around. Reset the edit ref so opening a fresh draft for this scope
+        // starts from the current template.
+        if (canPersistDraft && opportunityId && subcontractorId) {
+          const url = `/api/email/drafts?opportunityId=${encodeURIComponent(opportunityId)}&subcontractorId=${encodeURIComponent(subcontractorId)}&templateType=${encodeURIComponent(selectedTemplate)}`
+          void fetch(url, { method: 'DELETE' }).catch(() => {})
+          hasUserEditedRef.current = false
+          setDraftSavedAt(null)
         }
       } else {
         setSendError(result?.error || 'Email send failed.')
@@ -598,6 +682,11 @@ export default function EmailDraftPanel({
           )}
 
           {/* Actions */}
+          {canPersistDraft && draftSavedAt && (
+            <p className="text-[11px] text-stone-400 -mb-2">
+              Draft saved · {draftSavedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+            </p>
+          )}
           <div className="flex gap-3">
             <button
               onClick={handleSend}

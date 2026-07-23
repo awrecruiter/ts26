@@ -651,6 +651,7 @@ export default function OpportunityWorkspacePage() {
           templateType={emailTemplateType}
           availableAttachments={solicitationAttachments}
           opportunityId={opportunity.id}
+          subcontractorId={selectedSubcontractor?.id}
           selectedAttachmentIds={selectedAttachments}
           onSelectionChange={handleSetAttachmentSelection}
           brief={opportunity?.aiArtifacts?.brief ?? opportunity?.opportunityBrief ?? null}

@@ -57,6 +57,9 @@ model User {
   // Dismissal Relations
   dismissedOpportunities Opportunity[] @relation("DismissedBy")
 
+  // Email draft persistence (per user × opp × sub × template).
+  emailDrafts EmailDraft[]
+
   @@map("users")
 }
 
@@ -165,6 +168,7 @@ model Opportunity {
   paymentCycles       PaymentCycle[]
   dailyReports        DailyReport[]
   superPortalTokens   SuperPortalToken[]
+  emailDrafts         EmailDraft[]
 
   @@index([solicitationNumber])
   @@index([responseDeadline])
@@ -406,6 +410,7 @@ model Subcontractor {
   paymentCycles     PaymentCycle[]
   dailyReports      DailyReport[]
   superPortalTokens SuperPortalToken[]
+  emailDrafts       EmailDraft[]
 
   @@index([opportunityId])
   @@index([verificationStatus])
@@ -1022,4 +1027,33 @@ model AttachmentFormData {
   @@unique([opportunityId, attachmentId])
   @@index([opportunityId])
   @@map("attachment_form_data")
+}
+
+// ============ EMAIL DRAFTS ============
+// Auto-saved outbound-email drafts, scoped per user × opportunity ×
+// subcontractor × templateType. Wiped when the email is successfully sent
+// (or when the sub is deleted). Purpose: user edits to the quote-request
+// email body survive a full refresh instead of resetting to the
+// hardcoded template.
+
+model EmailDraft {
+  id              String   @id @default(cuid())
+  userId          String
+  opportunityId   String
+  subcontractorId String
+  templateType    String // 'quote_request' | 'follow_up' | 'custom'
+
+  subject String @db.Text
+  body    String @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  opportunity   Opportunity   @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  subcontractor Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, opportunityId, subcontractorId, templateType], name: "one_draft_per_scope")
+  @@index([userId, opportunityId])
+  @@map("email_drafts")
 }
