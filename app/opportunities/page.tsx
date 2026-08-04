@@ -137,7 +137,7 @@ function OpportunitiesContent() {
         const skipped = Math.max(totalMatches - created, 0)
         const noun = created === 1 ? 'opportunity' : 'opportunities'
         setMessage(
-          `Fetched ${created} new ${noun} (${totalMatches} SAM.gov matches, ${skipped} already in library or closing soon)`
+          `Fetched ${created} new ${noun} (${totalMatches} SAM.gov matches, ${skipped} already in library)`
         )
         fetchOpportunities()
       } else if (eligible > 0) {
@@ -147,7 +147,7 @@ function OpportunitiesContent() {
         fetchOpportunities()
       } else if (found > 0) {
         setMessage(
-          `Found ${totalMatches} on SAM.gov, but all were closing within 14 days`
+          `Found ${totalMatches} on SAM.gov, but all were expired`
         )
       } else {
         setMessage('No matches on SAM.gov')

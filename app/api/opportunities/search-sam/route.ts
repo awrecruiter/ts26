@@ -2,13 +2,14 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
-export const maxDuration = 60
+export const maxDuration = 300
 
 const SAM_API_BASE = 'https://api.sam.gov/opportunities/v2/search'
 const PAGE_SIZE = 50
-const MAX_CANDIDATES = 500
-const MAX_PAGES_PER_QUERY = 10
-const OVERALL_BUDGET_MS = 45_000
+const MAX_CANDIDATES = 5000
+const MAX_PAGES_PER_QUERY = 100
+const OVERALL_BUDGET_MS = 250_000
+const DB_WRITE_CONCURRENCY = 25
 
 // Solicitation numbers are typically alphanumeric with dashes (e.g. "W912DY-25-R-0001")
 const SOL_NUMBER_PATTERN = /^[A-Z0-9][A-Z0-9-]{4,}$/i
@@ -24,6 +25,11 @@ export async function POST(req: Request) {
     const query: string = (body.query || '').trim()
     const naicsRaw: string = (body.naics || '').toString().trim()
     const naicsCodes = naicsRaw.split(',').map((c) => c.trim()).filter(Boolean)
+    // Deadline cutoff — number of days from now a solicitation must remain open.
+    // Default 0 = show everything SAM.gov has, including anything closing today.
+    // Callers can pass 14 (or whatever) to reinstate the old "at least N days out" filter.
+    const rawMinDays = Number(body.minDaysToDeadline)
+    const minDaysToDeadline = Number.isFinite(rawMinDays) && rawMinDays >= 0 ? rawMinDays : 0
 
     if (!query && naicsCodes.length === 0) {
       return NextResponse.json({ error: 'query or naics required' }, { status: 400 })
@@ -166,14 +172,19 @@ export async function POST(req: Request) {
       })
     }
 
-    // Apply same 14-day default cutoff as local search — exclude expired and
-    // anything closing within 14 days.
+    // Deadline cutoff (opt-in via minDaysToDeadline). Always exclude expired
+    // solicitations. When minDaysToDeadline > 0, also exclude anything closing
+    // sooner than that. Records with no responseDeadLine at all are kept —
+    // some SAM notice types (sources sought, awards) legitimately omit it.
+    const now = new Date()
     const minDeadline = new Date()
-    minDeadline.setDate(minDeadline.getDate() + 14)
+    minDeadline.setDate(now.getDate() + minDaysToDeadline)
     const eligible = foundOpportunities.filter((opp: any) => {
-      if (!opp.responseDeadLine) return false
+      if (!opp.responseDeadLine) return true
       const d = new Date(opp.responseDeadLine)
-      return !isNaN(d.getTime()) && d >= minDeadline
+      if (isNaN(d.getTime())) return true
+      if (d < now) return false
+      return d >= minDeadline
     })
 
     if (eligible.length === 0) {
@@ -186,14 +197,15 @@ export async function POST(req: Request) {
         samgovTotal,
         paged: pagedCount,
         filteredOut: foundOpportunities.length,
-        reason: 'All matches were expired or closing within 14 days',
+        reason: minDaysToDeadline > 0
+          ? `All matches were expired or closing within ${minDaysToDeadline} days`
+          : 'All matches were expired',
       })
     }
 
-    const results = await Promise.all(
-      eligible.map(async (opp: any) => {
+    const upsertOne = async (opp: any) => {
         const solNum = opp.solicitationNumber || opp.noticeId
-        if (!solNum) return { ok: false }
+        if (!solNum) return { ok: false as const }
 
         let postedDate: Date | null = null
         if (opp.postedDate) {
@@ -249,11 +261,19 @@ export async function POST(req: Request) {
             error: error instanceof Error ? error.message : 'Unknown',
           }
         }
-      })
-    )
+    }
+
+    // Batch upserts — Render Postgres has a modest pool, so cap concurrency.
+    type UpsertResult = Awaited<ReturnType<typeof upsertOne>>
+    const results: UpsertResult[] = []
+    for (let i = 0; i < eligible.length; i += DB_WRITE_CONCURRENCY) {
+      const chunk = eligible.slice(i, i + DB_WRITE_CONCURRENCY)
+      const chunkResults = await Promise.all(chunk.map(upsertOne))
+      results.push(...chunkResults)
+    }
 
     const saved = results.filter((r) => r.ok)
-    const created = saved.filter((r) => r.created)
+    const created = saved.filter((r) => 'created' in r && r.created)
 
     return NextResponse.json({
       success: true,
