@@ -32,9 +32,12 @@ export async function GET(req: Request) {
 
     const engaged = searchParams.get('engaged') === 'true'
 
-    // Default cutoff: only show opportunities with ≥14 days until closing.
-    // Override with deadlineDays (window filter) or showExpiring=true.
-    const minDaysUntilClose = parseInt(searchParams.get('minDays') || '14')
+    // Deadline cutoff: how many days out the response deadline must be.
+    // Default 0 = "still open" (deadline is today or later). Was previously
+    // 14, which silently hid a third of a NAICS's active opportunities.
+    // Callers can pass minDays=14 to reinstate the old cushion, or
+    // showExpiring=true to include already-passed deadlines.
+    const minDaysUntilClose = parseInt(searchParams.get('minDays') || '0')
     const showExpiring = searchParams.get('showExpiring') === 'true'
 
     const where: any = {}
@@ -44,7 +47,7 @@ export async function GET(req: Request) {
       const maxDate = new Date()
       maxDate.setDate(maxDate.getDate() + parseInt(deadlineDays))
       where.responseDeadline = { gte: now, lte: maxDate }
-    } else if (!showExpiring && minDaysUntilClose > 0 && status !== 'DISMISSED') {
+    } else if (!showExpiring && status !== 'DISMISSED') {
       // Don't apply the deadline cutoff to the Dismissed view — dismissed
       // opps may have already-passed deadlines and we still want to show them.
       const cutoffDate = new Date()
