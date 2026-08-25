@@ -111,8 +111,9 @@ function OpportunitiesContent() {
   ) => {
     const query = searchParams.get('search') || ''
     const naics = searchParams.get('naics') || ''
-    if (!query && !naics) {
-      setMessage('Enter a search term or NAICS code first')
+    const agency = searchParams.get('agency') || ''
+    if (!query && !naics && !agency) {
+      setMessage('Add a search term, NAICS code, or agency filter first')
       return
     }
     setBusy(true)
@@ -121,7 +122,7 @@ function OpportunitiesContent() {
       const res = await fetch('/api/opportunities/search-sam', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, naics }),
+        body: JSON.stringify({ query, naics, agency }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -621,7 +622,7 @@ function OpportunitiesContent() {
             <p className="text-stone-500 text-lg">No opportunities found in your library</p>
             <p className="text-stone-400 mt-2 text-sm">Try adjusting your filters or search SAM.gov directly</p>
             <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
-              {(searchParams.get('search') || searchParams.get('naics')) && (
+              {(searchParams.get('search') || searchParams.get('naics') || searchParams.get('agency')) && (
                 <button
                   onClick={handleLiveSamSearch}
                   disabled={searchingSam}
@@ -633,7 +634,11 @@ function OpportunitiesContent() {
                       Searching SAM.gov...
                     </>
                   ) : (
-                    <>Search SAM.gov live for &ldquo;{searchParams.get('search') || `NAICS ${searchParams.get('naics')}`}&rdquo;</>
+                    <>Search SAM.gov live for &ldquo;{
+                      searchParams.get('search')
+                        || (searchParams.get('naics') && `NAICS ${searchParams.get('naics')}`)
+                        || (searchParams.get('agency') && `agency ${searchParams.get('agency')}`)
+                    }&rdquo;</>
                   )}
                 </button>
               )}

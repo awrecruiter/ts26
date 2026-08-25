@@ -25,14 +25,15 @@ export async function POST(req: Request) {
     const query: string = (body.query || '').trim()
     const naicsRaw: string = (body.naics || '').toString().trim()
     const naicsCodes = naicsRaw.split(',').map((c) => c.trim()).filter(Boolean)
+    const agency: string = (body.agency || '').toString().trim()
     // Deadline cutoff — number of days from now a solicitation must remain open.
     // Default 0 = show everything SAM.gov has, including anything closing today.
     // Callers can pass 14 (or whatever) to reinstate the old "at least N days out" filter.
     const rawMinDays = Number(body.minDaysToDeadline)
     const minDaysToDeadline = Number.isFinite(rawMinDays) && rawMinDays >= 0 ? rawMinDays : 0
 
-    if (!query && naicsCodes.length === 0) {
-      return NextResponse.json({ error: 'query or naics required' }, { status: 400 })
+    if (!query && naicsCodes.length === 0 && !agency) {
+      return NextResponse.json({ error: 'query, naics, or agency required' }, { status: 400 })
     }
 
     const apiKey = process.env.SAM_GOV_API_KEY
@@ -112,6 +113,12 @@ export async function POST(req: Request) {
       }
     }
 
+    // Agency filter stacks on every strategy (deptname is SAM.gov's department
+    // substring match — e.g. "veterans" → "VETERANS AFFAIRS, DEPARTMENT OF").
+    if (agency) {
+      for (const params of fanOut) params.deptname = agency
+    }
+
     const startedAt = Date.now()
     const budgetExceeded = () => Date.now() - startedAt > OVERALL_BUDGET_MS
 
@@ -124,8 +131,10 @@ export async function POST(req: Request) {
       if (budgetExceeded()) break
       if (foundOpportunities.length >= MAX_CANDIDATES) break
 
-      // Paginate only for NAICS queries — solnum is unique, title rarely benefits.
-      const shouldPaginate = !!params.ncode
+      // Paginate any broad filter (NAICS, agency, title) — SAM.gov caps at 50
+      // per page and a single page is not enough for e.g. agency=VA queries.
+      // Solicitation-number lookups return at most one hit, no paging needed.
+      const shouldPaginate = !params.solnum
       let offset = 0
       let pagesForThisQuery = 0
 
