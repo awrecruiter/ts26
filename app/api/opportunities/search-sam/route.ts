@@ -113,10 +113,13 @@ export async function POST(req: Request) {
       }
     }
 
-    // Agency filter stacks on every strategy (deptname is SAM.gov's department
-    // substring match — e.g. "veterans" → "VETERANS AFFAIRS, DEPARTMENT OF").
+    // Agency filter stacks on every strategy. SAM.gov's opportunities API v2
+    // silently ignores unknown filter params (deptname, department, subtier all
+    // return the unfiltered catalog); organizationName is the working one and
+    // does substring match against the org path — e.g. "veterans" narrows to
+    // Department of Veterans Affairs sub-orgs.
     if (agency) {
-      for (const params of fanOut) params.deptname = agency
+      for (const params of fanOut) params.organizationName = agency
     }
 
     const startedAt = Date.now()
