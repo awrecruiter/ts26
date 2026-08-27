@@ -347,6 +347,21 @@ function OpportunitiesContent() {
               </p>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
+              <div className="inline-flex rounded-lg border border-stone-300 overflow-hidden">
+                <span className="px-3 py-1.5 text-sm font-medium text-white bg-stone-800">
+                  List
+                </span>
+                <button
+                  onClick={() => {
+                    const params = new URLSearchParams(searchParams.toString())
+                    const qs = params.toString()
+                    router.push(`/opportunities/map${qs ? `?${qs}` : ''}`)
+                  }}
+                  className="px-3 py-1.5 text-sm font-medium text-stone-700 bg-white hover:bg-stone-50 transition-colors"
+                >
+                  Map
+                </button>
+              </div>
               {sessionStatus === 'authenticated' && session?.user?.role === 'ADMIN' && (
                 <button
                   onClick={handleFetchFromSAM}

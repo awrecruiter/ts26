@@ -123,6 +123,13 @@ model Opportunity {
   department         String?
   state              String?
 
+  // Place-of-performance geocode (populated lazily by /api/opportunities/geocode-batch
+  // for the map view). Nullable so we can distinguish "not geocoded yet" from
+  // "no address available".
+  latitude    Float?
+  longitude   Float?
+  geocodedAt  DateTime?
+
   // Dates
   postedDate       DateTime?
   responseDeadline DateTime?
