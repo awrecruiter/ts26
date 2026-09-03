@@ -245,23 +245,22 @@ export default function SubNetPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 align-top text-right">
-                        {r.opportunityId ? (
-                          <a
-                            href={`/opportunities/${r.opportunityId}`}
-                            className="inline-block whitespace-nowrap rounded-md border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-50"
-                          >
-                            Open workspace →
-                          </a>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => pursue(r.id)}
-                            disabled={pursuingId === r.id}
-                            className="whitespace-nowrap rounded-md bg-stone-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-700 disabled:opacity-60"
-                          >
-                            {pursuingId === r.id ? 'Opening…' : 'Pursue'}
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => pursue(r.id)}
+                          disabled={pursuingId === r.id}
+                          className={
+                            r.opportunityId
+                              ? 'whitespace-nowrap rounded-md border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-60'
+                              : 'whitespace-nowrap rounded-md bg-stone-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-700 disabled:opacity-60'
+                          }
+                        >
+                          {pursuingId === r.id
+                            ? 'Opening…'
+                            : r.opportunityId
+                              ? 'Open workspace →'
+                              : 'Pursue'}
+                        </button>
                       </td>
                     </tr>
                   ))}
