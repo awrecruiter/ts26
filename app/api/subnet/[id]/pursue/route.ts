@@ -13,18 +13,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: 'SubNet listing not found' }, { status: 404 })
   }
 
-  // Idempotent: if already pursued, just return the existing Opportunity.
-  if (subnet.opportunityId) {
-    const existing = await prisma.opportunity.findUnique({
-      where: { id: subnet.opportunityId },
-      select: { id: true },
-    })
-    if (existing) {
-      return NextResponse.json({ opportunityId: existing.id, alreadyPursued: true })
-    }
-    // Existing link is stale (opp was deleted) — fall through and re-create.
-  }
-
   const solicitationNumber = `SUBNET-${subnet.sourceKey}`
   const description = [subnet.description, subnet.contactRaw ? `\nContact: ${subnet.contactRaw}` : '']
     .filter(Boolean)
@@ -38,50 +26,94 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     description,
   })
 
-  // Some SubNet listings share (primeName, title, closingDate) — a naive
-  // synthetic solicitationNumber can collide. If the row already exists
-  // from a prior pursue, adopt it.
-  const preexisting = await prisma.opportunity.findUnique({
-    where: { solicitationNumber },
-    select: { id: true },
-  })
+  // Build the canonical Opportunity payload from the current SubNet row.
+  // Recomputed on every pursue so re-clicking Pursue heals older records
+  // that were created before we mapped POC into rawData.pointOfContact.
+  const rawData = {
+    source: 'subnet',
+    subNetOpportunityId: subnet.id,
+    sourceKey: subnet.sourceKey,
+    primeName: subnet.primeName,
+    contactEmail: subnet.contactEmail,
+    contactRaw: subnet.contactRaw,
+    sourceUrl: subnet.sourceUrl,
+    performanceStartDate: subnet.performanceStartDate?.toISOString() || null,
+    // Map SubNet contact into the SAM.gov pointOfContact shape so the
+    // workspace sidebar (which reads rawData.pointOfContact) renders it
+    // without any special-casing.
+    pointOfContact: [
+      {
+        fullName: subnet.primeName || 'SubNet Prime Contractor',
+        title: 'Prime Contractor (SubNet listing)',
+        email: subnet.contactEmail || undefined,
+        phone: subnet.contactRaw && !subnet.contactEmail
+          ? subnet.contactRaw.slice(0, 200)
+          : undefined,
+      },
+    ],
+  }
+
+  const opportunityData = {
+    title: subnet.title,
+    description,
+    naicsCode: subnet.naicsCode,
+    agency: subnet.primeName || 'SBA SubNet',
+    state: subnet.state,
+    responseDeadline: subnet.closingDate,
+    postedDate: subnet.firstSeenAt,
+    status: 'ACTIVE' as const,
+    rawData,
+  }
+
+  // Locate the existing Opportunity, if any — either via the back-link or via
+  // the synthetic solicitationNumber (in case a prior pursue created it and
+  // the back-link is stale).
+  let existingId: string | null = null
+  if (subnet.opportunityId) {
+    const byBackLink = await prisma.opportunity.findUnique({
+      where: { id: subnet.opportunityId },
+      select: { id: true },
+    })
+    if (byBackLink) existingId = byBackLink.id
+  }
+  if (!existingId) {
+    const bySolNum = await prisma.opportunity.findUnique({
+      where: { solicitationNumber },
+      select: { id: true },
+    })
+    if (bySolNum) existingId = bySolNum.id
+  }
+
   let opportunityId: string
-  if (preexisting) {
-    opportunityId = preexisting.id
+  let alreadyPursued: boolean
+  if (existingId) {
+    // Refresh rawData + core fields so the workspace picks up SBA updates
+    // (contact changes, closing-date edits) and any schema improvements
+    // we've made since the record was first created.
+    await prisma.opportunity.update({
+      where: { id: existingId },
+      data: opportunityData,
+    })
+    opportunityId = existingId
+    alreadyPursued = true
   } else {
     const created = await prisma.opportunity.create({
       data: {
         solicitationNumber,
-        title: subnet.title,
-        description,
-        naicsCode: subnet.naicsCode,
-        agency: subnet.primeName || 'SBA SubNet',
-        state: subnet.state,
-        responseDeadline: subnet.closingDate,
-        postedDate: subnet.firstSeenAt,
-        status: 'ACTIVE',
+        ...opportunityData,
         contractType: classification.contractType,
         contractTypeSource: classification.source,
-        rawData: {
-          source: 'subnet',
-          subNetOpportunityId: subnet.id,
-          sourceKey: subnet.sourceKey,
-          primeName: subnet.primeName,
-          contactEmail: subnet.contactEmail,
-          contactRaw: subnet.contactRaw,
-          sourceUrl: subnet.sourceUrl,
-          performanceStartDate: subnet.performanceStartDate?.toISOString() || null,
-        },
       },
       select: { id: true },
     })
     opportunityId = created.id
+    alreadyPursued = false
   }
 
   await prisma.subNetOpportunity.update({
     where: { id: subnet.id },
-    data: { opportunityId, pursuedAt: new Date() },
+    data: { opportunityId, pursuedAt: subnet.pursuedAt || new Date() },
   })
 
-  return NextResponse.json({ opportunityId, alreadyPursued: false })
+  return NextResponse.json({ opportunityId, alreadyPursued })
 }
