@@ -5,9 +5,12 @@ import { prisma } from '@/lib/db'
 export const maxDuration = 300
 
 const SAM_API_BASE = 'https://api.sam.gov/opportunities/v2/search'
-const PAGE_SIZE = 50
+// SAM.gov's `offset` parameter is broken: with limit=50 and offset>0 it
+// silently returns 0 records. limit=1000 returns everything in one call up
+// to the API's per-request cap. No construction NAICS breaks 1000/year, so
+// we skip pagination entirely and issue one call per query strategy.
+const PAGE_SIZE = 1000
 const MAX_CANDIDATES = 5000
-const MAX_PAGES_PER_QUERY = 100
 const OVERALL_BUDGET_MS = 250_000
 const DB_WRITE_CONCURRENCY = 25
 
@@ -135,18 +138,11 @@ export async function POST(req: Request) {
       if (budgetExceeded()) break
       if (foundOpportunities.length >= MAX_CANDIDATES) break
 
-      // Paginate any broad filter (NAICS, agency, title) — SAM.gov caps at 50
-      // per page and a single page is not enough for e.g. agency=VA queries.
-      // Solicitation-number lookups return at most one hit, no paging needed.
-      const shouldPaginate = !params.solnum
-      let offset = 0
-      let pagesForThisQuery = 0
-
-      while (pagesForThisQuery < MAX_PAGES_PER_QUERY) {
-        if (budgetExceeded()) break outer
-        if (foundOpportunities.length >= MAX_CANDIDATES) break outer
-
-        const result = await callSam({ ...params, offset: String(offset) })
+      // One call per strategy — SAM's `offset` param is broken (see PAGE_SIZE
+      // comment) and limit=1000 covers every construction NAICS's yearly
+      // volume in a single request. No while-loop pagination needed.
+      {
+        const result = await callSam({ ...params, offset: '0' })
         if (!result.ok) {
           return NextResponse.json(
             { error: result.error, details: result.details },
@@ -154,8 +150,7 @@ export async function POST(req: Request) {
           )
         }
         pagedCount++
-        if (pagesForThisQuery === 0) samgovTotal += result.totalRecords
-        pagesForThisQuery++
+        samgovTotal += result.totalRecords
 
         for (const opp of result.opportunities) {
           const key = opp.noticeId || opp.solicitationNumber
@@ -164,9 +159,6 @@ export async function POST(req: Request) {
           foundOpportunities.push(opp)
         }
 
-        if (result.opportunities.length < PAGE_SIZE) break
-        if (!shouldPaginate) break
-        offset += PAGE_SIZE
       }
 
       // If this is a query-by-title fallback chain (no NAICS), stop on first hit

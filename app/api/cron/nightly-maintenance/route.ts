@@ -15,8 +15,11 @@ const NIGHTLY_NAICS: string[] = [
 ]
 
 const SAM_API_BASE = 'https://api.sam.gov/opportunities/v2/search'
-const PAGE_SIZE = 50
-const MAX_PAGES_PER_NAICS = 20 // 1000 records per NAICS, well past current volumes
+// SAM.gov's `offset` parameter is broken when limit=50 — pages past 0 return
+// empty. Its max limit is 1000, and 1000 works. Bridge/highway (237310) has
+// ~215 records/year; no construction NAICS breaks 1000, so a single call
+// per NAICS covers everything without touching pagination.
+const SAM_MAX_LIMIT = 1000
 
 function fmt(d: Date): string {
   return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
@@ -25,33 +28,30 @@ function fmt(d: Date): string {
 async function fetchSamNaics(apiKey: string, naics: string): Promise<any[]> {
   const postedFrom = new Date()
   postedFrom.setDate(postedFrom.getDate() - 364)
-  const opps: any[] = []
 
-  for (let page = 0; page < MAX_PAGES_PER_NAICS; page++) {
-    const url = new URL(SAM_API_BASE)
-    url.searchParams.set('api_key', apiKey)
-    url.searchParams.set('postedFrom', fmt(postedFrom))
-    url.searchParams.set('postedTo', fmt(new Date()))
-    url.searchParams.set('limit', String(PAGE_SIZE))
-    url.searchParams.set('offset', String(page * PAGE_SIZE))
-    // ptype=s (Special Notice) is included so primes-seeking-subs postings
-    // on SAM.gov come through alongside government solicitations.
-    url.searchParams.set('ptype', 'o,p,k,s')
-    url.searchParams.set('sortBy', '-modifiedOn')
-    url.searchParams.set('ncode', naics)
+  const url = new URL(SAM_API_BASE)
+  url.searchParams.set('api_key', apiKey)
+  url.searchParams.set('postedFrom', fmt(postedFrom))
+  url.searchParams.set('postedTo', fmt(new Date()))
+  url.searchParams.set('limit', String(SAM_MAX_LIMIT))
+  url.searchParams.set('offset', '0')
+  // ptype=s (Special Notice) is included so primes-seeking-subs postings
+  // on SAM.gov come through alongside government solicitations.
+  url.searchParams.set('ptype', 'o,p,k,s')
+  url.searchParams.set('ncode', naics)
 
-    const res = await fetch(url.toString(), {
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(15000),
-    })
-    if (!res.ok) {
-      console.error(`[nightly-maintenance] SAM ${res.status} for ${naics} page ${page}`)
-      break
-    }
-    const data = await res.json()
-    const batch = (data.opportunitiesData || []) as any[]
-    opps.push(...batch)
-    if (batch.length < PAGE_SIZE) break
+  const res = await fetch(url.toString(), {
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(30000),
+  })
+  if (!res.ok) {
+    console.error(`[nightly-maintenance] SAM ${res.status} for ${naics}`)
+    return []
+  }
+  const data = await res.json()
+  const opps = (data.opportunitiesData || []) as any[]
+  if (data.totalRecords > SAM_MAX_LIMIT) {
+    console.warn(`[nightly-maintenance] ${naics} has ${data.totalRecords} records — exceeds SAM_MAX_LIMIT ${SAM_MAX_LIMIT}, truncating`)
   }
   return opps
 }
