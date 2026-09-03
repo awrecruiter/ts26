@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 interface SubNetRecord {
   id: string
@@ -19,6 +20,8 @@ interface SubNetRecord {
   firstSeenAt: string
   lastSeenAt: string
   removedAt: string | null
+  opportunityId: string | null
+  pursuedAt: string | null
 }
 
 interface ApiResponse {
@@ -48,6 +51,7 @@ function fmtRelative(iso: string | null): string {
 }
 
 export default function SubNetPage() {
+  const router = useRouter()
   const [data, setData] = useState<ApiResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -55,6 +59,25 @@ export default function SubNetPage() {
   const [state, setState] = useState('')
   const [naics, setNaics] = useState('')
   const [page, setPage] = useState(1)
+  const [pursuingId, setPursuingId] = useState<string | null>(null)
+
+  const pursue = async (id: string) => {
+    setPursuingId(id)
+    try {
+      const res = await fetch(`/api/subnet/${id}/pursue`, { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setError(body.error || 'Failed to open workspace')
+        return
+      }
+      const body = await res.json()
+      router.push(`/opportunities/${body.opportunityId}`)
+    } catch {
+      setError('Network error — try again')
+    } finally {
+      setPursuingId(null)
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -175,6 +198,7 @@ export default function SubNetPage() {
                     <th className="px-4 py-3">NAICS</th>
                     <th className="px-4 py-3">Closes</th>
                     <th className="px-4 py-3">Contact</th>
+                    <th className="px-4 py-3 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100">
@@ -218,6 +242,25 @@ export default function SubNetPage() {
                           <span className="text-xs text-stone-600">{r.contactRaw}</span>
                         ) : (
                           '—'
+                        )}
+                      </td>
+                      <td className="px-4 py-3 align-top text-right">
+                        {r.opportunityId ? (
+                          <a
+                            href={`/opportunities/${r.opportunityId}`}
+                            className="inline-block whitespace-nowrap rounded-md border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-50"
+                          >
+                            Open workspace →
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => pursue(r.id)}
+                            disabled={pursuingId === r.id}
+                            className="whitespace-nowrap rounded-md bg-stone-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-700 disabled:opacity-60"
+                          >
+                            {pursuingId === r.id ? 'Opening…' : 'Pursue'}
+                          </button>
                         )}
                       </td>
                     </tr>

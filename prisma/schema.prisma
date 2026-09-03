@@ -1093,6 +1093,12 @@ model SubNetOpportunity {
   // pull. UI hides these by default. Nulled again if the listing reappears.
   removedAt     DateTime?
 
+  // When the user hits "Pursue" on a SubNet row, we create a full
+  // Opportunity record and link back here so the UI can show "already
+  // pursuing" state instead of the Pursue button. One-to-one, nullable.
+  opportunityId String?  @unique
+  pursuedAt     DateTime?
+
   @@index([naicsCode])
   @@index([state])
   @@index([closingDate])

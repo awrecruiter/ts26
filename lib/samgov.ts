@@ -363,9 +363,15 @@ export async function getOpportunityAttachments(
 }
 
 /**
- * Build SAM.gov opportunity URL — prefer the uiLink from raw data
+ * Build SAM.gov opportunity URL — prefer the uiLink from raw data.
+ * For SubNet-sourced opportunities (solicitationNumber prefix "SUBNET-"),
+ * return the SBA SubNet page URL instead so the "View on SAM.gov" link
+ * still lands the user on the real source.
  */
 export function getSamGovUrl(solicitationNumber: string, rawData?: any): string {
+  if (rawData?.source === 'subnet' && rawData?.sourceUrl) {
+    return rawData.sourceUrl
+  }
   if (rawData?.uiLink) {
     return rawData.uiLink
   }
