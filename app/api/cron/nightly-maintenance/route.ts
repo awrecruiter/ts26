@@ -138,18 +138,28 @@ export async function GET(req: Request) {
   }
 
   const started = Date.now()
+  const now = new Date()
   const apiKey = process.env.SAM_GOV_API_KEY
-  const perNaics: Record<string, { fetched: number; created: number; updated: number }> = {}
+  const perNaics: Record<string, { fetched: number; skippedExpired: number; created: number; updated: number }> = {}
 
   // Step 1 — nightly SAM fetch across approved NAICS codes.
+  // Skip records already past their responseDeadLine — user policy: don't
+  // pull irrelevant posts into the DB in the first place. Records with no
+  // responseDeadLine at all are still kept (sources-sought, awards).
   if (!apiKey) {
     console.warn('[nightly-maintenance] SAM_GOV_API_KEY missing — skipping SAM fetch')
   } else {
     for (const naics of NIGHTLY_NAICS) {
-      const opps = await fetchSamNaics(apiKey, naics)
+      const raw = await fetchSamNaics(apiKey, naics)
+      const stillOpen = raw.filter((opp: any) => {
+        if (!opp.responseDeadLine) return true
+        const d = new Date(opp.responseDeadLine)
+        if (isNaN(d.getTime())) return true
+        return d >= now
+      })
       let created = 0
       let updated = 0
-      for (const opp of opps) {
+      for (const opp of stillOpen) {
         try {
           const result = await upsertOpportunity(opp)
           if (result === 'created') created++
@@ -158,33 +168,69 @@ export async function GET(req: Request) {
           console.error(`[nightly-maintenance] upsert failed for ${naics}:`, e)
         }
       }
-      perNaics[naics] = { fetched: opps.length, created, updated }
+      perNaics[naics] = {
+        fetched: raw.length,
+        skippedExpired: raw.length - stillOpen.length,
+        created,
+        updated,
+      }
     }
   }
 
-  // Step 2 — mark past-deadline records as EXPIRED so the default list view
-  // stays clean. Only touches ACTIVE rows; anything user-DISMISSED or already
-  // EXPIRED is left alone.
-  const now = new Date()
-  const expired = await prisma.opportunity.updateMany({
+  // Step 2 — delete expired records that have no user work attached.
+  // "User work" = SOW, Bid, Assessment, or manually-added Subcontractor.
+  // Anything user-touched keeps its row (status flips to EXPIRED so it
+  // drops off the default list but stays queryable in history).
+  const expiredIds = await prisma.opportunity.findMany({
     where: {
-      status: 'ACTIVE',
       responseDeadline: { lt: now, not: null },
     },
-    data: { status: 'EXPIRED' },
+    select: {
+      id: true,
+      _count: { select: { sows: true, bids: true, subcontractors: true } },
+      assessment: { select: { id: true } },
+    },
   })
+
+  const deletable = expiredIds
+    .filter((o) =>
+      o._count.sows === 0 &&
+      o._count.bids === 0 &&
+      o._count.subcontractors === 0 &&
+      !o.assessment
+    )
+    .map((o) => o.id)
+
+  const preservable = expiredIds
+    .filter((o) => !deletable.includes(o.id))
+    .map((o) => o.id)
+
+  let deletedCount = 0
+  let preservedCount = 0
+  if (deletable.length > 0) {
+    // Chunk deletes to keep the pool happy on a big backfill run.
+    const CHUNK = 100
+    for (let i = 0; i < deletable.length; i += CHUNK) {
+      const chunk = deletable.slice(i, i + CHUNK)
+      const res = await prisma.opportunity.deleteMany({ where: { id: { in: chunk } } })
+      deletedCount += res.count
+    }
+  }
+  if (preservable.length > 0) {
+    const preserved = await prisma.opportunity.updateMany({
+      where: { id: { in: preservable }, status: { not: 'EXPIRED' } },
+      data: { status: 'EXPIRED' },
+    })
+    preservedCount = preserved.count
+  }
 
   const durationMs = Date.now() - started
 
   await prisma.systemLog.create({
     data: {
       level: 'INFO',
-      message: `Nightly maintenance — ${Object.keys(perNaics).length} NAICS fetched, ${expired.count} expired`,
-      context: {
-        perNaics,
-        expired: expired.count,
-        durationMs,
-      },
+      message: `Nightly maintenance — ${Object.keys(perNaics).length} NAICS fetched, ${deletedCount} expired deleted, ${preservedCount} kept (had work attached)`,
+      context: { perNaics, deletedCount, preservedCount, durationMs },
     },
   })
 
@@ -192,6 +238,7 @@ export async function GET(req: Request) {
     ok: true,
     durationMs,
     perNaics,
-    expired: expired.count,
+    expiredDeleted: deletedCount,
+    expiredKeptWithWork: preservedCount,
   })
 }
