@@ -10,5 +10,10 @@
     }
   },
 
-  "regions": ["iad1"]
+  "regions": ["iad1"],
+
+  "crons": [
+    { "path": "/api/cron/nightly-maintenance", "schedule": "0 8 * * *" },
+    { "path": "/api/cron/scrape-subnet",       "schedule": "0 10 * * *" }
+  ]
 }

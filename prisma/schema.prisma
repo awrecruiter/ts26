@@ -1064,3 +1064,38 @@ model EmailDraft {
   @@index([userId, opportunityId])
   @@map("email_drafts")
 }
+
+// ============ SUBNET (SBA Subcontracting Opportunities) ============
+// Scraped nightly from legacy.sba.gov/federal-contracting/contracting-guide/
+// prime-subcontracting/subcontracting-opportunities. Primes post here when
+// they need subs on a federal contract they've won. There is no official
+// API — this is our own cache.
+
+model SubNetOpportunity {
+  id            String   @id @default(cuid())
+  // Stable identity: SBA's slug (from href="/opportunity/<slug>") if we can
+  // extract one; falls back to a hash of (primeName + title + closingDate).
+  sourceKey     String   @unique
+  title         String
+  primeName     String?
+  description   String?  @db.Text
+  state         String?
+  naicsCode     String?
+  naicsTitle    String?
+  contactEmail  String?
+  contactRaw    String?  @db.Text
+  closingDate   DateTime?
+  performanceStartDate DateTime?
+  sourceUrl     String?
+  firstSeenAt   DateTime @default(now())
+  lastSeenAt    DateTime @default(now())
+  // Set when a scrape run completes and this record was NOT in the fresh
+  // pull. UI hides these by default. Nulled again if the listing reappears.
+  removedAt     DateTime?
+
+  @@index([naicsCode])
+  @@index([state])
+  @@index([closingDate])
+  @@index([removedAt])
+  @@map("subnet_opportunities")
+}

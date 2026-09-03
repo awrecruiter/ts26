@@ -38,6 +38,7 @@ export default function Navigation() {
         { label: 'Active', href: '/opportunities?status=ACTIVE' },
         { label: 'Expired', href: '/opportunities?status=EXPIRED' },
         { label: 'Awarded', href: '/opportunities?status=AWARDED' },
+        { label: 'SubNet — Primes seeking subs', href: '/subnet' },
       ],
     },
     {

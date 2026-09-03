@@ -59,7 +59,8 @@ export async function POST(req: Request) {
       url.searchParams.set('postedTo', fmt(new Date()))
       url.searchParams.set('limit', String(PAGE_SIZE))
       url.searchParams.set('offset', '0')
-      url.searchParams.set('ptype', 'o,p,k')
+      // ptype=s (Special Notice) covers primes-seeking-subs postings on SAM.gov
+      url.searchParams.set('ptype', 'o,p,k,s')
       url.searchParams.set('sortBy', '-modifiedOn')
       for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
       return url.toString()
